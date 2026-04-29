@@ -10,6 +10,7 @@
 - связи между записями и простой подграф
 - поиск по памяти с PostgreSQL FTS и fallback для SQLite-тестов
 - rebuild endpoint для `search_vector` и более полноценный PostgreSQL stored FTS runtime
+- task logs и базовая eval/experiment analytics summary
 - endpoint `POST /memory/relevant` с учётом usage/access logs
 - maintenance endpoint для архивации устаревшей памяти
 - опциональное auto-linking новых записей через bag-of-words similarity
@@ -73,6 +74,16 @@ PYTHONPATH=$PWD .venv313/bin/python examples/simple_agent.py
 ```text
 READ -> ACT -> WRITE -> LINK
 ```
+
+## Task Logs и Eval Hooks
+
+Из `memorybank_eval_pack` в ядро сервиса добавлен минимальный слой аналитики:
+
+- `POST /task-logs`
+- `GET /task-logs`
+- `GET /task-logs/summary`
+
+Это позволяет логировать агентные задачи и затем считать базовые метрики использования памяти и качества результата.
 
 ## Журнал
 

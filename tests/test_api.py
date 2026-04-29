@@ -179,6 +179,38 @@ def test_rebuild_search_vectors(client):
     assert response.json()["rebuilt_count"] == 2
 
 
+def test_task_logs_and_summary(client):
+    created = client.post(
+        "/task-logs",
+        json={
+            "experiment_id": "exp-1",
+            "group_name": "B_WITH_MEMORY",
+            "agent_id": "eval-agent",
+            "task_description": "Implement endpoint",
+            "used_memory": True,
+            "memory_entries_count": 3,
+            "duration_seconds": 12.5,
+            "result_quality_score": 0.9,
+            "duplicate_count": 0,
+            "consistency_score": 0.95,
+            "metadata": {"source": "test"},
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["agent_id"] == "eval-agent"
+
+    listed = client.get("/task-logs", params={"experiment_id": "exp-1"})
+    assert listed.status_code == 200
+    assert len(listed.json()["items"]) == 1
+
+    summary = client.get("/task-logs/summary", params={"experiment_id": "exp-1"})
+    assert summary.status_code == 200
+    body = summary.json()
+    assert body["total_tasks"] == 1
+    assert body["memory_usage_rate"] == 1.0
+    assert body["avg_quality_score"] == 0.9
+
+
 def test_relevant_memory_creates_access_log(client, db_session: Session):
     created = client.post(
         "/memory",

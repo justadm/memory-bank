@@ -56,3 +56,4 @@
 - Verified the embedded SDK layer with imports and tests; total suite status is now `14 passed`.
 - Upgraded the search path toward fuller PostgreSQL FTS: stored `search_vector` sync on create/update, rebuild endpoint, and a follow-up migration to `tsvector`.
 - Re-ran the suite after the FTS work; total status is now `15 passed`.
+- Reviewed `/Users/just/apps/memorybank_eval_pack` and pulled its most practical backend extension into the core service: `task_logs` plus a basic analytics summary API.

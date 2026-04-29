@@ -12,6 +12,7 @@ from app.schemas.memory import (
     MemoryUpdate,
 )
 from app.schemas.projects import ProjectCreate, ProjectResponse, ProjectUpdate
+from app.schemas.task_logs import TaskLogCreate, TaskLogListResponse, TaskLogResponse, TaskLogSummaryResponse
 
 __all__ = [
     "ProjectCreate",
@@ -29,5 +30,8 @@ __all__ = [
     "MemoryRelevantResponse",
     "LinkCreate",
     "LinkResponse",
+    "TaskLogCreate",
+    "TaskLogResponse",
+    "TaskLogListResponse",
+    "TaskLogSummaryResponse",
 ]
-
