@@ -113,6 +113,7 @@ PYTHONPATH=$PWD .venv313/bin/python scripts/import_project_cli.py \
 PYTHONPATH=$PWD .venv313/bin/python scripts/import_project_cli.py \
   --projects-directory /Users/just/projects \
   --names max,APUAI \
+  --existing-entry-mode update \
   --memorybank-url http://127.0.0.1:18100
 ```
 
@@ -185,6 +186,7 @@ READ -> ACT -> WRITE -> LINK
 - пакетно создать связи между ними через `from_ref` / `to_ref`
 - базово маскировать строки вида `api_key=...`, `token=...`, `password=...`, `secret=...`
 - консервативно помечать конфликтующие `decision` entries как `requires_review=true`
+- повторно импортировать проект в режиме `create`, `skip` или `update`
 
 Импортёр теперь дополнительно лучше распознаёт:
 

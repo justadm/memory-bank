@@ -12,7 +12,7 @@ from app.repositories.memory_repository import MemoryRepository
 from app.repositories.project_repository import ProjectRepository
 from app.schemas.imports import ProjectImportRequest
 from app.schemas.links import LinkCreate
-from app.schemas.memory import MemoryCreate
+from app.schemas.memory import MemoryCreate, MemoryUpdate
 from app.schemas.projects import ProjectCreate
 from app.services.conflict_detector import ConflictDetector
 from app.services.memory_service import MemoryService, ProjectService
@@ -68,12 +68,17 @@ class ImportService:
         )
 
         entry_refs: dict[str, uuid.UUID] = {}
+        entries_created = 0
+        entries_updated = 0
+        entries_skipped = 0
         for item in payload.entries:
             if item.ref in entry_refs:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Duplicate entry ref: {item.ref}",
                 )
+            title = self._mask_text(item.title)
+            content = self._mask_text(item.content) or ""
             metadata = self._mask_metadata(item.metadata)
             if item.ref in conflicts_by_ref:
                 metadata["requires_review"] = True
@@ -88,11 +93,38 @@ class ImportService:
                     }
                     for conflict in conflicts_by_ref[item.ref]
                 ]
+            existing = self.memory_repository.find_import_match(
+                project_id=project.id,
+                memory_type=item.type,
+                title=title,
+                content=content,
+            )
+            if existing and payload.existing_entry_mode == "skip":
+                entry_refs[item.ref] = existing.id
+                entries_skipped += 1
+                continue
+            if existing and payload.existing_entry_mode == "update":
+                updated = self.memory_service.update_memory(
+                    existing.id,
+                    MemoryUpdate(
+                        title=title,
+                        content=content,
+                        source_agent=item.source_agent,
+                        project_id=project.id,
+                        importance=item.importance,
+                        metadata=metadata,
+                        archived=False,
+                    ),
+                )
+                entry_refs[item.ref] = updated.id
+                entries_updated += 1
+                continue
+
             created = self.memory_service.create_memory(
                 MemoryCreate(
                     type=item.type,
-                    title=self._mask_text(item.title),
-                    content=self._mask_text(item.content),
+                    title=title,
+                    content=content,
                     source_agent=item.source_agent,
                     project_id=project.id,
                     importance=item.importance,
@@ -100,8 +132,10 @@ class ImportService:
                 )
             )
             entry_refs[item.ref] = created.id
+            entries_created += 1
 
         created_links = 0
+        skipped_links = 0
         for item in payload.links:
             from_entry_id = entry_refs.get(item.from_ref)
             to_entry_id = entry_refs.get(item.to_ref)
@@ -110,6 +144,9 @@ class ImportService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Link references unknown refs: {item.from_ref} -> {item.to_ref}",
                 )
+            if self.memory_service.link_repository.find_by_pair(from_entry_id, to_entry_id, item.type):
+                skipped_links += 1
+                continue
             self.memory_service.create_link(
                 LinkCreate(
                     from_entry_id=from_entry_id,
@@ -125,8 +162,11 @@ class ImportService:
         return {
             "project": project,
             "import_event_id": import_event.id,
-            "entries_created": len(entry_refs),
+            "entries_created": entries_created,
+            "entries_updated": entries_updated,
+            "entries_skipped": entries_skipped,
             "links_created": created_links,
+            "links_skipped": skipped_links,
             "entry_refs": entry_refs,
             "conflicts_detected": len(conflicts),
             "conflicts": conflicts,

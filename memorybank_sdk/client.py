@@ -74,6 +74,7 @@ class MemoryBankClient:
         entries: list[dict[str, Any]] | None = None,
         links: list[dict[str, Any]] | None = None,
         detect_conflicts: bool = True,
+        existing_entry_mode: Literal["create", "skip", "update"] = "create",
     ) -> dict[str, Any]:
         return self._request(
             "POST",
@@ -92,6 +93,7 @@ class MemoryBankClient:
                 "entries": entries or [],
                 "links": links or [],
                 "detect_conflicts": detect_conflicts,
+                "existing_entry_mode": existing_entry_mode,
             },
         )
 

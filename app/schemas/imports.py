@@ -1,4 +1,5 @@
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -40,6 +41,7 @@ class ProjectImportRequest(BaseModel):
     entries: list[ProjectImportEntry] = Field(default_factory=list)
     links: list[ProjectImportLink] = Field(default_factory=list)
     detect_conflicts: bool = True
+    existing_entry_mode: Literal["create", "skip", "update"] = "create"
 
     @model_validator(mode="after")
     def validate_project_source(self) -> "ProjectImportRequest":
@@ -60,7 +62,10 @@ class ProjectImportResponse(BaseModel):
     project: ProjectResponse
     import_event_id: uuid.UUID
     entries_created: int
+    entries_updated: int = 0
+    entries_skipped: int = 0
     links_created: int
+    links_skipped: int = 0
     entry_refs: dict[str, uuid.UUID]
     conflicts_detected: int = 0
     conflicts: list[ProjectImportConflictResponse] = Field(default_factory=list)

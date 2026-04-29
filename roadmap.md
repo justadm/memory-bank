@@ -1048,3 +1048,59 @@ Everything in Docker.
 ```
 
 Так ты быстро получишь рабочий Memory Bank, который можно подключить к агенту уже после первой недели.
+
+---
+
+# Статус по roadmap
+
+## Готово
+
+- Цель MVP: базовый Memory Bank для агентов реализован и работает в Docker.
+- Архитектура MVP: `FastAPI + PostgreSQL + SQLAlchemy + Alembic + docker-compose + PostgreSQL FTS`.
+- Этап 0: структура проекта, Docker, FastAPI, PostgreSQL, `/health`.
+- Этап 1: модели, миграции, таблицы, индексы.
+- Этап 2: CRUD для проектов.
+- Этап 3: CRUD для памяти, фильтры по `project_id`, `type`, `archived`.
+- Этап 4: связи, входящие/исходящие links, подграф.
+- Этап 5: full-text search, stored `search_vector`, `/memory/search`.
+- Этап 6: `/memory/relevant`, scoring, `usage_count`, `last_used_at`, access logs.
+- Этап 7: архивация устаревшей памяти.
+- Этап 8: тестовый набор закрыт с запасом.
+- Обязательные MVP-пункты из раздела приоритетов закрыты.
+
+## Частично
+
+- Этап 9 документации:
+  - готово: запуск, Docker, SDK, import flow, admin endpoints, основные возможности.
+  - частично: в README ещё стоит добавить более полный набор `curl`-примеров и компактный справочник по memory/link types.
+- Формальная Docker-проверка тестов:
+  - локальный `pytest` регулярно гоняется и зелёный,
+  - но отдельный рутинный сценарий именно `docker compose exec api pytest` ещё не оформлен как постоянный чек.
+
+## Не начато
+
+- UI.
+- Auth.
+- Multi-tenant access control.
+- Redis cache.
+- Event queue / workers.
+- Semantic search / embeddings / `pgvector`.
+- Agent webhooks.
+- Memory summarization.
+
+## Что уже сделано сверх roadmap
+
+- SDK для агентов и example scripts.
+- Task logs, evaluator, batch evaluation, metrics.
+- Auto-linking.
+- Import API, CLI, batch directory import.
+- Conflict detection.
+- Admin observability, import conflicts, import summaries.
+- Реальные live imports проектов из `/Users/just/projects/`.
+
+## Ближайший план
+
+- Дополнить README `curl`-примерами и коротким API quick reference.
+- Довести повторный import flow для уже известных проектов без дублей.
+- Добавить richer import heuristics для сложных monorepo-layouts и mixed stacks.
+- Подумать над следующим большим блоком: `auth`, `UI`, либо semantic search.

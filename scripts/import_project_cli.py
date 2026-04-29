@@ -18,6 +18,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--existing-project-id", default=None)
     parser.add_argument("--names", default=None, help="Comma-separated child project names when using --projects-directory.")
     parser.add_argument("--limit", type=int, default=None, help="Max child projects to import when using --projects-directory.")
+    parser.add_argument(
+        "--existing-entry-mode",
+        choices=["create", "skip", "update"],
+        default="create",
+        help="How to handle already imported entries in the same project.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print the generated payload instead of sending it.")
     return parser
 
@@ -31,6 +37,8 @@ def main() -> None:
             names=names,
             limit=args.limit,
         )
+        for payload in payloads:
+            payload["existing_entry_mode"] = args.existing_entry_mode
         if args.dry_run:
             print(json.dumps(payloads, indent=2, ensure_ascii=False))
             return
@@ -47,6 +55,7 @@ def main() -> None:
     if args.existing_project_id:
         payload["project_id"] = args.existing_project_id
         payload.pop("project", None)
+    payload["existing_entry_mode"] = args.existing_entry_mode
 
     if args.dry_run:
         print(json.dumps(payload, indent=2, ensure_ascii=False))

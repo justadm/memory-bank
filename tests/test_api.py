@@ -567,6 +567,56 @@ def test_admin_import_summary_endpoint(client):
     assert match["imported_entries_count"] == 2
 
 
+def test_project_import_update_existing_mode(client):
+    project = client.post("/projects", json={"name": "Reimport Project"}).json()
+    first = client.post(
+        "/imports/project-scan",
+        json={
+            "project_id": project["id"],
+            "entries": [
+                {
+                    "ref": "artifact-readme",
+                    "type": "artifact",
+                    "title": "README.md",
+                    "content": "First imported content",
+                }
+            ],
+            "links": [],
+        },
+    )
+    assert first.status_code == 201
+
+    second = client.post(
+        "/imports/project-scan",
+        json={
+            "project_id": project["id"],
+            "existing_entry_mode": "update",
+            "entries": [
+                {
+                    "ref": "artifact-readme",
+                    "type": "artifact",
+                    "title": "README.md",
+                    "content": "Updated imported content",
+                    "metadata": {"sync": "second-pass"},
+                }
+            ],
+            "links": [],
+        },
+    )
+    assert second.status_code == 201
+    body = second.json()
+    assert body["entries_created"] == 0
+    assert body["entries_updated"] == 1
+    assert body["entries_skipped"] == 0
+
+    listed = client.get("/memory", params={"project_id": project["id"], "type": "artifact"})
+    assert listed.status_code == 200
+    items = listed.json()["items"]
+    assert len(items) == 1
+    assert items[0]["content"] == "Updated imported content"
+    assert items[0]["metadata"]["sync"] == "second-pass"
+
+
 def test_relevant_memory_creates_access_log(client, db_session: Session):
     created = client.post(
         "/memory",

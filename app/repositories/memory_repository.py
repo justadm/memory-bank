@@ -45,6 +45,26 @@ class MemoryRepository:
             stmt = stmt.where(MemoryEntry.archived == archived)
         return list(self.db.scalars(stmt))
 
+    def find_import_match(
+        self,
+        *,
+        project_id: uuid.UUID,
+        memory_type: MemoryType,
+        title: str | None,
+        content: str,
+    ) -> MemoryEntry | None:
+        stmt = select(MemoryEntry).where(
+            MemoryEntry.project_id == project_id,
+            MemoryEntry.type == memory_type,
+            MemoryEntry.source_agent == "memorybank-import-agent",
+        )
+        if title:
+            stmt = stmt.where(MemoryEntry.title == title)
+        else:
+            stmt = stmt.where(MemoryEntry.content == content)
+        stmt = stmt.order_by(MemoryEntry.created_at.desc()).limit(1)
+        return self.db.scalar(stmt)
+
     def list_import_conflicts(
         self,
         *,

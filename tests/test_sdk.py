@@ -110,6 +110,7 @@ def test_sdk_project_import_helper():
             {"ref": "risk-secrets", "type": "risk", "content": "Never keep token=abc."},
         ],
         links=[{"from_ref": "risk-secrets", "to_ref": "decision-db", "type": "affects"}],
+        existing_entry_mode="update",
     )
 
     assert result["project"]["name"] == "Imported Project"
@@ -117,3 +118,4 @@ def test_sdk_project_import_helper():
     assert result["links_created"] == 1
     assert client.import_payloads[0]["entries"][1]["type"] == "risk"
     assert client.import_payloads[0]["detect_conflicts"] is True
+    assert client.import_payloads[0]["existing_entry_mode"] == "update"
