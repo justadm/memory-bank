@@ -20,6 +20,8 @@
 3. Применить миграции: `docker compose exec api alembic upgrade head`.
 4. Открыть `http://localhost:8000/docs`.
 
+`docker-compose.yml` уже содержит healthcheck для PostgreSQL, поэтому `api` стартует после готовности БД.
+
 ## Журнал
 
 Ход реализации фиксируется в [WORKLOG.md](/Users/just/apps/memory.bank/WORKLOG.md).

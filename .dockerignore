@@ -1,0 +1,11 @@
+.git
+.gitignore
+.pytest_cache
+.venv
+.venv313
+__pycache__
+*.pyc
+*.pyo
+*.db
+htmlcov
+

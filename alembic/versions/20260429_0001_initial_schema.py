@@ -2,6 +2,7 @@
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "20260429_0001"
@@ -10,8 +11,10 @@ branch_labels = None
 depends_on = None
 
 
-memory_type_enum = sa.Enum("decision", "task", "artifact", "event", "note", name="memorytype")
-link_type_enum = sa.Enum(
+memory_type_enum = postgresql.ENUM(
+    "decision", "task", "artifact", "event", "note", name="memorytype", create_type=False
+)
+link_type_enum = postgresql.ENUM(
     "depends_on",
     "related_to",
     "created_after",
@@ -20,6 +23,7 @@ link_type_enum = sa.Enum(
     "blocks",
     "resolves",
     name="memorylinktype",
+    create_type=False,
 )
 
 
@@ -38,7 +42,7 @@ def upgrade() -> None:
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("metadata", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
+        sa.Column("metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default=sa.text("'{}'::jsonb")),
     )
 
     op.create_table(
@@ -55,7 +59,12 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("archived", sa.Boolean(), nullable=False, server_default=sa.text("false")),
-        sa.Column("metadata", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
+        sa.Column(
+            "metadata",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
+            server_default=sa.text("'{}'::jsonb"),
+        ),
         sa.Column("search_vector", sa.Text(), nullable=True),
     )
 
@@ -69,7 +78,12 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_by_agent", sa.String(length=100), nullable=True),
-        sa.Column("metadata", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
+        sa.Column(
+            "metadata",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
+            server_default=sa.text("'{}'::jsonb"),
+        ),
         sa.UniqueConstraint("from_entry_id", "to_entry_id", "type", name="uq_memory_link"),
     )
 
@@ -81,7 +95,12 @@ def upgrade() -> None:
         sa.Column("task_context", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("metadata", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
+        sa.Column(
+            "metadata",
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
+            server_default=sa.text("'{}'::jsonb"),
+        ),
     )
 
     op.create_index("idx_memory_entries_type", "memory_entries", ["type"])
@@ -89,7 +108,7 @@ def upgrade() -> None:
     op.create_index("idx_memory_entries_archived", "memory_entries", ["archived"])
     op.create_index("idx_memory_entries_created_at", "memory_entries", ["created_at"])
     op.create_index("idx_memory_entries_last_used_at", "memory_entries", ["last_used_at"])
-    op.create_index("idx_memory_entries_metadata", "memory_entries", ["metadata"])
+    op.create_index("idx_memory_entries_metadata", "memory_entries", ["metadata"], postgresql_using="gin")
     op.create_index("idx_memory_entries_search_vector", "memory_entries", ["search_vector"])
     op.create_index("idx_memory_links_from", "memory_links", ["from_entry_id"])
     op.create_index("idx_memory_links_to", "memory_links", ["to_entry_id"])
@@ -114,4 +133,3 @@ def downgrade() -> None:
     bind = op.get_bind()
     link_type_enum.drop(bind, checkfirst=True)
     memory_type_enum.drop(bind, checkfirst=True)
-

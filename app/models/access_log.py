@@ -2,6 +2,7 @@ import uuid
 
 from sqlalchemy import JSON, ForeignKey, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.dialects.postgresql import JSONB
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
@@ -14,7 +15,8 @@ class MemoryAccessLog(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     agent_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     task_context: Mapped[str | None] = mapped_column(Text, nullable=True)
-    metadata_: Mapped[dict] = mapped_column("metadata", JSON, default=dict, nullable=False)
+    metadata_: Mapped[dict] = mapped_column(
+        "metadata", JSON().with_variant(JSONB, "postgresql"), default=dict, nullable=False
+    )
 
     entry = relationship("MemoryEntry", back_populates="access_logs")
-

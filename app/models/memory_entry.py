@@ -3,6 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql.sqltypes import Text as SqlText
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -23,7 +24,9 @@ class MemoryEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     usage_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    metadata_: Mapped[dict] = mapped_column("metadata", JSON, default=dict, nullable=False)
+    metadata_: Mapped[dict] = mapped_column(
+        "metadata", JSON().with_variant(JSONB, "postgresql"), default=dict, nullable=False
+    )
     search_vector: Mapped[str | None] = mapped_column(SqlText(), nullable=True)
 
     project = relationship("Project", back_populates="memory_entries")
@@ -40,4 +43,3 @@ class MemoryEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         cascade="all, delete-orphan",
     )
     access_logs = relationship("MemoryAccessLog", back_populates="entry", cascade="all, delete-orphan")
-

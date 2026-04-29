@@ -4,7 +4,8 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     env_file:
       - .env
     volumes:
@@ -18,9 +19,13 @@ services:
       POSTGRES_DB: memory_bank
       POSTGRES_USER: memory_user
       POSTGRES_PASSWORD: memory_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memory_user -d memory_bank"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
 volumes:
   postgres_data:
-

@@ -46,3 +46,7 @@
 - Added normalized `search_vector` payload preparation on memory create/update.
 - Expanded API coverage for project CRUD, memory filters, graph traversal, and access-log/usage tracking scenarios.
 - Re-ran the test suite in `.venv313`; result: `12 passed`.
+- Verified runtime startup through Docker against PostgreSQL.
+- Fixed Alembic container import resolution and corrected the initial migration for PostgreSQL enum/JSONB behavior.
+- Confirmed live smoke calls for `POST /projects`, `POST /memory`, and `GET /health` against the Dockerized app.
+- Added `.dockerignore` and a PostgreSQL healthcheck in `docker-compose.yml` to make container startup lighter and more reliable.
