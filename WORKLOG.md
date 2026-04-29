@@ -75,3 +75,7 @@
 - Closed another roadmap-docs gap by extending `README.md` with an API quick reference, explicit memory/link type lists, `curl` examples, and the formal Docker test command.
 - Added an optional API-key auth layer with `write`, `import`, and `admin` scopes, protected critical routes, updated the SDK/CLI/examples to read `MEMORYBANK_API_KEY`, and covered the security flow with API tests.
 - Added a practical semantic layer without external services: `lexical / semantic / hybrid` search modes, local token-expansion scoring, and support for the same mode in `/memory/relevant`.
+- Reviewed the neighboring `/Users/just/apps/memorybank-admin` project and confirmed that the future migration target should be its static `frontend/` shell rather than the older Streamlit prototype.
+- Continued the auth track into tenant-aware RBAC hardening: clarified that read endpoints require auth when enabled, documented tenant-scoped API key format, fixed project updates so `tenant_id` survives metadata patches, and closed an import path that had not forwarded the current principal into the import event creation step.
+- Added regression coverage for tenant-preserving project updates and tenant-scoped import authorization.
+- Extended tenant-aware RBAC into observability: tenant-scoped keys now automatically stamp `task_logs` with `tenant_id` and only see their own `task_logs`, metrics, admin summaries, import conflict lists, and import summaries.

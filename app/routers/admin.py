@@ -26,8 +26,9 @@ def get_admin_observability_service(db: Session = Depends(get_db)) -> AdminObser
 @router.get("/observability/summary", response_model=ObservabilitySummaryResponse)
 def get_observability_summary(
     service: AdminObservabilityService = Depends(get_admin_observability_service),
+    principal=Depends(require_admin_access),
 ) -> ObservabilitySummaryResponse:
-    return ObservabilitySummaryResponse(**service.get_summary())
+    return ObservabilitySummaryResponse(**service.get_summary(principal=principal))
 
 
 @router.get("/import-conflicts", response_model=ImportConflictListResponse)
@@ -35,13 +36,15 @@ def get_import_conflicts(
     project_id: uuid.UUID | None = None,
     limit: int = 20,
     service: AdminObservabilityService = Depends(get_admin_observability_service),
+    principal=Depends(require_admin_access),
 ) -> ImportConflictListResponse:
-    return ImportConflictListResponse(**service.get_import_conflicts(project_id=project_id, limit=limit))
+    return ImportConflictListResponse(**service.get_import_conflicts(project_id=project_id, limit=limit, principal=principal))
 
 
 @router.get("/imports/summary", response_model=ImportProjectSummaryListResponse)
 def get_import_summaries(
     limit: int = 20,
     service: AdminObservabilityService = Depends(get_admin_observability_service),
+    principal=Depends(require_admin_access),
 ) -> ImportProjectSummaryListResponse:
-    return ImportProjectSummaryListResponse(**service.get_import_summaries(limit=limit))
+    return ImportProjectSummaryListResponse(**service.get_import_summaries(limit=limit, principal=principal))

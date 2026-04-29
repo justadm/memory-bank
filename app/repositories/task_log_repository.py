@@ -16,15 +16,28 @@ class TaskLogRepository:
         self.db.refresh(task_log)
         return task_log
 
-    def list(self, *, agent_id: str | None = None, experiment_id: str | None = None) -> list[TaskLog]:
+    def list(
+        self,
+        *,
+        agent_id: str | None = None,
+        experiment_id: str | None = None,
+        tenant_ids: set[str] | None = None,
+    ) -> list[TaskLog]:
         stmt = select(TaskLog).order_by(TaskLog.logged_at.desc())
         if agent_id:
             stmt = stmt.where(TaskLog.agent_id == agent_id)
         if experiment_id:
             stmt = stmt.where(TaskLog.experiment_id == experiment_id)
+        stmt = self._apply_tenant_filter(stmt, tenant_ids)
         return list(self.db.scalars(stmt))
 
-    def summary(self, *, agent_id: str | None = None, experiment_id: str | None = None) -> dict:
+    def summary(
+        self,
+        *,
+        agent_id: str | None = None,
+        experiment_id: str | None = None,
+        tenant_ids: set[str] | None = None,
+    ) -> dict:
         stmt = select(
             func.count(TaskLog.id),
             func.avg(case((TaskLog.used_memory.is_(True), 1.0), else_=0.0)),
@@ -37,6 +50,7 @@ class TaskLogRepository:
             stmt = stmt.where(TaskLog.agent_id == agent_id)
         if experiment_id:
             stmt = stmt.where(TaskLog.experiment_id == experiment_id)
+        stmt = self._apply_tenant_filter(stmt, tenant_ids)
 
         total, usage_rate, avg_duration, avg_quality, avg_consistency, avg_duplicate = self.db.execute(stmt).one()
         return {
@@ -47,3 +61,9 @@ class TaskLogRepository:
             "avg_consistency_score": float(avg_consistency) if avg_consistency is not None else None,
             "avg_duplicate_count": float(avg_duplicate) if avg_duplicate is not None else None,
         }
+
+    @staticmethod
+    def _apply_tenant_filter(stmt, tenant_ids: set[str] | None):
+        if tenant_ids is None:
+            return stmt
+        return stmt.where(TaskLog.metadata_["tenant_id"].as_string().in_(sorted(tenant_ids)))

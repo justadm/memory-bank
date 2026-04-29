@@ -10,6 +10,7 @@ from app.models.project import Project
 from app.repositories.link_repository import LinkRepository
 from app.repositories.memory_repository import MemoryRepository
 from app.repositories.project_repository import ProjectRepository
+from app.security import AuthPrincipal, ensure_tenant_access, resolve_tenant_for_create
 from app.schemas.links import LinkCreate
 from app.schemas.memory import MemoryCreate, MemoryRelevantRequest, MemoryUpdate
 from app.schemas.projects import ProjectCreate, ProjectUpdate
@@ -22,34 +23,65 @@ class ProjectService:
     def __init__(self, repository: ProjectRepository):
         self.repository = repository
 
-    def create_project(self, payload: ProjectCreate) -> Project:
-        project = Project(name=payload.name, description=payload.description, metadata_=payload.metadata)
+    def create_project(self, payload: ProjectCreate, *, principal: AuthPrincipal | None = None) -> Project:
+        metadata = dict(payload.metadata)
+        tenant_id = resolve_tenant_for_create(principal, payload.tenant_id) if principal else payload.tenant_id
+        if tenant_id:
+            metadata["tenant_id"] = tenant_id
+        project = Project(name=payload.name, description=payload.description, metadata_=metadata)
         return self.repository.create(project)
 
-    def list_projects(self) -> list[Project]:
-        return self.repository.list()
+    def list_projects(self, *, principal: AuthPrincipal | None = None) -> list[Project]:
+        items = self.repository.list()
+        return [item for item in items if self._can_access_project(item, principal)]
 
-    def get_project(self, project_id: uuid.UUID) -> Project:
+    def get_project(self, project_id: uuid.UUID, *, principal: AuthPrincipal | None = None) -> Project:
         project = self.repository.get(project_id)
         if not project:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+        self._ensure_project_access(project, principal)
         return project
 
-    def update_project(self, project_id: uuid.UUID, payload: ProjectUpdate) -> Project:
-        project = self.get_project(project_id)
-        for field, value in payload.model_dump(exclude_unset=True).items():
-            if field == "metadata":
-                setattr(project, "metadata_", value)
-            else:
-                setattr(project, field, value)
+    def update_project(self, project_id: uuid.UUID, payload: ProjectUpdate, *, principal: AuthPrincipal | None = None) -> Project:
+        project = self.get_project(project_id, principal=principal)
+        data = payload.model_dump(exclude_unset=True)
+        tenant_value = data.pop("tenant_id", None) if "tenant_id" in data else None
+        metadata_value = data.pop("metadata", None) if "metadata" in data else None
+
+        for field, value in data.items():
+            setattr(project, field, value)
+
+        if "tenant_id" in payload.model_fields_set or "metadata" in payload.model_fields_set:
+            metadata = dict(project.metadata_ or {})
+            if metadata_value is not None:
+                metadata.update(metadata_value)
+            if "tenant_id" in payload.model_fields_set:
+                tenant_id = resolve_tenant_for_create(principal, tenant_value) if principal else tenant_value
+                if tenant_id:
+                    metadata["tenant_id"] = tenant_id
+                else:
+                    metadata.pop("tenant_id", None)
+            setattr(project, "metadata_", metadata)
         self.repository.db.add(project)
         self.repository.db.flush()
         self.repository.db.refresh(project)
         return project
 
-    def delete_project(self, project_id: uuid.UUID) -> None:
-        project = self.get_project(project_id)
+    def delete_project(self, project_id: uuid.UUID, *, principal: AuthPrincipal | None = None) -> None:
+        project = self.get_project(project_id, principal=principal)
         self.repository.delete(project)
+
+    @staticmethod
+    def _ensure_project_access(project: Project, principal: AuthPrincipal | None) -> None:
+        if principal is None:
+            return
+        ensure_tenant_access(principal, project.tenant_id)
+
+    @staticmethod
+    def _can_access_project(project: Project, principal: AuthPrincipal | None) -> bool:
+        if principal is None or principal.tenant_ids is None:
+            return True
+        return project.tenant_id in principal.tenant_ids
 
 
 class MemoryService:
@@ -71,8 +103,8 @@ class MemoryService:
             settings=self.settings,
         )
 
-    def create_memory(self, payload: MemoryCreate) -> MemoryEntry:
-        self._validate_project(payload.project_id)
+    def create_memory(self, payload: MemoryCreate, *, principal: AuthPrincipal | None = None) -> MemoryEntry:
+        self._validate_project(payload.project_id, principal=principal, require_for_restricted=principal is not None)
         entry = MemoryEntry(
             type=payload.type,
             title=payload.title,
@@ -88,22 +120,31 @@ class MemoryService:
         self.auto_link_service.link_entry(created)
         return created
 
-    def get_memory(self, entry_id: uuid.UUID) -> MemoryEntry:
+    def get_memory(self, entry_id: uuid.UUID, *, principal: AuthPrincipal | None = None) -> MemoryEntry:
         entry = self.memory_repository.get(entry_id)
         if not entry:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory entry not found")
+        self._ensure_entry_access(entry, principal)
         return entry
 
     def list_memory(
-        self, *, project_id: uuid.UUID | None = None, memory_type=None, archived: bool | None = None
+        self,
+        *,
+        project_id: uuid.UUID | None = None,
+        memory_type=None,
+        archived: bool | None = None,
+        principal: AuthPrincipal | None = None,
     ) -> list[MemoryEntry]:
-        return self.memory_repository.list(project_id=project_id, memory_type=memory_type, archived=archived)
+        if project_id:
+            self._validate_project(project_id, principal=principal, require_for_restricted=False)
+        items = self.memory_repository.list(project_id=project_id, memory_type=memory_type, archived=archived)
+        return [item for item in items if self._can_access_entry(item, principal)]
 
-    def update_memory(self, entry_id: uuid.UUID, payload: MemoryUpdate) -> MemoryEntry:
-        entry = self.get_memory(entry_id)
+    def update_memory(self, entry_id: uuid.UUID, payload: MemoryUpdate, *, principal: AuthPrincipal | None = None) -> MemoryEntry:
+        entry = self.get_memory(entry_id, principal=principal)
         data = payload.model_dump(exclude_unset=True)
         if "project_id" in data:
-            self._validate_project(data["project_id"])
+            self._validate_project(data["project_id"], principal=principal, require_for_restricted=principal is not None)
         for field, value in data.items():
             if field == "metadata":
                 setattr(entry, "metadata_", value)
@@ -117,8 +158,8 @@ class MemoryService:
         self.memory_repository.sync_search_vector(entry, self._build_search_payload(entry.title, entry.content))
         return entry
 
-    def archive_memory(self, entry_id: uuid.UUID) -> MemoryEntry:
-        entry = self.get_memory(entry_id)
+    def archive_memory(self, entry_id: uuid.UUID, *, principal: AuthPrincipal | None = None) -> MemoryEntry:
+        entry = self.get_memory(entry_id, principal=principal)
         entry.archived = True
         self.memory_repository.db.add(entry)
         self.memory_repository.db.flush()
@@ -132,10 +173,16 @@ class MemoryService:
         project_id: uuid.UUID | None = None,
         limit: int = 10,
         mode: str = "hybrid",
+        principal: AuthPrincipal | None = None,
     ):
-        return self.search_service.search(query=query, project_id=project_id, limit=limit, mode=mode)
+        if project_id:
+            self._validate_project(project_id, principal=principal, require_for_restricted=False)
+        results = self.search_service.search(query=query, project_id=project_id, limit=limit, mode=mode)
+        return [match for match in results if self._can_access_entry(match.entry, principal)]
 
-    def get_relevant_memory(self, payload: MemoryRelevantRequest) -> list[tuple[MemoryEntry, float]]:
+    def get_relevant_memory(self, payload: MemoryRelevantRequest, *, principal: AuthPrincipal | None = None) -> list[tuple[MemoryEntry, float]]:
+        if payload.project_id:
+            self._validate_project(payload.project_id, principal=principal, require_for_restricted=False)
         results = self.search_service.search(
             query=payload.query,
             project_id=payload.project_id,
@@ -143,7 +190,8 @@ class MemoryService:
             types=payload.types,
             mode=payload.search_mode,
         )
-        for match in results:
+        filtered_results = [match for match in results if self._can_access_entry(match.entry, principal)]
+        for match in filtered_results:
             self.memory_repository.increment_usage(match.entry)
             self.memory_repository.add_access_log(
                 MemoryAccessLog(
@@ -153,11 +201,11 @@ class MemoryService:
                     metadata_=payload.metadata,
                 )
             )
-        return [(match.entry, match.score) for match in results]
+        return [(match.entry, match.score) for match in filtered_results]
 
-    def create_link(self, payload: LinkCreate) -> MemoryLink:
-        self.get_memory(payload.from_entry_id)
-        self.get_memory(payload.to_entry_id)
+    def create_link(self, payload: LinkCreate, *, principal: AuthPrincipal | None = None) -> MemoryLink:
+        self.get_memory(payload.from_entry_id, principal=principal)
+        self.get_memory(payload.to_entry_id, principal=principal)
         link = MemoryLink(
             from_entry_id=payload.from_entry_id,
             to_entry_id=payload.to_entry_id,
@@ -168,19 +216,25 @@ class MemoryService:
         )
         return self.link_repository.create(link)
 
-    def delete_link(self, link_id: uuid.UUID) -> None:
+    def delete_link(self, link_id: uuid.UUID, *, principal: AuthPrincipal | None = None) -> None:
         link = self.link_repository.get(link_id)
         if not link:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory link not found")
+        self.get_memory(link.from_entry_id, principal=principal)
+        self.get_memory(link.to_entry_id, principal=principal)
         self.link_repository.delete(link)
 
-    def get_links(self, entry_id: uuid.UUID) -> tuple[list[MemoryLink], list[MemoryLink]]:
-        self.get_memory(entry_id)
+    def get_links(self, entry_id: uuid.UUID, *, principal: AuthPrincipal | None = None) -> tuple[list[MemoryLink], list[MemoryLink]]:
+        self.get_memory(entry_id, principal=principal)
         return self.link_repository.get_for_entry(entry_id)
 
-    def get_graph(self, entry_id: uuid.UUID, depth: int):
-        self.get_memory(entry_id)
-        return self.graph_service.get_graph(entry_id, depth)
+    def get_graph(self, entry_id: uuid.UUID, depth: int, *, principal: AuthPrincipal | None = None):
+        self.get_memory(entry_id, principal=principal)
+        nodes, edges = self.graph_service.get_graph(entry_id, depth)
+        filtered_nodes = [node for node in nodes if self._can_access_entry(node, principal)]
+        allowed_ids = {node.id for node in filtered_nodes}
+        filtered_edges = [edge for edge in edges if edge.from_entry_id in allowed_ids and edge.to_entry_id in allowed_ids]
+        return filtered_nodes, filtered_edges
 
     def archive_stale(self, *, older_than_days: int, max_usage_count: int, max_importance: int) -> list[MemoryEntry]:
         return self.memory_repository.archive_stale(
@@ -192,9 +246,36 @@ class MemoryService:
     def rebuild_search_vectors(self, *, project_id: uuid.UUID | None = None) -> int:
         return self.memory_repository.rebuild_search_vectors(project_id=project_id)
 
-    def _validate_project(self, project_id: uuid.UUID | None) -> None:
-        if project_id and not self.project_repository.get(project_id):
+    def _validate_project(
+        self,
+        project_id: uuid.UUID | None,
+        *,
+        principal: AuthPrincipal | None = None,
+        require_for_restricted: bool = False,
+    ) -> None:
+        if project_id is None:
+            if principal and principal.tenant_ids is not None and require_for_restricted:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="project_id is required for this principal")
+            return
+        project = self.project_repository.get(project_id)
+        if not project:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+        if principal:
+            ensure_tenant_access(principal, project.tenant_id)
+
+    def _can_access_entry(self, entry: MemoryEntry, principal: AuthPrincipal | None) -> bool:
+        if principal is None or principal.tenant_ids is None:
+            return True
+        if entry.project_id is None:
+            return False
+        project = self.project_repository.get(entry.project_id)
+        if not project:
+            return False
+        return project.tenant_id in principal.tenant_ids
+
+    def _ensure_entry_access(self, entry: MemoryEntry, principal: AuthPrincipal | None) -> None:
+        if not self._can_access_entry(entry, principal):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project access denied")
 
     @staticmethod
     def _build_search_payload(title: str | None, content: str) -> str:

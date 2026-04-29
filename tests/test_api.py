@@ -652,7 +652,7 @@ def test_project_import_update_existing_mode(client):
 
 def test_auth_protects_write_endpoints_when_enabled(client, monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "true")
-    monkeypatch.setenv("AUTH_API_KEYS", "writer-key:write|import,admin-key:write|import|admin")
+    monkeypatch.setenv("AUTH_API_KEYS", "writer-key:write|import,reader-key:read,admin-key:write|import|admin")
 
     unauthorized = client.post("/projects", json={"name": "Secured"})
     assert unauthorized.status_code == 401
@@ -665,7 +665,10 @@ def test_auth_protects_write_endpoints_when_enabled(client, monkeypatch):
     assert authorized.status_code == 201
 
     public_read = client.get("/projects")
-    assert public_read.status_code == 200
+    assert public_read.status_code == 401
+
+    authorized_read = client.get("/projects", headers={"Authorization": "Bearer reader-key"})
+    assert authorized_read.status_code == 200
 
 
 def test_auth_requires_admin_scope_for_admin_endpoints(client, monkeypatch):
@@ -702,6 +705,157 @@ def test_auth_requires_import_scope_for_import_endpoint(client, monkeypatch):
         headers={"Authorization": "Bearer import-key"},
     )
     assert allowed.status_code == 201
+
+
+def test_tenant_scoped_project_access(client, monkeypatch):
+    monkeypatch.setenv(
+        "AUTH_API_KEYS",
+        "tenant-a-admin:tenant-a-key:read|write|import|admin:tenant-a,tenant-b-admin:tenant-b-key:read|write|import|admin:tenant-b",
+    )
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+
+    created = client.post(
+        "/projects",
+        json={"name": "Tenant A Project"},
+        headers={"Authorization": "Bearer tenant-a-key"},
+    )
+    assert created.status_code == 201
+    assert created.json()["tenant_id"] == "tenant-a"
+
+    own_list = client.get("/projects", headers={"Authorization": "Bearer tenant-a-key"})
+    assert own_list.status_code == 200
+    assert len(own_list.json()) == 1
+
+    other_list = client.get("/projects", headers={"Authorization": "Bearer tenant-b-key"})
+    assert other_list.status_code == 200
+    assert other_list.json() == []
+
+
+def test_tenant_scoped_memory_access(client, monkeypatch):
+    monkeypatch.setenv(
+        "AUTH_API_KEYS",
+        "tenant-a-admin:tenant-a-key:read|write|import|admin:tenant-a,tenant-b-admin:tenant-b-key:read|write|import|admin:tenant-b",
+    )
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+
+    project = client.post(
+        "/projects",
+        json={"name": "Tenant A Project"},
+        headers={"Authorization": "Bearer tenant-a-key"},
+    ).json()
+    memory = client.post(
+        "/memory",
+        json={"type": "decision", "title": "Tenant Secret", "content": "Only tenant A should see this", "project_id": project["id"]},
+        headers={"Authorization": "Bearer tenant-a-key"},
+    ).json()
+
+    denied = client.get(f"/memory/{memory['id']}", headers={"Authorization": "Bearer tenant-b-key"})
+    assert denied.status_code == 403
+
+    allowed = client.get(f"/memory/{memory['id']}", headers={"Authorization": "Bearer tenant-a-key"})
+    assert allowed.status_code == 200
+    assert allowed.json()["title"] == "Tenant Secret"
+
+
+def test_tenant_scoped_project_update_preserves_tenant_id(client, monkeypatch):
+    monkeypatch.setenv(
+        "AUTH_API_KEYS",
+        "tenant-a-admin:tenant-a-key:read|write|import|admin:tenant-a",
+    )
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+
+    created = client.post(
+        "/projects",
+        json={"name": "Tenant A Project", "metadata": {"owner": "team-a"}},
+        headers={"Authorization": "Bearer tenant-a-key"},
+    )
+    assert created.status_code == 201
+
+    updated = client.patch(
+        f"/projects/{created.json()['id']}",
+        json={"description": "Updated", "metadata": {"owner": "team-a", "env": "prod"}},
+        headers={"Authorization": "Bearer tenant-a-key"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["tenant_id"] == "tenant-a"
+    assert updated.json()["metadata"]["tenant_id"] == "tenant-a"
+    assert updated.json()["metadata"]["env"] == "prod"
+
+
+def test_tenant_scoped_import_requires_authorized_project(client, monkeypatch):
+    monkeypatch.setenv(
+        "AUTH_API_KEYS",
+        "tenant-a-import:tenant-a-key:read|write|import:tenant-a,tenant-b-import:tenant-b-key:read|write|import:tenant-b",
+    )
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+
+    project = client.post(
+        "/projects",
+        json={"name": "Tenant A Project"},
+        headers={"Authorization": "Bearer tenant-a-key"},
+    ).json()
+
+    forbidden = client.post(
+        "/imports/project-scan",
+        json={"project_id": project["id"], "entries": [], "links": []},
+        headers={"Authorization": "Bearer tenant-b-key"},
+    )
+    assert forbidden.status_code == 403
+
+    allowed = client.post(
+        "/imports/project-scan",
+        json={"project_id": project["id"], "entries": [], "links": []},
+        headers={"Authorization": "Bearer tenant-a-key"},
+    )
+    assert allowed.status_code == 201
+
+
+def test_tenant_scoped_task_logs_and_metrics(client, monkeypatch):
+    monkeypatch.setenv(
+        "AUTH_API_KEYS",
+        "tenant-a-admin:tenant-a-key:read|write|import|admin:tenant-a,tenant-b-admin:tenant-b-key:read|write|import|admin:tenant-b",
+    )
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+
+    a_log = client.post(
+        "/task-logs",
+        json={
+            "experiment_id": "exp-a",
+            "agent_id": "agent-a",
+            "task_description": "Tenant A task",
+            "used_memory": True,
+        },
+        headers={"Authorization": "Bearer tenant-a-key"},
+    )
+    assert a_log.status_code == 201
+    assert a_log.json()["metadata"]["tenant_id"] == "tenant-a"
+
+    b_log = client.post(
+        "/task-logs",
+        json={
+            "experiment_id": "exp-b",
+            "agent_id": "agent-b",
+            "task_description": "Tenant B task",
+            "used_memory": False,
+        },
+        headers={"Authorization": "Bearer tenant-b-key"},
+    )
+    assert b_log.status_code == 201
+    assert b_log.json()["metadata"]["tenant_id"] == "tenant-b"
+
+    a_list = client.get("/task-logs", headers={"Authorization": "Bearer tenant-a-key"})
+    assert a_list.status_code == 200
+    assert len(a_list.json()["items"]) == 1
+    assert a_list.json()["items"][0]["agent_id"] == "agent-a"
+
+    a_metrics = client.get("/metrics/overview", headers={"Authorization": "Bearer tenant-a-key"})
+    assert a_metrics.status_code == 200
+    assert a_metrics.json()["tasks"]["total_tasks"] == 1
+
+    a_admin = client.get("/admin/observability/summary", headers={"Authorization": "Bearer tenant-a-key"})
+    assert a_admin.status_code == 200
+    assert a_admin.json()["tasks"]["total_tasks"] == 1
+    assert a_admin.json()["top_agents"][0]["key"] == "agent-a"
 
 
 def test_relevant_memory_creates_access_log(client, db_session: Session):

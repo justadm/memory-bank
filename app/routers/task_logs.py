@@ -26,9 +26,9 @@ def get_task_log_service(db: Session = Depends(get_db)) -> TaskLogService:
 def create_task_log(
     payload: TaskLogCreate,
     service: TaskLogService = Depends(get_task_log_service),
-    _principal=Depends(require_write_access),
+    principal=Depends(require_write_access),
 ) -> TaskLogResponse:
-    return service.create_task_log(payload)
+    return service.create_task_log(payload, principal=principal)
 
 
 @router.get("", response_model=TaskLogListResponse)
@@ -36,18 +36,18 @@ def list_task_logs(
     agent_id: str | None = None,
     experiment_id: str | None = None,
     service: TaskLogService = Depends(get_task_log_service),
-    _principal=Depends(require_admin_access),
+    principal=Depends(require_admin_access),
 ) -> TaskLogListResponse:
-    return TaskLogListResponse(items=service.list_task_logs(agent_id=agent_id, experiment_id=experiment_id))
+    return TaskLogListResponse(items=service.list_task_logs(agent_id=agent_id, experiment_id=experiment_id, principal=principal))
 
 
 @router.post("/import", response_model=TaskLogImportResponse, status_code=201)
 def import_task_logs(
     payload: TaskLogImportRequest,
     service: TaskLogService = Depends(get_task_log_service),
-    _principal=Depends(require_write_access),
+    principal=Depends(require_write_access),
 ) -> TaskLogImportResponse:
-    return TaskLogImportResponse(created_count=service.import_task_logs(payload.items))
+    return TaskLogImportResponse(created_count=service.import_task_logs(payload.items, principal=principal))
 
 
 @router.get("/summary", response_model=TaskLogSummaryResponse)
@@ -55,6 +55,6 @@ def get_task_log_summary(
     agent_id: str | None = None,
     experiment_id: str | None = None,
     service: TaskLogService = Depends(get_task_log_service),
-    _principal=Depends(require_admin_access),
+    principal=Depends(require_admin_access),
 ) -> TaskLogSummaryResponse:
-    return TaskLogSummaryResponse(**service.get_summary(agent_id=agent_id, experiment_id=experiment_id))
+    return TaskLogSummaryResponse(**service.get_summary(agent_id=agent_id, experiment_id=experiment_id, principal=principal))

@@ -21,5 +21,6 @@ def get_import_service(db: Session = Depends(get_db)) -> ImportService:
 def import_project_scan(
     payload: ProjectImportRequest,
     service: ImportService = Depends(get_import_service),
+    principal=Depends(require_import_access),
 ) -> ProjectImportResponse:
-    return ProjectImportResponse(**service.import_project_scan(payload))
+    return ProjectImportResponse(**service.import_project_scan(payload, principal=principal))

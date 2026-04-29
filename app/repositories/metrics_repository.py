@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.memory_entry import MemoryEntry
 from app.models.memory_link import MemoryLink
+from app.models.project import Project
 from app.models.task_log import TaskLog
 
 
@@ -15,7 +16,7 @@ class MetricsRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def memory_overview(self, *, project_id: uuid.UUID | None = None) -> dict:
+    def memory_overview(self, *, project_id: uuid.UUID | None = None, tenant_ids: set[str] | None = None) -> dict:
         stmt = select(
             func.count(MemoryEntry.id),
             func.count(MemoryEntry.id).filter(MemoryEntry.archived.is_(False)),
@@ -30,7 +31,9 @@ class MetricsRepository:
                     Float,
                 )
             ),
-        )
+        ).select_from(MemoryEntry)
+        if tenant_ids is not None:
+            stmt = stmt.join(Project, Project.id == MemoryEntry.project_id).where(self._project_tenant_clause(tenant_ids))
         if project_id:
             stmt = stmt.where(MemoryEntry.project_id == project_id)
 
@@ -38,10 +41,18 @@ class MetricsRepository:
 
         orphan_stmt = (
             select(func.count(func.distinct(MemoryEntry.id)))
+            .select_from(MemoryEntry)
             .outerjoin(MemoryLink, or_(MemoryLink.from_entry_id == MemoryEntry.id, MemoryLink.to_entry_id == MemoryEntry.id))
             .where(MemoryEntry.archived.is_(False), MemoryLink.id.is_(None))
         )
-        active_stmt = select(func.count(MemoryEntry.id)).where(MemoryEntry.archived.is_(False))
+        active_stmt = select(func.count(MemoryEntry.id)).select_from(MemoryEntry).where(MemoryEntry.archived.is_(False))
+        if tenant_ids is not None:
+            orphan_stmt = orphan_stmt.join(Project, Project.id == MemoryEntry.project_id).where(
+                self._project_tenant_clause(tenant_ids)
+            )
+            active_stmt = active_stmt.join(Project, Project.id == MemoryEntry.project_id).where(
+                self._project_tenant_clause(tenant_ids)
+            )
         if project_id:
             orphan_stmt = orphan_stmt.where(MemoryEntry.project_id == project_id)
             active_stmt = active_stmt.where(MemoryEntry.project_id == project_id)
@@ -58,14 +69,24 @@ class MetricsRepository:
             "orphan_rate": float(orphan_rate),
         }
 
-    def graph_overview(self, *, project_id: uuid.UUID | None = None) -> dict:
+    def graph_overview(self, *, project_id: uuid.UUID | None = None, tenant_ids: set[str] | None = None) -> dict:
         stmt = select(
             func.count(MemoryLink.id),
             func.avg(MemoryLink.strength),
         )
-        if project_id:
-            from_entries = select(MemoryEntry.id).where(MemoryEntry.project_id == project_id)
-            to_entries = select(MemoryEntry.id).where(MemoryEntry.project_id == project_id)
+        if project_id or tenant_ids is not None:
+            from_entries = select(MemoryEntry.id).select_from(MemoryEntry)
+            to_entries = select(MemoryEntry.id).select_from(MemoryEntry)
+            if tenant_ids is not None:
+                from_entries = from_entries.join(Project, Project.id == MemoryEntry.project_id).where(
+                    self._project_tenant_clause(tenant_ids)
+                )
+                to_entries = to_entries.join(Project, Project.id == MemoryEntry.project_id).where(
+                    self._project_tenant_clause(tenant_ids)
+                )
+            if project_id:
+                from_entries = from_entries.where(MemoryEntry.project_id == project_id)
+                to_entries = to_entries.where(MemoryEntry.project_id == project_id)
             stmt = stmt.where(
                 MemoryLink.from_entry_id.in_(from_entries),
                 MemoryLink.to_entry_id.in_(to_entries),
@@ -77,7 +98,13 @@ class MetricsRepository:
             "avg_link_strength": float(avg_link_strength or 0.0),
         }
 
-    def task_overview(self, *, agent_id: str | None = None, experiment_id: str | None = None) -> dict:
+    def task_overview(
+        self,
+        *,
+        agent_id: str | None = None,
+        experiment_id: str | None = None,
+        tenant_ids: set[str] | None = None,
+    ) -> dict:
         stmt = select(
             func.count(TaskLog.id),
             func.avg(case((TaskLog.used_memory.is_(True), 1.0), else_=0.0)),
@@ -90,6 +117,7 @@ class MetricsRepository:
             stmt = stmt.where(TaskLog.agent_id == agent_id)
         if experiment_id:
             stmt = stmt.where(TaskLog.experiment_id == experiment_id)
+        stmt = self._apply_task_tenant_filter(stmt, tenant_ids)
 
         total, usage_rate, avg_duration, avg_quality, avg_consistency, avg_duplicate = self.db.execute(stmt).one()
         return {
@@ -101,7 +129,13 @@ class MetricsRepository:
             "avg_duplicate_count": float(avg_duplicate) if avg_duplicate is not None else None,
         }
 
-    def task_breakdown_by_field(self, field_name: str, *, limit: int = 5) -> list[dict]:
+    def task_breakdown_by_field(
+        self,
+        field_name: str,
+        *,
+        limit: int = 5,
+        tenant_ids: set[str] | None = None,
+    ) -> list[dict]:
         field = getattr(TaskLog, field_name)
         stmt = (
             select(
@@ -116,6 +150,7 @@ class MetricsRepository:
             .order_by(func.count(TaskLog.id).desc(), field.asc())
             .limit(limit)
         )
+        stmt = self._apply_task_tenant_filter(stmt, tenant_ids)
         rows = self.db.execute(stmt).all()
         return [
             {
@@ -130,16 +165,30 @@ class MetricsRepository:
             for row in rows
         ]
 
-    def recent_activity_overview(self, *, window_hours: int = 24) -> dict:
+    def recent_activity_overview(self, *, window_hours: int = 24, tenant_ids: set[str] | None = None) -> dict:
         threshold = datetime.now(timezone.utc) - timedelta(hours=window_hours)
-        memory_entries_created = int(
-            self.db.scalar(select(func.count(MemoryEntry.id)).where(MemoryEntry.created_at >= threshold)) or 0
-        )
-        task_logs_created = int(
-            self.db.scalar(select(func.count(TaskLog.id)).where(TaskLog.created_at >= threshold)) or 0
-        )
+        memory_stmt = select(func.count(MemoryEntry.id)).select_from(MemoryEntry).where(MemoryEntry.created_at >= threshold)
+        if tenant_ids is not None:
+            memory_stmt = memory_stmt.join(Project, Project.id == MemoryEntry.project_id).where(
+                self._project_tenant_clause(tenant_ids)
+            )
+        memory_entries_created = int(self.db.scalar(memory_stmt) or 0)
+
+        task_stmt = select(func.count(TaskLog.id)).where(TaskLog.created_at >= threshold)
+        task_stmt = self._apply_task_tenant_filter(task_stmt, tenant_ids)
+        task_logs_created = int(self.db.scalar(task_stmt) or 0)
         return {
             "window_hours": window_hours,
             "memory_entries_created": memory_entries_created,
             "task_logs_created": task_logs_created,
         }
+
+    @staticmethod
+    def _project_tenant_clause(tenant_ids: set[str]):
+        return Project.metadata_["tenant_id"].as_string().in_(sorted(tenant_ids))
+
+    @staticmethod
+    def _apply_task_tenant_filter(stmt, tenant_ids: set[str] | None):
+        if tenant_ids is None:
+            return stmt
+        return stmt.where(TaskLog.metadata_["tenant_id"].as_string().in_(sorted(tenant_ids)))

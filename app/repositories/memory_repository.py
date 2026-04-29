@@ -70,10 +70,15 @@ class MemoryRepository:
         *,
         project_id: uuid.UUID | None = None,
         limit: int = 20,
+        tenant_ids: set[str] | None = None,
     ) -> list[MemoryEntry]:
         stmt = select(MemoryEntry).order_by(MemoryEntry.created_at.desc())
         if project_id:
             stmt = stmt.where(MemoryEntry.project_id == project_id)
+        if tenant_ids is not None:
+            stmt = stmt.join(Project, Project.id == MemoryEntry.project_id).where(
+                Project.metadata_["tenant_id"].as_string().in_(sorted(tenant_ids))
+            )
         items = list(self.db.scalars(stmt.limit(max(limit * 3, limit))))
         conflicted = [
             item
@@ -84,8 +89,11 @@ class MemoryRepository:
         ]
         return conflicted[:limit]
 
-    def list_import_project_summaries(self, *, limit: int = 20) -> list[dict]:
-        projects = self.db.scalars(select(Project).order_by(Project.updated_at.desc()).limit(limit * 3)).all()
+    def list_import_project_summaries(self, *, limit: int = 20, tenant_ids: set[str] | None = None) -> list[dict]:
+        stmt = select(Project).order_by(Project.updated_at.desc()).limit(limit * 3)
+        if tenant_ids is not None:
+            stmt = stmt.where(Project.metadata_["tenant_id"].as_string().in_(sorted(tenant_ids)))
+        projects = self.db.scalars(stmt).all()
         summaries: list[dict] = []
         for project in projects:
             entries = self.db.scalars(select(MemoryEntry).where(MemoryEntry.project_id == project.id)).all()

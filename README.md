@@ -44,7 +44,7 @@ docker compose exec api pytest
 
 ```env
 AUTH_ENABLED=true
-AUTH_API_KEYS=agent-write-key:write|import,ops-admin-key:write|import|admin
+AUTH_API_KEYS=reader-key:read,agent-write-key:write|import,ops-admin-key:write|import|admin,tenant-agent:tenant-key:read|write|import:tenant-a
 ```
 
 Поддерживаются два способа передачи ключа:
@@ -54,9 +54,22 @@ AUTH_API_KEYS=agent-write-key:write|import,ops-admin-key:write|import|admin
 
 Scope-ы:
 
+- `read` — чтение проектов, памяти, links и search endpoints
 - `write` — изменение данных, запись памяти, links, projects, task logs
 - `import` — import endpoints
 - `admin` — maintenance, metrics, admin observability
+
+Если auth включён, read endpoints тоже требуют API key. Ключи с `write`, `import` или `admin` могут читать данные тоже, а отдельный `read` scope удобен для dashboard/UI и наблюдения без права записи.
+
+Поддерживается tenant-scoped формат ключей:
+
+```env
+AUTH_API_KEYS=tenant-agent:tenant-key:read|write|import:tenant-a|tenant-b
+```
+
+В таком режиме ключ видит и изменяет только проекты и memory entries, принадлежащие указанным `tenant_id`. Тот же tenant filter теперь применяется и к `task-logs`, `GET /metrics/overview`, `GET /admin/observability/summary`, `GET /admin/import-conflicts`, `GET /admin/imports/summary`.
+
+Если tenant-restricted ключ создаёт проект без явного `tenant_id`, сервис автоматически подставляет единственный доступный tenant. Аналогично `POST /task-logs` автоматически проставляет `metadata.tenant_id`, если ключ ограничен одним tenant.
 
 Если `AUTH_ENABLED=false`, сервис работает как раньше, без обязательной авторизации.
 

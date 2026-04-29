@@ -23,5 +23,13 @@ def get_metrics_overview(
     agent_id: str | None = None,
     experiment_id: str | None = None,
     service: MetricsService = Depends(get_metrics_service),
+    principal=Depends(require_admin_access),
 ) -> MetricsOverviewResponse:
-    return MetricsOverviewResponse(**service.get_overview(project_id=project_id, agent_id=agent_id, experiment_id=experiment_id))
+    return MetricsOverviewResponse(
+        **service.get_overview(
+            project_id=project_id,
+            agent_id=agent_id,
+            experiment_id=experiment_id,
+            principal=principal,
+        )
+    )

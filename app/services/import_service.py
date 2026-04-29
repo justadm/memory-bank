@@ -10,6 +10,7 @@ from app.models.project import Project
 from app.repositories.link_repository import LinkRepository
 from app.repositories.memory_repository import MemoryRepository
 from app.repositories.project_repository import ProjectRepository
+from app.security import AuthPrincipal
 from app.schemas.imports import ProjectImportRequest
 from app.schemas.links import LinkCreate
 from app.schemas.memory import MemoryCreate, MemoryUpdate
@@ -49,8 +50,8 @@ class ImportService:
         self.memory_repository = memory_repository
         self.conflict_detector = ConflictDetector()
 
-    def import_project_scan(self, payload: ProjectImportRequest) -> dict:
-        project = self._resolve_project(payload.project, payload.project_id)
+    def import_project_scan(self, payload: ProjectImportRequest, *, principal: AuthPrincipal | None = None) -> dict:
+        project = self._resolve_project(payload.project, payload.project_id, principal=principal)
         conflicts = self._detect_conflicts(project, payload) if payload.detect_conflicts else []
         conflicts_by_ref: dict[str, list[dict]] = {}
         for item in conflicts:
@@ -64,7 +65,8 @@ class ImportService:
                 project_id=project.id,
                 importance=payload.import_event.importance,
                 metadata=self._mask_metadata(payload.import_event.metadata),
-            )
+            ),
+            principal=principal,
         )
 
         entry_refs: dict[str, uuid.UUID] = {}
@@ -115,6 +117,7 @@ class ImportService:
                         metadata=metadata,
                         archived=False,
                     ),
+                    principal=principal,
                 )
                 entry_refs[item.ref] = updated.id
                 entries_updated += 1
@@ -129,7 +132,8 @@ class ImportService:
                     project_id=project.id,
                     importance=item.importance,
                     metadata=metadata,
-                )
+                ),
+                principal=principal,
             )
             entry_refs[item.ref] = created.id
             entries_created += 1
@@ -155,7 +159,8 @@ class ImportService:
                     strength=item.strength,
                     created_by_agent=item.created_by_agent,
                     metadata=self._mask_metadata(item.metadata),
-                )
+                ),
+                principal=principal,
             )
             created_links += 1
 
@@ -172,13 +177,16 @@ class ImportService:
             "conflicts": conflicts,
         }
 
-    def _resolve_project(self, project_payload: ProjectCreate | None, project_id: uuid.UUID | None) -> Project:
+    def _resolve_project(
+        self,
+        project_payload: ProjectCreate | None,
+        project_id: uuid.UUID | None,
+        *,
+        principal: AuthPrincipal | None = None,
+    ) -> Project:
         if project_payload:
-            return self.project_service.create_project(project_payload)
-        project = self.project_repository.get(project_id)
-        if not project:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-        return project
+            return self.project_service.create_project(project_payload, principal=principal)
+        return self.project_service.get_project(project_id, principal=principal)
 
     def _mask_text(self, value: str | None) -> str | None:
         if value is None:

@@ -15,3 +15,10 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     memory_entries = relationship("MemoryEntry", back_populates="project")
+
+    @property
+    def tenant_id(self) -> str | None:
+        if not isinstance(self.metadata_, dict):
+            return None
+        value = self.metadata_.get("tenant_id")
+        return str(value) if value is not None else None
