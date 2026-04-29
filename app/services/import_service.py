@@ -1,9 +1,11 @@
 import re
 import uuid
 from copy import deepcopy
+from dataclasses import dataclass
 
 from fastapi import HTTPException, status
 
+from app.models.enums import MemoryType
 from app.models.project import Project
 from app.repositories.link_repository import LinkRepository
 from app.repositories.memory_repository import MemoryRepository
@@ -12,6 +14,7 @@ from app.schemas.imports import ProjectImportRequest
 from app.schemas.links import LinkCreate
 from app.schemas.memory import MemoryCreate
 from app.schemas.projects import ProjectCreate
+from app.services.conflict_detector import ConflictDetector
 from app.services.memory_service import MemoryService, ProjectService
 
 
@@ -21,6 +24,16 @@ SECRET_PATTERNS = [
     re.compile(r"(?i)(password\s*[:=]\s*)([^\s,;]+)"),
     re.compile(r"(?i)(secret\s*[:=]\s*)([^\s,;]+)"),
 ]
+
+
+@dataclass
+class ImportDecisionCandidate:
+    id: str
+    type: str
+    title: str | None
+    content: str
+    project_id: str | None
+    metadata: dict
 
 
 class ImportService:
@@ -33,9 +46,15 @@ class ImportService:
         self.memory_service = MemoryService(memory_repository, project_repository, link_repository)
         self.project_service = ProjectService(project_repository)
         self.project_repository = project_repository
+        self.memory_repository = memory_repository
+        self.conflict_detector = ConflictDetector()
 
     def import_project_scan(self, payload: ProjectImportRequest) -> dict:
         project = self._resolve_project(payload.project, payload.project_id)
+        conflicts = self._detect_conflicts(project, payload) if payload.detect_conflicts else []
+        conflicts_by_ref: dict[str, list[dict]] = {}
+        for item in conflicts:
+            conflicts_by_ref.setdefault(item["entry_ref"], []).append(item)
         import_event = self.memory_service.create_memory(
             MemoryCreate(
                 type="event",
@@ -55,6 +74,20 @@ class ImportService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Duplicate entry ref: {item.ref}",
                 )
+            metadata = self._mask_metadata(item.metadata)
+            if item.ref in conflicts_by_ref:
+                metadata["requires_review"] = True
+                metadata["import_conflicts"] = [
+                    {
+                        "reason": conflict["reason"],
+                        "confidence": conflict["confidence"],
+                        "conflicting_entry_id": str(conflict["conflicting_entry_id"])
+                        if conflict["conflicting_entry_id"]
+                        else None,
+                        "conflicting_ref": conflict["conflicting_ref"],
+                    }
+                    for conflict in conflicts_by_ref[item.ref]
+                ]
             created = self.memory_service.create_memory(
                 MemoryCreate(
                     type=item.type,
@@ -63,7 +96,7 @@ class ImportService:
                     source_agent=item.source_agent,
                     project_id=project.id,
                     importance=item.importance,
-                    metadata=self._mask_metadata(item.metadata),
+                    metadata=metadata,
                 )
             )
             entry_refs[item.ref] = created.id
@@ -95,6 +128,8 @@ class ImportService:
             "entries_created": len(entry_refs),
             "links_created": created_links,
             "entry_refs": entry_refs,
+            "conflicts_detected": len(conflicts),
+            "conflicts": conflicts,
         }
 
     def _resolve_project(self, project_payload: ProjectCreate | None, project_id: uuid.UUID | None) -> Project:
@@ -123,3 +158,42 @@ class ImportService:
             elif isinstance(value, list):
                 masked[key] = [self._mask_text(item) if isinstance(item, str) else item for item in value]
         return masked
+
+    def _detect_conflicts(self, project: Project, payload: ProjectImportRequest) -> list[dict]:
+        existing_decisions = self.memory_repository.list(
+            project_id=project.id,
+            memory_type=MemoryType.decision,
+            archived=False,
+        )
+        seen_batch_decisions: list[ImportDecisionCandidate] = []
+        conflicts: list[dict] = []
+
+        for item in payload.entries:
+            if item.type != MemoryType.decision:
+                continue
+
+            candidate = ImportDecisionCandidate(
+                id=item.ref,
+                type=item.type.value,
+                title=self._mask_text(item.title),
+                content=self._mask_text(item.content) or "",
+                project_id=str(project.id),
+                metadata=self._mask_metadata(item.metadata),
+            )
+            detected = self.conflict_detector.detect(candidate, [*existing_decisions, *seen_batch_decisions])
+            for match in detected:
+                conflict_payload = {
+                    "entry_ref": item.ref,
+                    "conflicting_entry_id": None,
+                    "conflicting_ref": None,
+                    "reason": match.reason,
+                    "confidence": match.confidence,
+                }
+                try:
+                    conflict_payload["conflicting_entry_id"] = uuid.UUID(match.existing_entry_id)
+                except ValueError:
+                    conflict_payload["conflicting_ref"] = match.existing_entry_id
+                conflicts.append(conflict_payload)
+            seen_batch_decisions.append(candidate)
+
+        return conflicts

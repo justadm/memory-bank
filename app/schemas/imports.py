@@ -39,6 +39,7 @@ class ProjectImportRequest(BaseModel):
     import_event: ProjectImportEvent = Field(default_factory=ProjectImportEvent)
     entries: list[ProjectImportEntry] = Field(default_factory=list)
     links: list[ProjectImportLink] = Field(default_factory=list)
+    detect_conflicts: bool = True
 
     @model_validator(mode="after")
     def validate_project_source(self) -> "ProjectImportRequest":
@@ -47,9 +48,19 @@ class ProjectImportRequest(BaseModel):
         return self
 
 
+class ProjectImportConflictResponse(BaseModel):
+    entry_ref: str
+    conflicting_entry_id: uuid.UUID | None = None
+    conflicting_ref: str | None = None
+    reason: str
+    confidence: float
+
+
 class ProjectImportResponse(BaseModel):
     project: ProjectResponse
     import_event_id: uuid.UUID
     entries_created: int
     links_created: int
     entry_refs: dict[str, uuid.UUID]
+    conflicts_detected: int = 0
+    conflicts: list[ProjectImportConflictResponse] = Field(default_factory=list)

@@ -98,6 +98,15 @@ PYTHONPATH=$PWD .venv313/bin/python examples/simple_agent.py
 PYTHONPATH=$PWD MEMORYBANK_URL=http://127.0.0.1:18100 .venv313/bin/python examples/project_importer.py
 ```
 
+И CLI-импорт локального проекта:
+
+```bash
+PYTHONPATH=$PWD .venv313/bin/python scripts/import_project_cli.py \
+  --project-root /path/to/project \
+  --memorybank-url http://127.0.0.1:18100 \
+  --dry-run
+```
+
 Он следует циклу:
 
 ```text
@@ -160,6 +169,9 @@ READ -> ACT -> WRITE -> LINK
 - пакетно создать memory entries с `ref`
 - пакетно создать связи между ними через `from_ref` / `to_ref`
 - базово маскировать строки вида `api_key=...`, `token=...`, `password=...`, `secret=...`
+- консервативно помечать конфликтующие `decision` entries как `requires_review=true`
+
+При включённом conflict detection response также возвращает список найденных конфликтов с `reason` и `confidence`.
 
 Поддерживаемые типы памяти теперь включают:
 

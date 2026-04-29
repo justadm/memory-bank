@@ -451,6 +451,48 @@ def test_project_import_scan_endpoint(client):
     assert "super-secret-value" not in imported_risk["content"]
 
 
+def test_project_import_detects_conflicting_decisions(client):
+    project = client.post("/projects", json={"name": "Conflict Project"}).json()
+    client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "Use PostgreSQL",
+            "content": "We use PostgreSQL as the main database.",
+            "project_id": project["id"],
+        },
+    )
+
+    response = client.post(
+        "/imports/project-scan",
+        json={
+            "project_id": project["id"],
+            "entries": [
+                {
+                    "ref": "decision-db",
+                    "type": "decision",
+                    "title": "Use MongoDB",
+                    "content": "We should replace PostgreSQL with MongoDB for the main database.",
+                    "importance": 4,
+                }
+            ],
+            "links": [],
+            "detect_conflicts": True,
+        },
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["conflicts_detected"] >= 1
+    assert body["conflicts"][0]["entry_ref"] == "decision-db"
+    assert "postgresql" in body["conflicts"][0]["reason"].lower()
+
+    listed = client.get("/memory", params={"project_id": project["id"]})
+    assert listed.status_code == 200
+    imported = next(item for item in listed.json()["items"] if item["title"] == "Use MongoDB")
+    assert imported["metadata"]["requires_review"] is True
+    assert imported["metadata"]["import_conflicts"]
+
+
 def test_relevant_memory_creates_access_log(client, db_session: Session):
     created = client.post(
         "/memory",

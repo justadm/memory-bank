@@ -65,3 +65,4 @@
 - Reviewed `/Users/just/apps/memorybank_production_addons` and used its observability direction to add a lightweight admin summary endpoint instead of dragging in the entire production stack.
 - Reviewed `/Users/just/apps/Importer.md` and started aligning the API with a real import-agent workflow: structured project import plus explicit `constraint` and `risk` memory types.
 - Continued the `Importer.md` direction into the embedded SDK so project-import agents can call the import flow directly and use a ready-made example importer script.
+- Added conservative decision conflict detection to the import flow and introduced a local project-import CLI with `--dry-run`, so repository scanning is reusable and safer before writing to Memory Bank.
