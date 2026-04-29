@@ -67,10 +67,35 @@ with MemoryBankClient("http://localhost:8000") as client:
     print(health)
 ```
 
+SDK теперь также умеет вызывать structured import flow:
+
+```python
+from memorybank_sdk import MemoryBankClient
+
+with MemoryBankClient("http://localhost:18100") as client:
+    result = client.import_project_scan(
+        project={"name": "Imported Project"},
+        entries=[
+            {"ref": "decision-db", "type": "decision", "content": "Use PostgreSQL."},
+            {"ref": "risk-secrets", "type": "risk", "content": "Never store api_key=..."},
+        ],
+        links=[
+            {"from_ref": "risk-secrets", "to_ref": "decision-db", "type": "affects"},
+        ],
+    )
+    print(result["entries_created"])
+```
+
 И пример агента:
 
 ```bash
 PYTHONPATH=$PWD .venv313/bin/python examples/simple_agent.py
+```
+
+И пример импортёра:
+
+```bash
+PYTHONPATH=$PWD MEMORYBANK_URL=http://127.0.0.1:18100 .venv313/bin/python examples/project_importer.py
 ```
 
 Он следует циклу:

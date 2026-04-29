@@ -6,7 +6,7 @@ from typing import Any, Literal
 import httpx
 
 
-MemoryType = Literal["decision", "task", "artifact", "event", "note"]
+MemoryType = Literal["decision", "task", "artifact", "event", "note", "constraint", "risk"]
 LinkType = Literal[
     "depends_on",
     "related_to",
@@ -63,6 +63,34 @@ class MemoryBankClient:
             "POST",
             "/projects",
             json={"name": name, "description": description, "metadata": metadata or {}},
+        )
+
+    def import_project_scan(
+        self,
+        *,
+        project: dict[str, Any] | None = None,
+        project_id: str | None = None,
+        import_event: dict[str, Any] | None = None,
+        entries: list[dict[str, Any]] | None = None,
+        links: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/imports/project-scan",
+            json={
+                "project": project,
+                "project_id": project_id,
+                "import_event": import_event
+                or {
+                    "title": "Initial project import",
+                    "content": "Imported existing project into MemoryBank.",
+                    "source_agent": "memorybank-import-agent",
+                    "importance": 3,
+                    "metadata": {"import_type": "initial_project_scan"},
+                },
+                "entries": entries or [],
+                "links": links or [],
+            },
         )
 
     def add_memory(

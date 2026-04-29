@@ -6,6 +6,7 @@ class FakeMemoryClient:
         self.created_links: list[dict] = []
         self.saved_payloads: list[dict] = []
         self.task_logs: list[dict] = []
+        self.import_payloads: list[dict] = []
 
     def get_relevant_memory(self, **kwargs):
         return {
@@ -43,6 +44,16 @@ class FakeMemoryClient:
     def create_task_log(self, **kwargs):
         self.task_logs.append(kwargs)
         return {"id": "task-log-1", **kwargs}
+
+    def import_project_scan(self, **kwargs):
+        self.import_payloads.append(kwargs)
+        return {
+            "project": {"id": "project-1", "name": kwargs["project"]["name"]},
+            "import_event_id": "event-1",
+            "entries_created": len(kwargs.get("entries", [])),
+            "links_created": len(kwargs.get("links", [])),
+            "entry_refs": {item["ref"]: f"memory-{index}" for index, item in enumerate(kwargs.get("entries", []), start=1)},
+        }
 
 
 def test_memory_aware_agent_run_links_used_context():
@@ -86,3 +97,21 @@ def test_memory_aware_agent_supports_structured_handler_output():
     assert result["reasoning"] == "According to memory, keep PostgreSQL."
     assert result["memory_entry"]["metadata"]["mode"] == "review"
     assert result["task_log"]["result_quality_score"] == 0.9
+
+
+def test_sdk_project_import_helper():
+    client = FakeMemoryClient()
+
+    result = client.import_project_scan(
+        project={"name": "Imported Project", "description": "SDK import"},
+        entries=[
+            {"ref": "decision-db", "type": "decision", "content": "Use PostgreSQL."},
+            {"ref": "risk-secrets", "type": "risk", "content": "Never keep token=abc."},
+        ],
+        links=[{"from_ref": "risk-secrets", "to_ref": "decision-db", "type": "affects"}],
+    )
+
+    assert result["project"]["name"] == "Imported Project"
+    assert result["entries_created"] == 2
+    assert result["links_created"] == 1
+    assert client.import_payloads[0]["entries"][1]["type"] == "risk"
