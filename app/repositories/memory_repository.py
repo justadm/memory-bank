@@ -22,6 +22,9 @@ class MemoryRepository:
         self.db.refresh(entry)
         return entry
 
+    def is_postgresql(self) -> bool:
+        return bool(self.db.bind and self.db.bind.dialect.name == "postgresql")
+
     def get(self, entry_id: uuid.UUID) -> MemoryEntry | None:
         return self.db.get(MemoryEntry, entry_id)
 

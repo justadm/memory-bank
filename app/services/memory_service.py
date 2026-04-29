@@ -81,7 +81,7 @@ class MemoryService:
             project_id=payload.project_id,
             importance=payload.importance,
             metadata_=payload.metadata,
-            search_vector=self._build_search_payload(payload.title, payload.content),
+            search_vector=None if self.memory_repository.is_postgresql() else self._build_search_payload(payload.title, payload.content),
         )
         created = self.memory_repository.create(entry)
         self.memory_repository.sync_search_vector(created, self._build_search_payload(created.title, created.content))
@@ -110,7 +110,7 @@ class MemoryService:
             else:
                 setattr(entry, field, value)
         if "title" in data or "content" in data:
-            entry.search_vector = self._build_search_payload(entry.title, entry.content)
+            entry.search_vector = None if self.memory_repository.is_postgresql() else self._build_search_payload(entry.title, entry.content)
         self.memory_repository.db.add(entry)
         self.memory_repository.db.flush()
         self.memory_repository.db.refresh(entry)

@@ -12,7 +12,9 @@ def fake_llm_handler(task: str, memory_context: list[dict]) -> str:
         for item in memory_context
     )
 
-    return f"""
+    return {
+        "reasoning": f"Used {len(memory_context)} memory items before producing the answer.",
+        "answer": f"""
 Task completed: {task}
 
 Relevant memory used:
@@ -23,7 +25,9 @@ Decision handling:
 
 Result:
 Implemented according to available Memory Bank context.
-""".strip()
+""".strip(),
+        "metadata": {"example": True},
+    }
 
 
 def main() -> None:
@@ -35,6 +39,8 @@ def main() -> None:
             agent_id="example-agent",
             memory=client,
             project_id=project_id,
+            experiment_id="sdk-example",
+            group_name="WITH_MEMORY",
         )
         result = agent.run(
             "Implement search endpoint for Memory Bank",
@@ -46,8 +52,9 @@ def main() -> None:
 
     print("Saved memory:", result["memory_entry"])
     print("Linked to:", result["linked_to"])
+    print("Evaluation:", result["evaluation"])
+    print("Task log:", result["task_log"])
 
 
 if __name__ == "__main__":
     main()
-

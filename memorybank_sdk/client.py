@@ -180,9 +180,61 @@ class MemoryBankClient:
     def get_graph(self, memory_id: str, depth: int = 2) -> dict[str, Any]:
         return self._request("GET", f"/memory/{memory_id}/graph", params={"depth": depth})
 
+    def evaluate_memory_usage(
+        self,
+        *,
+        task: str,
+        memory: list[dict[str, Any]],
+        reasoning: str = "",
+        answer: str = "",
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/evaluation/evaluate",
+            json={"task": task, "memory": memory, "reasoning": reasoning, "answer": answer},
+        )
+
+    def evaluate_memory_usage_batch(self, items: list[dict[str, Any]]) -> dict[str, Any]:
+        return self._request("POST", "/evaluation/evaluate-batch", json={"items": items})
+
+    def create_task_log(
+        self,
+        *,
+        task_description: str,
+        used_memory: bool,
+        memory_entries_count: int,
+        experiment_id: str | None = None,
+        group_name: str | None = None,
+        agent_id: str | None = None,
+        duration_seconds: float | None = None,
+        result_quality_score: float | None = None,
+        duplicate_count: int = 0,
+        consistency_score: float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/task-logs",
+            json={
+                "experiment_id": experiment_id,
+                "group_name": group_name,
+                "agent_id": agent_id,
+                "task_description": task_description,
+                "used_memory": used_memory,
+                "memory_entries_count": memory_entries_count,
+                "duration_seconds": duration_seconds,
+                "result_quality_score": result_quality_score,
+                "duplicate_count": duplicate_count,
+                "consistency_score": consistency_score,
+                "metadata": metadata or {},
+            },
+        )
+
+    def import_task_logs(self, items: list[dict[str, Any]]) -> dict[str, Any]:
+        return self._request("POST", "/task-logs/import", json={"items": items})
+
     def __enter__(self) -> MemoryBankClient:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
-

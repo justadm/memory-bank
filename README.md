@@ -77,6 +77,12 @@ PYTHONPATH=$PWD .venv313/bin/python examples/simple_agent.py
 READ -> ACT -> WRITE -> LINK
 ```
 
+`MemoryAwareAgent` теперь также может автоматически:
+
+- вызывать evaluator
+- логировать `task_logs`
+- сохранять `duration_seconds`, `result_quality_score`, `consistency_score`
+
 ## Task Logs и Eval Hooks
 
 Из `memorybank_eval_pack` в ядро сервиса добавлен минимальный слой аналитики:

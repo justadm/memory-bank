@@ -61,3 +61,4 @@
 - Added an embedded evaluator endpoint inspired by `memorybank_eval_pack` for rule-based memory-usage assessment.
 - Added a built-in metrics overview API so the service can expose key memory/graph/task observability data without requiring an external dashboard first.
 - Extended the eval layer with batch evaluation and task-log import flow so evaluation payloads and experiment logs can move in larger chunks.
+- Upgraded the embedded SDK so `MemoryAwareAgent` can automatically evaluate completed runs and write `task_logs` without extra orchestration code.
