@@ -73,6 +73,7 @@ class MemoryBankClient:
         import_event: dict[str, Any] | None = None,
         entries: list[dict[str, Any]] | None = None,
         links: list[dict[str, Any]] | None = None,
+        detect_conflicts: bool = True,
     ) -> dict[str, Any]:
         return self._request(
             "POST",
@@ -90,6 +91,7 @@ class MemoryBankClient:
                 },
                 "entries": entries or [],
                 "links": links or [],
+                "detect_conflicts": detect_conflicts,
             },
         )
 

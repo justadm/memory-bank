@@ -493,6 +493,42 @@ def test_project_import_detects_conflicting_decisions(client):
     assert imported["metadata"]["import_conflicts"]
 
 
+def test_admin_import_conflicts_endpoint(client):
+    project = client.post("/projects", json={"name": "Admin Conflict Project"}).json()
+    client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "Use PostgreSQL",
+            "content": "Keep PostgreSQL as the database.",
+            "project_id": project["id"],
+        },
+    )
+    client.post(
+        "/imports/project-scan",
+        json={
+            "project_id": project["id"],
+            "entries": [
+                {
+                    "ref": "decision-db",
+                    "type": "decision",
+                    "title": "Use MySQL",
+                    "content": "Move from PostgreSQL to MySQL.",
+                }
+            ],
+            "links": [],
+            "detect_conflicts": True,
+        },
+    )
+
+    response = client.get("/admin/import-conflicts", params={"project_id": project["id"], "limit": 10})
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["items"]) == 1
+    assert body["items"][0]["requires_review"] is True
+    assert body["items"][0]["conflicts"]
+
+
 def test_relevant_memory_creates_access_log(client, db_session: Session):
     created = client.post(
         "/memory",

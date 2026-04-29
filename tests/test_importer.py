@@ -1,4 +1,4 @@
-from memorybank_sdk.importer import build_project_import_payload
+from memorybank_sdk.importer import build_directory_import_payloads, build_project_import_payload
 
 
 def test_build_project_import_payload_extracts_entries_and_tasks(tmp_path):
@@ -22,3 +22,21 @@ def test_build_project_import_payload_extracts_entries_and_tasks(tmp_path):
     assert "note-tests-coverage" in refs
     assert any(item["type"] == "task" for item in payload["entries"])
     assert any(link["type"] == "derived_from" for link in payload["links"])
+
+
+def test_build_directory_import_payloads_collects_child_projects(tmp_path):
+    first = tmp_path / "alpha"
+    first.mkdir()
+    (first / "README.md").write_text("# Alpha\n", encoding="utf-8")
+
+    second = tmp_path / "beta"
+    second.mkdir()
+    (second / "requirements.txt").write_text("fastapi\n", encoding="utf-8")
+
+    ignored = tmp_path / "notes"
+    ignored.mkdir()
+
+    payloads = build_directory_import_payloads(tmp_path)
+
+    names = [item["project"]["name"] for item in payloads]
+    assert names == ["alpha", "beta"]

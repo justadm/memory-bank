@@ -66,3 +66,6 @@
 - Reviewed `/Users/just/apps/Importer.md` and started aligning the API with a real import-agent workflow: structured project import plus explicit `constraint` and `risk` memory types.
 - Continued the `Importer.md` direction into the embedded SDK so project-import agents can call the import flow directly and use a ready-made example importer script.
 - Added conservative decision conflict detection to the import flow and introduced a local project-import CLI with `--dry-run`, so repository scanning is reusable and safer before writing to Memory Bank.
+- Extended the importer to batch-import child projects from a directory and added an admin endpoint for reviewing import conflicts after those scans.
+- Live verification uncovered two runtime integration issues: the SDK helper initially missed the `detect_conflicts` flag, and the Dockerized PostgreSQL runtime needed the `20260429_0004` enum migration before real project imports could succeed.
+- After fixing that path, successfully batch-imported the real local projects `/Users/just/projects/APUAI` and `/Users/just/projects/max`; the live `/admin/import-conflicts` endpoint currently reports no detected conflicts for those imports.

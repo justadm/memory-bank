@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 
 from pydantic import BaseModel
@@ -29,3 +30,17 @@ class ObservabilitySummaryResponse(BaseModel):
     recent_activity: ObservabilityRecentActivityResponse
     top_agents: list[ObservabilityBreakdownItem]
     top_experiments: list[ObservabilityBreakdownItem]
+
+
+class ImportConflictItemResponse(BaseModel):
+    entry_id: uuid.UUID
+    project_id: uuid.UUID | None
+    title: str | None
+    type: str
+    created_at: datetime
+    requires_review: bool
+    conflicts: list[dict]
+
+
+class ImportConflictListResponse(BaseModel):
+    items: list[ImportConflictItemResponse]

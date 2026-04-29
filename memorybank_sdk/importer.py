@@ -99,6 +99,27 @@ def build_project_import_payload(
     }
 
 
+def build_directory_import_payloads(
+    projects_root: str | Path,
+    *,
+    names: list[str] | None = None,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    root = Path(projects_root).resolve()
+    candidates = []
+    for path in sorted(root.iterdir()):
+        if not path.is_dir() or path.name.startswith(".") or path.name in EXCLUDED_DIRS:
+            continue
+        if names and path.name not in set(names):
+            continue
+        if _looks_like_project(path):
+            candidates.append(path)
+    if limit is not None:
+        candidates = candidates[:limit]
+
+    return [build_project_import_payload(path, project_name=path.name) for path in candidates]
+
+
 def _read_important_files(root: Path) -> dict[str, str]:
     files: dict[str, str] = {}
     for candidate in IMPORTANT_FILENAMES:
@@ -115,6 +136,17 @@ def _read_important_files(root: Path) -> dict[str, str]:
         files["tests/"] = _summarize_tests_dir(tests_dir)
 
     return files
+
+
+def _looks_like_project(path: Path) -> bool:
+    for candidate in IMPORTANT_FILENAMES:
+        if (path / candidate).exists():
+            return True
+    if (path / "app" / "main.py").exists():
+        return True
+    if (path / "tests").exists():
+        return True
+    return False
 
 
 def _derive_project_description(files: dict[str, str]) -> str:

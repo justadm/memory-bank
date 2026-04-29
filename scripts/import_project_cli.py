@@ -5,22 +5,40 @@ import json
 import os
 from pathlib import Path
 
-from memorybank_sdk import MemoryBankClient, build_project_import_payload
+from memorybank_sdk import MemoryBankClient, build_directory_import_payloads, build_project_import_payload
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Scan a local project and import it into Memory Bank.")
     parser.add_argument("--project-root", default=".", help="Path to the project that should be scanned.")
+    parser.add_argument("--projects-directory", default=None, help="Import all detected child projects from this directory.")
     parser.add_argument("--memorybank-url", default=os.getenv("MEMORYBANK_URL", "http://127.0.0.1:18100"))
     parser.add_argument("--project-name", default=None)
     parser.add_argument("--project-description", default=None)
     parser.add_argument("--existing-project-id", default=None)
+    parser.add_argument("--names", default=None, help="Comma-separated child project names when using --projects-directory.")
+    parser.add_argument("--limit", type=int, default=None, help="Max child projects to import when using --projects-directory.")
     parser.add_argument("--dry-run", action="store_true", help="Print the generated payload instead of sending it.")
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
+    if args.projects_directory:
+        names = [item.strip() for item in args.names.split(",") if item.strip()] if args.names else None
+        payloads = build_directory_import_payloads(
+            Path(args.projects_directory),
+            names=names,
+            limit=args.limit,
+        )
+        if args.dry_run:
+            print(json.dumps(payloads, indent=2, ensure_ascii=False))
+            return
+        with MemoryBankClient(args.memorybank_url) as client:
+            results = [client.import_project_scan(**payload) for payload in payloads]
+        print(json.dumps(results, indent=2, ensure_ascii=False, default=str))
+        return
+
     payload = build_project_import_payload(
         Path(args.project_root),
         project_name=args.project_name,

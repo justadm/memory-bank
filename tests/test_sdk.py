@@ -46,6 +46,7 @@ class FakeMemoryClient:
         return {"id": "task-log-1", **kwargs}
 
     def import_project_scan(self, **kwargs):
+        kwargs.setdefault("detect_conflicts", True)
         self.import_payloads.append(kwargs)
         return {
             "project": {"id": "project-1", "name": kwargs["project"]["name"]},
@@ -115,3 +116,4 @@ def test_sdk_project_import_helper():
     assert result["entries_created"] == 2
     assert result["links_created"] == 1
     assert client.import_payloads[0]["entries"][1]["type"] == "risk"
+    assert client.import_payloads[0]["detect_conflicts"] is True

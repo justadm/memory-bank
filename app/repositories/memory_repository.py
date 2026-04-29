@@ -44,6 +44,25 @@ class MemoryRepository:
             stmt = stmt.where(MemoryEntry.archived == archived)
         return list(self.db.scalars(stmt))
 
+    def list_import_conflicts(
+        self,
+        *,
+        project_id: uuid.UUID | None = None,
+        limit: int = 20,
+    ) -> list[MemoryEntry]:
+        stmt = select(MemoryEntry).order_by(MemoryEntry.created_at.desc())
+        if project_id:
+            stmt = stmt.where(MemoryEntry.project_id == project_id)
+        items = list(self.db.scalars(stmt.limit(max(limit * 3, limit))))
+        conflicted = [
+            item
+            for item in items
+            if isinstance(item.metadata_, dict)
+            and item.metadata_.get("requires_review") is True
+            and item.metadata_.get("import_conflicts")
+        ]
+        return conflicted[:limit]
+
     def search(
         self,
         *,

@@ -107,6 +107,15 @@ PYTHONPATH=$PWD .venv313/bin/python scripts/import_project_cli.py \
   --dry-run
 ```
 
+И batch-импорт нескольких подпроектов из каталога:
+
+```bash
+PYTHONPATH=$PWD .venv313/bin/python scripts/import_project_cli.py \
+  --projects-directory /Users/just/projects \
+  --names max,APUAI \
+  --memorybank-url http://127.0.0.1:18100
+```
+
 Он следует циклу:
 
 ```text
@@ -145,6 +154,7 @@ READ -> ACT -> WRITE -> LINK
 
 - `GET /metrics/overview`
 - `GET /admin/observability/summary`
+- `GET /admin/import-conflicts`
 
 Он возвращает сводку по:
 
@@ -155,6 +165,8 @@ READ -> ACT -> WRITE -> LINK
 Можно фильтровать по `project_id` для memory/graph и по `agent_id` / `experiment_id` для task logs.
 
 `GET /admin/observability/summary` даёт единый snapshot: environment, recent activity за 24 часа, top agents и top experiments.
+
+`GET /admin/import-conflicts` возвращает импортированные записи, которые были помечены как `requires_review` из-за конфликтующих решений.
 
 ## Project Import API
 
