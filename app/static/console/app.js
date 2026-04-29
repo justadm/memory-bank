@@ -137,6 +137,8 @@ const translations = {
     quickOverview: "Быстрый обзор",
     recentProjects: "Недавние проекты",
     reviewQueue: "Очередь review",
+    recentImports: "Последние импорты",
+    importSummary: "Сводка импортов",
     dashboardProjectCount: "Проектов",
     dashboardConflictCount: "Конфликтов",
     dashboardAgentCount: "Агентов",
@@ -178,6 +180,14 @@ const translations = {
       result_quality_score: "Качество",
       logged_at: "Лог",
       source_agent: "Source agent"
+    },
+    importHeaders: {
+      project_name: "Проект",
+      source_path: "Путь",
+      imported_entries_count: "Импорт записей",
+      import_events_count: "Import events",
+      conflicts_detected_count: "Конфликты",
+      last_imported_at: "Последний импорт"
     },
     searchInTable: "Поиск по таблице",
     selectedCount: "выбрано",
@@ -289,6 +299,8 @@ const translations = {
     quickOverview: "Quick overview",
     recentProjects: "Recent projects",
     reviewQueue: "Review queue",
+    recentImports: "Recent imports",
+    importSummary: "Import summary",
     dashboardProjectCount: "Projects",
     dashboardConflictCount: "Conflicts",
     dashboardAgentCount: "Agents",
@@ -331,6 +343,14 @@ const translations = {
       logged_at: "Logged",
       source_agent: "Source agent"
     },
+    importHeaders: {
+      project_name: "Project",
+      source_path: "Path",
+      imported_entries_count: "Imported entries",
+      import_events_count: "Import events",
+      conflicts_detected_count: "Conflicts",
+      last_imported_at: "Last import"
+    },
     searchInTable: "Search table",
     selectedCount: "selected",
     archiveSelected: "Archive selected",
@@ -354,6 +374,7 @@ const state = {
   metrics: null,
   taskSummary: null,
   conflicts: [],
+  importSummaries: [],
   taskLogs: [],
   memoryItems: [],
   memorySearchResults: [],
@@ -370,7 +391,9 @@ const state = {
     reviewConflicts: { page: 1, pageSize: 8, sortKey: "created_at", sortDir: "desc" },
     reviewTasks: { page: 1, pageSize: 8, sortKey: "logged_at", sortDir: "desc" },
     dashboardRecentProjects: { page: 1, pageSize: 5, sortKey: "updated_at", sortDir: "desc" },
-    dashboardReviewQueue: { page: 1, pageSize: 5, sortKey: "created_at", sortDir: "desc" }
+    dashboardReviewQueue: { page: 1, pageSize: 5, sortKey: "created_at", sortDir: "desc" },
+    dashboardImportSummaries: { page: 1, pageSize: 6, sortKey: "last_imported_at", sortDir: "desc" },
+    reviewImportSummaries: { page: 1, pageSize: 8, sortKey: "last_imported_at", sortDir: "desc" }
   },
   forms: {
     dashboardAgentId: "",
@@ -697,10 +720,12 @@ async function loadDashboardData() {
     apiRequest(`/task-logs/summary${query}`),
     apiRequest(`/admin/import-conflicts?limit=5${state.selectedProjectId ? `&project_id=${encodeURIComponent(state.selectedProjectId)}` : ""}`)
   ]);
+  const importSummaries = await apiRequest("/admin/imports/summary?limit=6");
   state.metrics = metrics;
   state.observability = observability;
   state.taskSummary = taskSummary;
   state.conflicts = conflicts.items || [];
+  state.importSummaries = importSummaries.items || [];
 }
 
 async function loadProjectFocusData() {
@@ -766,9 +791,11 @@ async function loadReviewData() {
     apiRequest(`/task-logs?${taskParams.toString()}`),
     apiRequest(`/task-logs/summary?${taskParams.toString()}`)
   ]);
+  const importSummaries = await apiRequest("/admin/imports/summary?limit=20");
   state.conflicts = conflicts.items || [];
   state.taskLogs = taskLogs.items || [];
   state.taskSummary = taskSummary;
+  state.importSummaries = importSummaries.items || [];
 }
 
 async function loadCurrentView() {
@@ -870,6 +897,10 @@ function projectSelectMarkup(name, selectedValue = "", includeAll = true) {
 }
 
 function columnLabel(column) {
+  const importLabel = t(`importHeaders.${column}`);
+  if (importLabel !== `importHeaders.${column}`) {
+    return importLabel;
+  }
   return t(`headers.${column}`);
 }
 
@@ -1062,6 +1093,13 @@ function renderDashboardView() {
             tableKey: "dashboardReviewQueue"
           })}
         </article>
+      </section>
+
+      <section class="table-card" style="margin-top:18px;">
+        <h3>${escapeHtml(t("recentImports"))}</h3>
+        ${renderTable((state.importSummaries || []).slice(0, 6), ["project_name", "source_path", "imported_entries_count", "conflicts_detected_count", "last_imported_at"], {
+          tableKey: "dashboardImportSummaries"
+        })}
       </section>
     </section>
 
@@ -1500,6 +1538,13 @@ function renderReviewView() {
           filterKeys: ["agent_id", "experiment_id", "task_description"]
         })}
       </article>
+    </section>
+
+    <section class="table-card" style="margin-top:18px;">
+      <h3>${escapeHtml(t("importSummary"))}</h3>
+      ${renderTable(state.importSummaries, ["project_name", "source_path", "imported_entries_count", "import_events_count", "conflicts_detected_count", "last_imported_at"], {
+        tableKey: "reviewImportSummaries"
+      })}
     </section>
   `;
 }

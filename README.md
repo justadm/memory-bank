@@ -34,6 +34,7 @@
 - показывать auth/scopes/tenant status через `GET /auth/me`
 - управлять `tenant_id` у проектов
 - переключать `lexical / semantic / hybrid` режимы memory search
+- показывать import summaries через `GET /admin/imports/summary`
 
 `docker-compose.yml` уже содержит healthcheck для PostgreSQL, поэтому `api` стартует после готовности БД.
 

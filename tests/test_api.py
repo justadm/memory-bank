@@ -25,6 +25,7 @@ def test_console_assets_include_tenant_and_search_controls(client):
     assert "memorySearchMode" in response.text
     assert "tenantId" in response.text
     assert "/auth/me" in response.text
+    assert "/admin/imports/summary" in response.text
 
 
 def test_project_crud_flow(client):
