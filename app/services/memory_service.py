@@ -2,6 +2,7 @@ import uuid
 
 from fastapi import HTTPException, status
 
+from app.config import get_settings
 from app.models.access_log import MemoryAccessLog
 from app.models.memory_entry import MemoryEntry
 from app.models.memory_link import MemoryLink
@@ -12,6 +13,7 @@ from app.repositories.project_repository import ProjectRepository
 from app.schemas.links import LinkCreate
 from app.schemas.memory import MemoryCreate, MemoryRelevantRequest, MemoryUpdate
 from app.schemas.projects import ProjectCreate, ProjectUpdate
+from app.services.auto_link_service import AutoLinkService
 from app.services.graph_service import GraphService
 from app.services.search_service import SearchService
 
@@ -60,8 +62,14 @@ class MemoryService:
         self.memory_repository = memory_repository
         self.project_repository = project_repository
         self.link_repository = link_repository
+        self.settings = get_settings()
         self.search_service = SearchService(memory_repository)
         self.graph_service = GraphService(link_repository)
+        self.auto_link_service = AutoLinkService(
+            memory_repository=memory_repository,
+            link_repository=link_repository,
+            settings=self.settings,
+        )
 
     def create_memory(self, payload: MemoryCreate) -> MemoryEntry:
         self._validate_project(payload.project_id)
@@ -75,7 +83,9 @@ class MemoryService:
             metadata_=payload.metadata,
             search_vector=self._build_search_payload(payload.title, payload.content),
         )
-        return self.memory_repository.create(entry)
+        created = self.memory_repository.create(entry)
+        self.auto_link_service.link_entry(created)
+        return created
 
     def get_memory(self, entry_id: uuid.UUID) -> MemoryEntry:
         entry = self.memory_repository.get(entry_id)

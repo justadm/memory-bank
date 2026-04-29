@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 os.environ["DATABASE_URL"] = "sqlite:///./test_memory_bank.db"
 
 from app.database import get_db  # noqa: E402
+from app.config import get_settings  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.base import Base  # noqa: E402
 
@@ -25,10 +26,12 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 @pytest.fixture(autouse=True)
 def setup_database():
+    get_settings.cache_clear()
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
+    get_settings.cache_clear()
 
 
 @pytest.fixture()

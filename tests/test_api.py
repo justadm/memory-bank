@@ -182,3 +182,32 @@ def test_relevant_memory_creates_access_log(client, db_session: Session):
     assert len(logs) == 1
     assert logs[0].agent_id == "retriever-agent"
     assert logs[0].metadata_ == {"trace_id": "abc-123"}
+
+
+def test_auto_link_on_create(client, monkeypatch):
+    monkeypatch.setenv("AUTO_LINK_ON_CREATE", "true")
+    monkeypatch.setenv("AUTO_LINK_MIN_SIMILARITY", "0.2")
+
+    first = client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "PostgreSQL search design",
+            "content": "Use PostgreSQL full text search for architecture and search tasks",
+        },
+    ).json()
+    second = client.post(
+        "/memory",
+        json={
+            "type": "artifact",
+            "title": "Search implementation notes",
+            "content": "Implement PostgreSQL search tasks and architecture notes",
+        },
+    ).json()
+
+    links = client.get(f"/memory/{second['id']}/links")
+    assert links.status_code == 200
+    outgoing = links.json()["outgoing"]
+    assert len(outgoing) == 1
+    assert outgoing[0]["to_entry_id"] == first["id"]
+    assert outgoing[0]["type"] == "related_to"

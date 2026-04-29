@@ -11,6 +11,7 @@
 - поиск по памяти с PostgreSQL FTS и fallback для SQLite-тестов
 - endpoint `POST /memory/relevant` с учётом usage/access logs
 - maintenance endpoint для архивации устаревшей памяти
+- опциональное auto-linking новых записей через bag-of-words similarity
 - Docker, Alembic и базовые API-тесты
 
 ## Быстрый старт
@@ -21,6 +22,19 @@
 4. Открыть `http://localhost:8000/docs`.
 
 `docker-compose.yml` уже содержит healthcheck для PostgreSQL, поэтому `api` стартует после готовности БД.
+
+## Auto-linking
+
+Можно включить автоматическое создание `related_to` связей после `POST /memory`:
+
+```env
+AUTO_LINK_ON_CREATE=true
+AUTO_LINK_MIN_SIMILARITY=0.35
+AUTO_LINK_SEARCH_LIMIT=20
+AUTO_LINK_MAX_LINKS=5
+```
+
+Фича вдохновлена подходом из `memorybank_agent_pack` и работает без внешних embeddings-сервисов.
 
 ## Журнал
 

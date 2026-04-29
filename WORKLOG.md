@@ -50,3 +50,5 @@
 - Fixed Alembic container import resolution and corrected the initial migration for PostgreSQL enum/JSONB behavior.
 - Confirmed live smoke calls for `POST /projects`, `POST /memory`, and `GET /health` against the Dockerized app.
 - Added `.dockerignore` and a PostgreSQL healthcheck in `docker-compose.yml` to make container startup lighter and more reliable.
+- Reviewed `/Users/just/apps/memorybank_agent_pack` and reused its most practical next-step idea: synchronous auto-linking for newly created memory entries.
+- Implemented optional server-side auto-linking on `POST /memory` using bag-of-words cosine similarity and added coverage for it.

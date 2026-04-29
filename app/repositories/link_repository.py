@@ -4,6 +4,7 @@ from collections import deque
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.models.enums import MemoryLinkType
 from app.models.memory_entry import MemoryEntry
 from app.models.memory_link import MemoryLink
 
@@ -20,6 +21,16 @@ class LinkRepository:
 
     def get(self, link_id: uuid.UUID) -> MemoryLink | None:
         return self.db.get(MemoryLink, link_id)
+
+    def find_by_pair(
+        self, from_entry_id: uuid.UUID, to_entry_id: uuid.UUID, link_type: MemoryLinkType
+    ) -> MemoryLink | None:
+        stmt = select(MemoryLink).where(
+            MemoryLink.from_entry_id == from_entry_id,
+            MemoryLink.to_entry_id == to_entry_id,
+            MemoryLink.type == link_type,
+        )
+        return self.db.scalar(stmt)
 
     def delete(self, link: MemoryLink) -> None:
         self.db.delete(link)
@@ -60,4 +71,3 @@ class LinkRepository:
         nodes = list(self.db.scalars(select(MemoryEntry).where(MemoryEntry.id.in_(visited))))
         edges = list(self.db.scalars(select(MemoryLink).where(MemoryLink.id.in_(edge_ids))))
         return nodes, edges
-
