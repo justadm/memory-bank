@@ -24,9 +24,27 @@ def get_current_principal(
     authorization: str | None = Header(default=None),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> AuthPrincipal:
+    principal = get_optional_principal(authorization=authorization, x_api_key=x_api_key)
+    if principal:
+        return principal
     settings = get_settings()
     if not settings.auth_enabled:
         return AuthPrincipal(name="anonymous", scopes={"read", "write", "import", "admin"}, api_key="")
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Missing API key",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def get_optional_principal(
+    authorization: str | None = Header(default=None),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> AuthPrincipal | None:
+    settings = get_settings()
+    if not settings.auth_enabled:
+        return None
 
     registry = _parse_auth_registry(settings.auth_api_keys)
     if not registry:
@@ -37,11 +55,7 @@ def get_current_principal(
 
     api_key = _extract_api_key(authorization, x_api_key)
     if not api_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API key",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        return None
 
     principal = registry.get(api_key)
     if not principal:

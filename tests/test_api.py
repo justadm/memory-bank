@@ -671,6 +671,34 @@ def test_auth_protects_write_endpoints_when_enabled(client, monkeypatch):
     assert authorized_read.status_code == 200
 
 
+def test_auth_me_reports_disabled_mode(client):
+    response = client.get("/auth/me")
+    assert response.status_code == 200
+    assert response.json()["auth_enabled"] is False
+    assert response.json()["authenticated"] is False
+    assert sorted(response.json()["scopes"]) == ["admin", "import", "read", "write"]
+
+
+def test_auth_me_reports_principal_and_tenants(client, monkeypatch):
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setenv("AUTH_API_KEYS", "tenant-admin:tenant-key:read|write|admin:tenant-a|tenant-b")
+
+    anonymous = client.get("/auth/me")
+    assert anonymous.status_code == 200
+    assert anonymous.json()["auth_enabled"] is True
+    assert anonymous.json()["authenticated"] is False
+    assert anonymous.json()["scopes"] == []
+
+    authenticated = client.get("/auth/me", headers={"Authorization": "Bearer tenant-key"})
+    assert authenticated.status_code == 200
+    body = authenticated.json()
+    assert body["authenticated"] is True
+    assert body["principal_name"] == "tenant-admin"
+    assert body["tenant_restricted"] is True
+    assert body["tenant_ids"] == ["tenant-a", "tenant-b"]
+    assert body["scopes"] == ["admin", "read", "write"]
+
+
 def test_auth_requires_admin_scope_for_admin_endpoints(client, monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "true")
     monkeypatch.setenv("AUTH_API_KEYS", "writer-key:write|import,admin-key:write|import|admin")

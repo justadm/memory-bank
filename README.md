@@ -98,6 +98,7 @@ AUTH_API_KEYS=tenant-agent:tenant-key:read|write|import:tenant-a|tenant-b
 ### Core endpoints
 
 - `GET /health`
+- `GET /auth/me`
 - `POST /projects`
 - `GET /projects`
 - `GET /projects/{id}`
@@ -129,6 +130,13 @@ AUTH_API_KEYS=tenant-agent:tenant-key:read|write|import:tenant-a|tenant-b
 
 ```bash
 curl -sS http://127.0.0.1:18100/health
+```
+
+### Узнать активные auth scopes и tenants
+
+```bash
+curl -sS http://127.0.0.1:18100/auth/me \
+  -H 'Authorization: Bearer tenant-key'
 ```
 
 ### Создать проект

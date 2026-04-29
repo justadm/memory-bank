@@ -79,3 +79,4 @@
 - Continued the auth track into tenant-aware RBAC hardening: clarified that read endpoints require auth when enabled, documented tenant-scoped API key format, fixed project updates so `tenant_id` survives metadata patches, and closed an import path that had not forwarded the current principal into the import event creation step.
 - Added regression coverage for tenant-preserving project updates and tenant-scoped import authorization.
 - Extended tenant-aware RBAC into observability: tenant-scoped keys now automatically stamp `task_logs` with `tenant_id` and only see their own `task_logs`, metrics, admin summaries, import conflict lists, and import summaries.
+- Added `GET /auth/me` so the future in-repo admin/frontend shell can discover whether auth is enabled, whether the current request is authenticated, and which scopes/tenants are attached to the current API key.
