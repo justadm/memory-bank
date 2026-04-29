@@ -309,6 +309,13 @@ button {
   margin-bottom: 22px;
 }
 
+.page-head-chips {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .page-title {
   margin: 0;
   font-size: clamp(2rem, 3vw, 3.5rem);
@@ -539,6 +546,8 @@ tbody tr.is-selected {
   border: 1px solid var(--line);
   color: var(--text-soft);
   font-size: 0.88rem;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .chip.status-true,

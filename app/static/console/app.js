@@ -86,6 +86,7 @@ const translations = {
     updateProject: "Обновить проект",
     projectName: "Название проекта",
     projectDescription: "Описание",
+    projectTenantId: "Tenant ID",
     projectMetadata: "Metadata JSON",
     selectProject: "Выбор проекта",
     create: "Создать",
@@ -95,6 +96,10 @@ const translations = {
     memoryCreate: "Создать запись",
     memoryUpdate: "Изменить запись",
     memorySearch: "Поиск",
+    searchMode: "Режим поиска",
+    searchModeHybrid: "Hybrid",
+    searchModeLexical: "Lexical",
+    searchModeSemantic: "Semantic",
     memoryType: "Тип",
     projectFilter: "Проект",
     archiveFilter: "Архив",
@@ -233,6 +238,7 @@ const translations = {
     updateProject: "Update project",
     projectName: "Project name",
     projectDescription: "Description",
+    projectTenantId: "Tenant ID",
     projectMetadata: "Metadata JSON",
     selectProject: "Select project",
     create: "Create",
@@ -242,6 +248,10 @@ const translations = {
     memoryCreate: "Create entry",
     memoryUpdate: "Update entry",
     memorySearch: "Search",
+    searchMode: "Search mode",
+    searchModeHybrid: "Hybrid",
+    searchModeLexical: "Lexical",
+    searchModeSemantic: "Semantic",
     memoryType: "Type",
     projectFilter: "Project",
     archiveFilter: "Archive",
@@ -371,6 +381,7 @@ const state = {
     memoryType: "",
     memoryArchived: "false",
     memoryQuery: "",
+    memorySearchMode: "hybrid",
     projectSearch: "",
     projectMemorySearch: "",
     reviewTaskSearch: "",
@@ -459,6 +470,30 @@ function authTenantsLabel() {
     return "all";
   }
   return state.auth.tenant_ids.join(", ");
+}
+
+function searchModeLabel(mode) {
+  const normalized = String(mode || "hybrid").toLowerCase();
+  if (normalized === "lexical") {
+    return t("searchModeLexical");
+  }
+  if (normalized === "semantic") {
+    return t("searchModeSemantic");
+  }
+  return t("searchModeHybrid");
+}
+
+function renderAuthChips() {
+  const chips = [
+    `<span class="chip">${escapeHtml(t("authState"))}: ${escapeHtml(authStateLabel())}</span>`
+  ];
+  if (state.auth?.authenticated && state.auth?.scopes?.length) {
+    chips.push(`<span class="chip">${escapeHtml(t("scopes"))}: ${escapeHtml(authScopesLabel())}</span>`);
+  }
+  if (state.auth?.authenticated) {
+    chips.push(`<span class="chip">${escapeHtml(t("tenants"))}: ${escapeHtml(authTenantsLabel())}</span>`);
+  }
+  return chips.join("");
 }
 
 function compareValues(left, right, sortKey) {
@@ -703,6 +738,7 @@ async function loadMemoryData() {
 
   if (state.forms.memoryQuery.trim()) {
     const searchParams = new URLSearchParams({ query: state.forms.memoryQuery.trim(), limit: "20" });
+    searchParams.set("mode", state.forms.memorySearchMode || "hybrid");
     if (state.selectedProjectId) {
       searchParams.set("project_id", state.selectedProjectId);
     }
@@ -1091,6 +1127,10 @@ function renderProjectsView() {
               <label>${escapeHtml(t("projectDescription"))}</label>
               <input name="description" />
             </div>
+            <div class="field">
+              <label>${escapeHtml(t("projectTenantId"))}</label>
+              <input name="tenantId" value="${escapeHtml(state.auth?.tenant_ids?.length === 1 ? state.auth.tenant_ids[0] : "")}" />
+            </div>
             <div class="field" style="grid-column: span 2;">
               <label>${escapeHtml(t("projectMetadata"))}</label>
               <textarea name="metadata">{}</textarea>
@@ -1120,6 +1160,10 @@ function renderProjectsView() {
                 <label>${escapeHtml(t("projectDescription"))}</label>
                 <input name="description" value="${escapeHtml(selectedProject.description || "")}" />
               </div>
+              <div class="field">
+                <label>${escapeHtml(t("projectTenantId"))}</label>
+                <input name="tenantId" value="${escapeHtml(selectedProject.tenant_id || "")}" />
+              </div>
               <div class="field" style="grid-column: span 2;">
                 <label>${escapeHtml(t("projectMetadata"))}</label>
                 <textarea name="metadata">${escapeHtml(JSON.stringify(selectedProject.metadata || {}, null, 2))}</textarea>
@@ -1141,6 +1185,10 @@ function renderProjectsView() {
         <article class="panel">
           <h3>${escapeHtml(selectedProject.name)}</h3>
           <p class="muted">${escapeHtml(selectedProject.description || "")}</p>
+          <div class="form-actions" style="margin-top: 0; margin-bottom: 18px;">
+            ${selectedProject.tenant_id ? `<div class="chip">${escapeHtml(t("projectTenantId"))}: ${escapeHtml(selectedProject.tenant_id)}</div>` : ""}
+            ${selectedProject.metadata?.source_path ? `<div class="chip">source: ${escapeHtml(selectedProject.metadata.source_path)}</div>` : ""}
+          </div>
           <div class="summary-grid">
             <div class="summary-tile">
               <div class="summary-kicker">${escapeHtml(t("dashboardCards.totalEntries"))}</div>
@@ -1186,12 +1234,12 @@ function renderProjectsView() {
     <section class="table-card" style="margin-top:18px;">
       <h3>${escapeHtml(t("projectsTitle"))}</h3>
       ${renderTableSearchField("projectSearch", state.forms.projectSearch)}
-      ${renderTable(state.projects, ["name", "description", "updated_at"], {
+      ${renderTable(state.projects, ["name", "tenant_id", "description", "updated_at"], {
         tableKey: "projects",
         selectable: "project",
         selectedId: selectedProject?.id,
         filterQuery: state.forms.projectSearch,
-        filterKeys: ["name", "description"]
+        filterKeys: ["name", "description", "tenant_id"]
       })}
     </section>
   `;
@@ -1225,6 +1273,14 @@ function renderMemoryView() {
         <div class="field">
           <label>${escapeHtml(t("memorySearch"))}</label>
           <input name="memoryQuery" value="${escapeHtml(state.forms.memoryQuery)}" />
+        </div>
+        <div class="field">
+          <label>${escapeHtml(t("searchMode"))}</label>
+          <select name="memorySearchMode">
+            <option value="hybrid" ${state.forms.memorySearchMode === "hybrid" ? "selected" : ""}>${escapeHtml(t("searchModeHybrid"))}</option>
+            <option value="lexical" ${state.forms.memorySearchMode === "lexical" ? "selected" : ""}>${escapeHtml(t("searchModeLexical"))}</option>
+            <option value="semantic" ${state.forms.memorySearchMode === "semantic" ? "selected" : ""}>${escapeHtml(t("searchModeSemantic"))}</option>
+          </select>
         </div>
       </div>
       <div class="form-actions">
@@ -1367,7 +1423,8 @@ function renderMemoryView() {
         ? `
       <section class="table-card" style="margin-top:18px;">
         <h3>${escapeHtml(t("memorySearch"))}</h3>
-        ${renderTable(state.memorySearchResults, ["type", "title", "score", "importance", "usage_count"], {
+        <div class="table-note" style="margin-bottom: 12px;">${escapeHtml(t("searchMode"))}: ${escapeHtml(searchModeLabel(state.forms.memorySearchMode))}</div>
+        ${renderTable(state.memorySearchResults, ["type", "title", "match_mode", "score", "semantic_score", "lexical_score", "importance", "usage_count"], {
           tableKey: "memorySearch",
           selectable: "memory",
           selectedId: selectedEntry?.id,
@@ -1685,7 +1742,10 @@ function render() {
               <h1 class="page-title">${escapeHtml(pageMeta.title)}</h1>
               <p class="page-description">${escapeHtml(pageMeta.description)}</p>
             </div>
-            <div class="chip">${escapeHtml(t("currentView"))}: ${escapeHtml(t(state.currentView))}</div>
+            <div class="page-head-chips">
+              <div class="chip">${escapeHtml(t("currentView"))}: ${escapeHtml(t(state.currentView))}</div>
+              ${renderAuthChips()}
+            </div>
           </section>
           <section class="banner panel">
             <div>●</div>
@@ -1712,6 +1772,7 @@ async function handleProjectCreate(form) {
   const payload = {
     name: String(formData.get("name") || "").trim(),
     description: String(formData.get("description") || "").trim() || null,
+    tenant_id: String(formData.get("tenantId") || "").trim() || null,
     metadata: parseJsonInput(String(formData.get("metadata") || "{}"))
   };
   await apiRequest("/projects", {
@@ -1732,6 +1793,7 @@ async function handleProjectUpdate(form) {
   const payload = {
     name: String(formData.get("name") || "").trim(),
     description: String(formData.get("description") || "").trim() || null,
+    tenant_id: String(formData.get("tenantId") || "").trim() || null,
     metadata: parseJsonInput(String(formData.get("metadata") || "{}"))
   };
   await apiRequest(`/projects/${projectId}`, {

@@ -19,6 +19,14 @@ def test_console_shell_served(client):
     assert "./app.js" in response.text
 
 
+def test_console_assets_include_tenant_and_search_controls(client):
+    response = client.get("/console/app.js")
+    assert response.status_code == 200
+    assert "memorySearchMode" in response.text
+    assert "tenantId" in response.text
+    assert "/auth/me" in response.text
+
+
 def test_project_crud_flow(client):
     created = client.post("/projects", json={"name": "Operations", "description": "Ops workspace"}).json()
 

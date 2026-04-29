@@ -28,6 +28,13 @@
 3. Применить миграции: `docker compose exec api alembic upgrade head`.
 4. Открыть `http://localhost:18100/docs` для API или `http://localhost:18100/console/` для встроенной консоли MemLayer.
 
+Встроенная консоль MemLayer уже умеет:
+- работать с same-origin API по умолчанию
+- хранить локальный API key
+- показывать auth/scopes/tenant status через `GET /auth/me`
+- управлять `tenant_id` у проектов
+- переключать `lexical / semantic / hybrid` режимы memory search
+
 `docker-compose.yml` уже содержит healthcheck для PostgreSQL, поэтому `api` стартует после готовности БД.
 
 Для формальной локальной проверки API-тестов можно использовать:
