@@ -72,3 +72,4 @@
 - Continued by deepening importer heuristics for Node.js, Go, and monorepo-style repositories and added an admin import summary view so operators can review what has already been imported, not just where conflicts happened.
 - Updated `roadmap.md` into a status-oriented checklist (`готово / частично / не начато`) and documented the near-term plan directly in the roadmap.
 - Added re-import modes for project scans (`create`, `skip`, `update`) so repeated imports can avoid duplicates or refresh previously imported entries in place.
+- Closed another roadmap-docs gap by extending `README.md` with an API quick reference, explicit memory/link type lists, `curl` examples, and the formal Docker test command.

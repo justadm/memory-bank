@@ -30,6 +30,188 @@
 
 `docker-compose.yml` уже содержит healthcheck для PostgreSQL, поэтому `api` стартует после готовности БД.
 
+Для формальной локальной проверки API-тестов можно использовать:
+
+```bash
+docker compose exec api pytest
+```
+
+## API Quick Reference
+
+### Memory types
+
+- `decision`
+- `task`
+- `artifact`
+- `event`
+- `note`
+- `constraint`
+- `risk`
+
+### Link types
+
+- `depends_on`
+- `related_to`
+- `created_after`
+- `affects`
+- `derived_from`
+- `blocks`
+- `resolves`
+
+### Core endpoints
+
+- `GET /health`
+- `POST /projects`
+- `GET /projects`
+- `GET /projects/{id}`
+- `PATCH /projects/{id}`
+- `DELETE /projects/{id}`
+- `POST /memory`
+- `GET /memory`
+- `GET /memory/{id}`
+- `PATCH /memory/{id}`
+- `POST /memory/{id}/archive`
+- `GET /memory/search`
+- `POST /memory/relevant`
+- `POST /memory-links`
+- `GET /memory/{id}/links`
+- `GET /memory/{id}/graph`
+- `POST /maintenance/archive-stale`
+- `POST /maintenance/rebuild-search-vectors`
+- `POST /imports/project-scan`
+- `GET /metrics/overview`
+- `GET /admin/observability/summary`
+- `GET /admin/import-conflicts`
+- `GET /admin/imports/summary`
+
+## curl Examples
+
+Во всех примерах ниже используется дефолтный host port `18100`.
+
+### Проверить health
+
+```bash
+curl -sS http://127.0.0.1:18100/health
+```
+
+### Создать проект
+
+```bash
+curl -sS -X POST http://127.0.0.1:18100/projects \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Memory Bank MVP",
+    "description": "Simple memory layer for agents"
+  }'
+```
+
+### Добавить запись в память
+
+```bash
+curl -sS -X POST http://127.0.0.1:18100/memory \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "type": "decision",
+    "title": "Use PostgreSQL for MVP",
+    "content": "For MVP we will use PostgreSQL instead of Neo4j to reduce complexity.",
+    "source_agent": "planner-agent",
+    "importance": 4,
+    "metadata": {
+      "tags": ["architecture", "database"]
+    }
+  }'
+```
+
+### Получить релевантный контекст для агента
+
+```bash
+curl -sS -X POST http://127.0.0.1:18100/memory/relevant \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "query": "Implement database layer for memory bank",
+    "agent_id": "backend-agent",
+    "types": ["decision", "artifact", "task"],
+    "limit": 8
+  }'
+```
+
+### Выполнить полнотекстовый поиск
+
+```bash
+curl -sS 'http://127.0.0.1:18100/memory/search?query=postgresql%20architecture&limit=10'
+```
+
+### Создать связь между записями
+
+```bash
+curl -sS -X POST http://127.0.0.1:18100/memory-links \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "from_entry_id": "FROM_UUID",
+    "to_entry_id": "TO_UUID",
+    "type": "depends_on",
+    "strength": 1.0,
+    "created_by_agent": "planner-agent"
+  }'
+```
+
+### Получить подграф памяти
+
+```bash
+curl -sS 'http://127.0.0.1:18100/memory/ENTRY_UUID/graph?depth=2'
+```
+
+### Архивировать устаревшую память
+
+```bash
+curl -sS -X POST http://127.0.0.1:18100/maintenance/archive-stale \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "older_than_days": 30,
+    "max_usage_count": 0,
+    "max_importance": 2
+  }'
+```
+
+### Импортировать проект в Memory Bank
+
+```bash
+curl -sS -X POST http://127.0.0.1:18100/imports/project-scan \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "project": {
+      "name": "Imported Project",
+      "description": "Imported from existing repository"
+    },
+    "entries": [
+      {
+        "ref": "decision-db",
+        "type": "decision",
+        "title": "Use PostgreSQL as primary database",
+        "content": "Project uses PostgreSQL as the primary database service in docker-compose.",
+        "importance": 4
+      },
+      {
+        "ref": "artifact-compose",
+        "type": "artifact",
+        "title": "docker-compose.yml",
+        "content": "Defines api and db services.",
+        "importance": 4
+      }
+    ],
+    "links": [
+      {
+        "from_ref": "artifact-compose",
+        "to_ref": "decision-db",
+        "type": "derived_from",
+        "strength": 0.8
+      }
+    ],
+    "detect_conflicts": true,
+    "existing_entry_mode": "update"
+  }'
+```
+
 ## Auto-linking
 
 Можно включить автоматическое создание `related_to` связей после `POST /memory`:
