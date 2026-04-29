@@ -2,7 +2,7 @@ services:
   api:
     build: .
     ports:
-      - "8000:8000"
+      - "${HOST_API_PORT:-18100}:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -14,7 +14,7 @@ services:
   db:
     image: postgres:16
     ports:
-      - "5432:5432"
+      - "${HOST_DB_PORT:-15432}:5432"
     environment:
       POSTGRES_DB: memory_bank
       POSTGRES_USER: memory_user

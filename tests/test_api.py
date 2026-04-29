@@ -211,6 +211,23 @@ def test_task_logs_and_summary(client):
     assert body["avg_quality_score"] == 0.9
 
 
+def test_evaluation_endpoint(client):
+    response = client.post(
+        "/evaluation/evaluate",
+        json={
+            "task": "Implement endpoint using previous decision",
+            "memory": [{"id": "m1", "title": "Use PostgreSQL", "content": "Prefer PostgreSQL for MVP"}],
+            "reasoning": "According to memory, we keep PostgreSQL.",
+            "answer": "Based on memory and previous decision, we keep PostgreSQL.",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["used_memory"] is True
+    assert body["referenced_memory_in_answer"] is True
+    assert body["quality_score"] >= 0.8
+
+
 def test_relevant_memory_creates_access_log(client, db_session: Session):
     created = client.post(
         "/memory",

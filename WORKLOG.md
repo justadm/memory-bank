@@ -57,3 +57,5 @@
 - Upgraded the search path toward fuller PostgreSQL FTS: stored `search_vector` sync on create/update, rebuild endpoint, and a follow-up migration to `tsvector`.
 - Re-ran the suite after the FTS work; total status is now `15 passed`.
 - Reviewed `/Users/just/apps/memorybank_eval_pack` and pulled its most practical backend extension into the core service: `task_logs` plus a basic analytics summary API.
+- Switched Docker host ports to less conflict-prone configurable defaults (`18100` for API, `15432` for Postgres) while keeping internal container ports standard.
+- Added an embedded evaluator endpoint inspired by `memorybank_eval_pack` for rule-based memory-usage assessment.

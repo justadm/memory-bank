@@ -11,6 +11,7 @@
 - поиск по памяти с PostgreSQL FTS и fallback для SQLite-тестов
 - rebuild endpoint для `search_vector` и более полноценный PostgreSQL stored FTS runtime
 - task logs и базовая eval/experiment analytics summary
+- встроенный evaluator endpoint для rule-based оценки использования памяти
 - endpoint `POST /memory/relevant` с учётом usage/access logs
 - maintenance endpoint для архивации устаревшей памяти
 - опциональное auto-linking новых записей через bag-of-words similarity
@@ -22,7 +23,7 @@
 1. Скопировать `.env.example` в `.env`.
 2. Запустить `docker compose up --build`.
 3. Применить миграции: `docker compose exec api alembic upgrade head`.
-4. Открыть `http://localhost:8000/docs`.
+4. Открыть `http://localhost:18100/docs` или свой `HOST_API_PORT`.
 
 `docker-compose.yml` уже содержит healthcheck для PostgreSQL, поэтому `api` стартует после готовности БД.
 
@@ -84,6 +85,12 @@ READ -> ACT -> WRITE -> LINK
 - `GET /task-logs/summary`
 
 Это позволяет логировать агентные задачи и затем считать базовые метрики использования памяти и качества результата.
+
+Также доступен встроенный evaluator endpoint:
+
+- `POST /evaluation/evaluate`
+
+Он принимает `task`, `memory`, `reasoning`, `answer` и возвращает explainable rule-based оценку того, насколько память действительно повлияла на результат.
 
 ## Журнал
 
