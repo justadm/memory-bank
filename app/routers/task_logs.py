@@ -3,7 +3,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.repositories.task_log_repository import TaskLogRepository
-from app.schemas.task_logs import TaskLogCreate, TaskLogListResponse, TaskLogResponse, TaskLogSummaryResponse
+from app.schemas.task_logs import (
+    TaskLogCreate,
+    TaskLogImportRequest,
+    TaskLogImportResponse,
+    TaskLogListResponse,
+    TaskLogResponse,
+    TaskLogSummaryResponse,
+)
 from app.services.task_log_service import TaskLogService
 
 
@@ -31,6 +38,14 @@ def list_task_logs(
     return TaskLogListResponse(items=service.list_task_logs(agent_id=agent_id, experiment_id=experiment_id))
 
 
+@router.post("/import", response_model=TaskLogImportResponse, status_code=201)
+def import_task_logs(
+    payload: TaskLogImportRequest,
+    service: TaskLogService = Depends(get_task_log_service),
+) -> TaskLogImportResponse:
+    return TaskLogImportResponse(created_count=service.import_task_logs(payload.items))
+
+
 @router.get("/summary", response_model=TaskLogSummaryResponse)
 def get_task_log_summary(
     agent_id: str | None = None,
@@ -38,4 +53,3 @@ def get_task_log_summary(
     service: TaskLogService = Depends(get_task_log_service),
 ) -> TaskLogSummaryResponse:
     return TaskLogSummaryResponse(**service.get_summary(agent_id=agent_id, experiment_id=experiment_id))
-

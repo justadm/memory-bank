@@ -82,6 +82,7 @@ READ -> ACT -> WRITE -> LINK
 Из `memorybank_eval_pack` в ядро сервиса добавлен минимальный слой аналитики:
 
 - `POST /task-logs`
+- `POST /task-logs/import`
 - `GET /task-logs`
 - `GET /task-logs/summary`
 
@@ -90,8 +91,11 @@ READ -> ACT -> WRITE -> LINK
 Также доступен встроенный evaluator endpoint:
 
 - `POST /evaluation/evaluate`
+- `POST /evaluation/evaluate-batch`
 
 Он принимает `task`, `memory`, `reasoning`, `answer` и возвращает explainable rule-based оценку того, насколько память действительно повлияла на результат.
+
+Для пакетной оценки можно передать список payload'ов в `POST /evaluation/evaluate-batch` и получить summary по всему набору.
 
 ## Metrics API
 

@@ -23,9 +23,13 @@ class TaskLogService:
         )
         return self.repository.create(task_log)
 
+    def import_task_logs(self, payloads: list[TaskLogCreate]) -> int:
+        for payload in payloads:
+            self.create_task_log(payload)
+        return len(payloads)
+
     def list_task_logs(self, *, agent_id: str | None = None, experiment_id: str | None = None) -> list[TaskLog]:
         return self.repository.list(agent_id=agent_id, experiment_id=experiment_id)
 
     def get_summary(self, *, agent_id: str | None = None, experiment_id: str | None = None) -> dict:
         return self.repository.summary(agent_id=agent_id, experiment_id=experiment_id)
-

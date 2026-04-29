@@ -50,3 +50,10 @@ class TaskLogSummaryResponse(BaseModel):
     avg_consistency_score: float | None
     avg_duplicate_count: float | None
 
+
+class TaskLogImportRequest(BaseModel):
+    items: list[TaskLogCreate] = Field(default_factory=list)
+
+
+class TaskLogImportResponse(BaseModel):
+    created_count: int

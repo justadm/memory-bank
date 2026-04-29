@@ -211,6 +211,36 @@ def test_task_logs_and_summary(client):
     assert body["avg_quality_score"] == 0.9
 
 
+def test_task_logs_import(client):
+    response = client.post(
+        "/task-logs/import",
+        json={
+            "items": [
+                {
+                    "experiment_id": "exp-import",
+                    "agent_id": "agent-a",
+                    "task_description": "Task A",
+                    "used_memory": True,
+                    "memory_entries_count": 2,
+                },
+                {
+                    "experiment_id": "exp-import",
+                    "agent_id": "agent-b",
+                    "task_description": "Task B",
+                    "used_memory": False,
+                    "memory_entries_count": 0,
+                },
+            ]
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["created_count"] == 2
+
+    listed = client.get("/task-logs", params={"experiment_id": "exp-import"})
+    assert listed.status_code == 200
+    assert len(listed.json()["items"]) == 2
+
+
 def test_evaluation_endpoint(client):
     response = client.post(
         "/evaluation/evaluate",
@@ -226,6 +256,33 @@ def test_evaluation_endpoint(client):
     assert body["used_memory"] is True
     assert body["referenced_memory_in_answer"] is True
     assert body["quality_score"] >= 0.8
+
+
+def test_evaluation_batch_endpoint(client):
+    response = client.post(
+        "/evaluation/evaluate-batch",
+        json={
+            "items": [
+                {
+                    "task": "Implement endpoint using previous decision",
+                    "memory": [{"id": "m1", "title": "Use PostgreSQL", "content": "Prefer PostgreSQL for MVP"}],
+                    "reasoning": "According to memory, we keep PostgreSQL.",
+                    "answer": "Based on memory we keep PostgreSQL.",
+                },
+                {
+                    "task": "Write draft",
+                    "memory": [],
+                    "reasoning": "No memory used.",
+                    "answer": "Fresh draft.",
+                },
+            ]
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["items"]) == 2
+    assert body["summary"]["total_items"] == 2
+    assert body["summary"]["used_memory_rate"] == 0.5
 
 
 def test_metrics_overview_endpoint(client):

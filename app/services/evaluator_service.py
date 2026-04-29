@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from app.schemas.evaluation import EvaluationMemoryItem, EvaluationRequest, EvaluationResponse
+from app.schemas.evaluation import (
+    EvaluationBatchRequest,
+    EvaluationBatchResponse,
+    EvaluationBatchSummary,
+    EvaluationRequest,
+    EvaluationResponse,
+)
 
 
 MEMORY_REFERENCE_MARKERS = [
@@ -82,6 +88,32 @@ class EvaluatorService:
         )
 
     @staticmethod
+    def evaluate_batch(payload: EvaluationBatchRequest) -> EvaluationBatchResponse:
+        results = [EvaluatorService.evaluate(item) for item in payload.items]
+        total = len(results)
+        if total == 0:
+            return EvaluationBatchResponse(
+                items=[],
+                summary=EvaluationBatchSummary(
+                    total_items=0,
+                    used_memory_rate=0.0,
+                    avg_quality_score=0.0,
+                    avg_consistency_score=0.0,
+                    conflict_rate=0.0,
+                ),
+            )
+
+        return EvaluationBatchResponse(
+            items=results,
+            summary=EvaluationBatchSummary(
+                total_items=total,
+                used_memory_rate=round(sum(1 for item in results if item.used_memory) / total, 4),
+                avg_quality_score=round(sum(item.quality_score for item in results) / total, 4),
+                avg_consistency_score=round(sum(item.consistency_score for item in results) / total, 4),
+                conflict_rate=round(sum(1 for item in results if item.possible_conflict) / total, 4),
+            ),
+        )
+
+    @staticmethod
     def _normalize(text: str) -> str:
         return (text or "").lower()
-

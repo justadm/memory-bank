@@ -13,8 +13,21 @@ from app.schemas.memory import (
     MemoryUpdate,
 )
 from app.schemas.projects import ProjectCreate, ProjectResponse, ProjectUpdate
-from app.schemas.evaluation import EvaluationRequest, EvaluationResponse
-from app.schemas.task_logs import TaskLogCreate, TaskLogListResponse, TaskLogResponse, TaskLogSummaryResponse
+from app.schemas.evaluation import (
+    EvaluationBatchRequest,
+    EvaluationBatchResponse,
+    EvaluationBatchSummary,
+    EvaluationRequest,
+    EvaluationResponse,
+)
+from app.schemas.task_logs import (
+    TaskLogCreate,
+    TaskLogImportRequest,
+    TaskLogImportResponse,
+    TaskLogListResponse,
+    TaskLogResponse,
+    TaskLogSummaryResponse,
+)
 
 __all__ = [
     "ProjectCreate",
@@ -38,7 +51,12 @@ __all__ = [
     "MetricsOverviewResponse",
     "EvaluationRequest",
     "EvaluationResponse",
+    "EvaluationBatchRequest",
+    "EvaluationBatchSummary",
+    "EvaluationBatchResponse",
     "TaskLogCreate",
+    "TaskLogImportRequest",
+    "TaskLogImportResponse",
     "TaskLogResponse",
     "TaskLogListResponse",
     "TaskLogSummaryResponse",

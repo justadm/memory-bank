@@ -24,3 +24,19 @@ class EvaluationResponse(BaseModel):
     consistency_score: float
     notes: list[str]
 
+
+class EvaluationBatchRequest(BaseModel):
+    items: list[EvaluationRequest] = Field(default_factory=list)
+
+
+class EvaluationBatchSummary(BaseModel):
+    total_items: int
+    used_memory_rate: float
+    avg_quality_score: float
+    avg_consistency_score: float
+    conflict_rate: float
+
+
+class EvaluationBatchResponse(BaseModel):
+    items: list[EvaluationResponse]
+    summary: EvaluationBatchSummary
