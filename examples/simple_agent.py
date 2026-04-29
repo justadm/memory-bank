@@ -33,8 +33,9 @@ Implemented according to available Memory Bank context.
 def main() -> None:
     base_url = os.getenv("MEMORYBANK_URL", "http://localhost:8000")
     project_id = os.getenv("MEMORYBANK_PROJECT_ID")
+    api_key = os.getenv("MEMORYBANK_API_KEY")
 
-    with MemoryBankClient(base_url=base_url) as client:
+    with MemoryBankClient(base_url=base_url, api_key=api_key) as client:
         agent = MemoryAwareAgent(
             agent_id="example-agent",
             memory=client,

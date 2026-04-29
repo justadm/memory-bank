@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.repositories.task_log_repository import TaskLogRepository
+from app.security import require_admin_access, require_write_access
 from app.schemas.task_logs import (
     TaskLogCreate,
     TaskLogImportRequest,
@@ -25,6 +26,7 @@ def get_task_log_service(db: Session = Depends(get_db)) -> TaskLogService:
 def create_task_log(
     payload: TaskLogCreate,
     service: TaskLogService = Depends(get_task_log_service),
+    _principal=Depends(require_write_access),
 ) -> TaskLogResponse:
     return service.create_task_log(payload)
 
@@ -34,6 +36,7 @@ def list_task_logs(
     agent_id: str | None = None,
     experiment_id: str | None = None,
     service: TaskLogService = Depends(get_task_log_service),
+    _principal=Depends(require_admin_access),
 ) -> TaskLogListResponse:
     return TaskLogListResponse(items=service.list_task_logs(agent_id=agent_id, experiment_id=experiment_id))
 
@@ -42,6 +45,7 @@ def list_task_logs(
 def import_task_logs(
     payload: TaskLogImportRequest,
     service: TaskLogService = Depends(get_task_log_service),
+    _principal=Depends(require_write_access),
 ) -> TaskLogImportResponse:
     return TaskLogImportResponse(created_count=service.import_task_logs(payload.items))
 
@@ -51,5 +55,6 @@ def get_task_log_summary(
     agent_id: str | None = None,
     experiment_id: str | None = None,
     service: TaskLogService = Depends(get_task_log_service),
+    _principal=Depends(require_admin_access),
 ) -> TaskLogSummaryResponse:
     return TaskLogSummaryResponse(**service.get_summary(agent_id=agent_id, experiment_id=experiment_id))

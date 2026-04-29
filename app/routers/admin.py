@@ -7,6 +7,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.repositories.memory_repository import MemoryRepository
 from app.repositories.metrics_repository import MetricsRepository
+from app.security import require_admin_access
 from app.schemas.admin import (
     ImportConflictListResponse,
     ImportProjectSummaryListResponse,
@@ -15,7 +16,7 @@ from app.schemas.admin import (
 from app.services.admin_observability_service import AdminObservabilityService
 
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin_access)])
 
 
 def get_admin_observability_service(db: Session = Depends(get_db)) -> AdminObservabilityService:

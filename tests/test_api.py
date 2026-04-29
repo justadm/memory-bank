@@ -617,6 +617,60 @@ def test_project_import_update_existing_mode(client):
     assert items[0]["metadata"]["sync"] == "second-pass"
 
 
+def test_auth_protects_write_endpoints_when_enabled(client, monkeypatch):
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setenv("AUTH_API_KEYS", "writer-key:write|import,admin-key:write|import|admin")
+
+    unauthorized = client.post("/projects", json={"name": "Secured"})
+    assert unauthorized.status_code == 401
+
+    authorized = client.post(
+        "/projects",
+        json={"name": "Secured"},
+        headers={"Authorization": "Bearer writer-key"},
+    )
+    assert authorized.status_code == 201
+
+    public_read = client.get("/projects")
+    assert public_read.status_code == 200
+
+
+def test_auth_requires_admin_scope_for_admin_endpoints(client, monkeypatch):
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setenv("AUTH_API_KEYS", "writer-key:write|import,admin-key:write|import|admin")
+
+    forbidden = client.get("/admin/observability/summary", headers={"X-API-Key": "writer-key"})
+    assert forbidden.status_code == 403
+
+    allowed = client.get("/admin/observability/summary", headers={"X-API-Key": "admin-key"})
+    assert allowed.status_code == 200
+
+
+def test_auth_requires_import_scope_for_import_endpoint(client, monkeypatch):
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setenv("AUTH_API_KEYS", "writer-key:write,import-key:write|import")
+
+    project = client.post(
+        "/projects",
+        json={"name": "Import Auth Project"},
+        headers={"Authorization": "Bearer writer-key"},
+    ).json()
+
+    forbidden = client.post(
+        "/imports/project-scan",
+        json={"project_id": project["id"], "entries": [], "links": []},
+        headers={"Authorization": "Bearer writer-key"},
+    )
+    assert forbidden.status_code == 403
+
+    allowed = client.post(
+        "/imports/project-scan",
+        json={"project_id": project["id"], "entries": [], "links": []},
+        headers={"Authorization": "Bearer import-key"},
+    )
+    assert allowed.status_code == 201
+
+
 def test_relevant_memory_creates_access_log(client, db_session: Session):
     created = client.post(
         "/memory",

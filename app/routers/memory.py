@@ -8,6 +8,7 @@ from app.models.enums import MemoryType
 from app.repositories.link_repository import LinkRepository
 from app.repositories.memory_repository import MemoryRepository
 from app.repositories.project_repository import ProjectRepository
+from app.security import require_write_access
 from app.schemas.memory import (
     MemoryArchiveResponse,
     MemoryCreate,
@@ -31,7 +32,11 @@ def get_memory_service(db: Session = Depends(get_db)) -> MemoryService:
 
 
 @router.post("", response_model=MemoryResponse, status_code=status.HTTP_201_CREATED)
-def create_memory(payload: MemoryCreate, service: MemoryService = Depends(get_memory_service)) -> MemoryResponse:
+def create_memory(
+    payload: MemoryCreate,
+    service: MemoryService = Depends(get_memory_service),
+    _principal=Depends(require_write_access),
+) -> MemoryResponse:
     return service.create_memory(payload)
 
 
@@ -71,7 +76,9 @@ def search_memory(
 
 @router.post("/relevant", response_model=MemoryRelevantResponse)
 def get_relevant_memory(
-    payload: MemoryRelevantRequest, service: MemoryService = Depends(get_memory_service)
+    payload: MemoryRelevantRequest,
+    service: MemoryService = Depends(get_memory_service),
+    _principal=Depends(require_write_access),
 ) -> MemoryRelevantResponse:
     results = service.get_relevant_memory(payload)
     return MemoryRelevantResponse(
@@ -95,13 +102,19 @@ def get_memory(entry_id: uuid.UUID, service: MemoryService = Depends(get_memory_
 
 @router.patch("/{entry_id}", response_model=MemoryResponse)
 def update_memory(
-    entry_id: uuid.UUID, payload: MemoryUpdate, service: MemoryService = Depends(get_memory_service)
+    entry_id: uuid.UUID,
+    payload: MemoryUpdate,
+    service: MemoryService = Depends(get_memory_service),
+    _principal=Depends(require_write_access),
 ) -> MemoryResponse:
     return service.update_memory(entry_id, payload)
 
 
 @router.post("/{entry_id}/archive", response_model=MemoryArchiveResponse)
-def archive_memory(entry_id: uuid.UUID, service: MemoryService = Depends(get_memory_service)) -> MemoryArchiveResponse:
+def archive_memory(
+    entry_id: uuid.UUID,
+    service: MemoryService = Depends(get_memory_service),
+    _principal=Depends(require_write_access),
+) -> MemoryArchiveResponse:
     entry = service.archive_memory(entry_id)
     return MemoryArchiveResponse(id=entry.id, archived=entry.archived)
-

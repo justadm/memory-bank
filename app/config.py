@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     app_env: str = "development"
     api_port: int = 8000
     database_url: str = "sqlite:///./memory_bank.db"
+    auth_enabled: bool = False
+    auth_api_keys: str = ""
     auto_link_on_create: bool = False
     auto_link_min_similarity: float = 0.35
     auto_link_search_limit: int = 20

@@ -8,10 +8,11 @@ from app.database import get_db
 from app.repositories.link_repository import LinkRepository
 from app.repositories.memory_repository import MemoryRepository
 from app.repositories.project_repository import ProjectRepository
+from app.security import require_admin_access
 from app.services.memory_service import MemoryService
 
 
-router = APIRouter(prefix="/maintenance", tags=["maintenance"])
+router = APIRouter(prefix="/maintenance", tags=["maintenance"], dependencies=[Depends(require_admin_access)])
 
 
 class ArchiveStaleRequest(BaseModel):

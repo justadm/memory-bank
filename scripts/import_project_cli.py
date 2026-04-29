@@ -30,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
+    api_key = os.getenv("MEMORYBANK_API_KEY")
     if args.projects_directory:
         names = [item.strip() for item in args.names.split(",") if item.strip()] if args.names else None
         payloads = build_directory_import_payloads(
@@ -42,7 +43,7 @@ def main() -> None:
         if args.dry_run:
             print(json.dumps(payloads, indent=2, ensure_ascii=False))
             return
-        with MemoryBankClient(args.memorybank_url) as client:
+        with MemoryBankClient(args.memorybank_url, api_key=api_key) as client:
             results = [client.import_project_scan(**payload) for payload in payloads]
         print(json.dumps(results, indent=2, ensure_ascii=False, default=str))
         return
@@ -61,7 +62,7 @@ def main() -> None:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         return
 
-    with MemoryBankClient(args.memorybank_url) as client:
+    with MemoryBankClient(args.memorybank_url, api_key=api_key) as client:
         result = client.import_project_scan(**payload)
 
     print(json.dumps(result, indent=2, ensure_ascii=False, default=str))

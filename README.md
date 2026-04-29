@@ -36,6 +36,30 @@
 docker compose exec api pytest
 ```
 
+## Auth
+
+Сервис теперь поддерживает optional API-key auth.
+
+Переменные окружения:
+
+```env
+AUTH_ENABLED=true
+AUTH_API_KEYS=agent-write-key:write|import,ops-admin-key:write|import|admin
+```
+
+Поддерживаются два способа передачи ключа:
+
+- `Authorization: Bearer <key>`
+- `X-API-Key: <key>`
+
+Scope-ы:
+
+- `write` — изменение данных, запись памяти, links, projects, task logs
+- `import` — import endpoints
+- `admin` — maintenance, metrics, admin observability
+
+Если `AUTH_ENABLED=false`, сервис работает как раньше, без обязательной авторизации.
+
 ## API Quick Reference
 
 ### Memory types
@@ -98,6 +122,7 @@ curl -sS http://127.0.0.1:18100/health
 
 ```bash
 curl -sS -X POST http://127.0.0.1:18100/projects \
+  -H 'Authorization: Bearer agent-write-key' \
   -H 'Content-Type: application/json' \
   -d '{
     "name": "Memory Bank MVP",
@@ -109,6 +134,7 @@ curl -sS -X POST http://127.0.0.1:18100/projects \
 
 ```bash
 curl -sS -X POST http://127.0.0.1:18100/memory \
+  -H 'Authorization: Bearer agent-write-key' \
   -H 'Content-Type: application/json' \
   -d '{
     "type": "decision",
@@ -126,6 +152,7 @@ curl -sS -X POST http://127.0.0.1:18100/memory \
 
 ```bash
 curl -sS -X POST http://127.0.0.1:18100/memory/relevant \
+  -H 'Authorization: Bearer agent-write-key' \
   -H 'Content-Type: application/json' \
   -d '{
     "query": "Implement database layer for memory bank",
@@ -145,6 +172,7 @@ curl -sS 'http://127.0.0.1:18100/memory/search?query=postgresql%20architecture&l
 
 ```bash
 curl -sS -X POST http://127.0.0.1:18100/memory-links \
+  -H 'Authorization: Bearer agent-write-key' \
   -H 'Content-Type: application/json' \
   -d '{
     "from_entry_id": "FROM_UUID",
@@ -165,6 +193,7 @@ curl -sS 'http://127.0.0.1:18100/memory/ENTRY_UUID/graph?depth=2'
 
 ```bash
 curl -sS -X POST http://127.0.0.1:18100/maintenance/archive-stale \
+  -H 'Authorization: Bearer ops-admin-key' \
   -H 'Content-Type: application/json' \
   -d '{
     "older_than_days": 30,
@@ -177,6 +206,7 @@ curl -sS -X POST http://127.0.0.1:18100/maintenance/archive-stale \
 
 ```bash
 curl -sS -X POST http://127.0.0.1:18100/imports/project-scan \
+  -H 'Authorization: Bearer agent-write-key' \
   -H 'Content-Type: application/json' \
   -d '{
     "project": {
@@ -379,6 +409,8 @@ READ -> ACT -> WRITE -> LINK
 - monorepo/runtime constraints и базовые runtime risks
 
 При включённом conflict detection response также возвращает список найденных конфликтов с `reason` и `confidence`.
+
+Если auth включён, для import flow нужен ключ со scope `import`.
 
 Поддерживаемые типы памяти теперь включают:
 
