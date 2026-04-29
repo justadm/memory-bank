@@ -80,3 +80,4 @@
 - Added regression coverage for tenant-preserving project updates and tenant-scoped import authorization.
 - Extended tenant-aware RBAC into observability: tenant-scoped keys now automatically stamp `task_logs` with `tenant_id` and only see their own `task_logs`, metrics, admin summaries, import conflict lists, and import summaries.
 - Added `GET /auth/me` so the future in-repo admin/frontend shell can discover whether auth is enabled, whether the current request is authenticated, and which scopes/tenants are attached to the current API key.
+- Started the actual frontend migration from `/Users/just/apps/memorybank-admin/frontend` into this repository: mounted the transferred static shell at `/console/`, switched the console brand to `MemLayer`, pointed it at same-origin API by default, and added local API-key support plus `/auth/me`-driven auth awareness so the embedded UI can function against secured environments.

@@ -26,7 +26,7 @@
 1. Скопировать `.env.example` в `.env`.
 2. Запустить `docker compose up --build`.
 3. Применить миграции: `docker compose exec api alembic upgrade head`.
-4. Открыть `http://localhost:18100/docs` или свой `HOST_API_PORT`.
+4. Открыть `http://localhost:18100/docs` для API или `http://localhost:18100/console/` для встроенной консоли MemLayer.
 
 `docker-compose.yml` уже содержит healthcheck для PostgreSQL, поэтому `api` стартует после готовности БД.
 
@@ -99,6 +99,7 @@ AUTH_API_KEYS=tenant-agent:tenant-key:read|write|import:tenant-a|tenant-b
 
 - `GET /health`
 - `GET /auth/me`
+- `GET /console/`
 - `POST /projects`
 - `GET /projects`
 - `GET /projects/{id}`

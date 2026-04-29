@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.routers import admin, auth, evaluation, imports, links, maintenance, memory, metrics, projects, task_logs
@@ -17,6 +20,7 @@ app.include_router(evaluation.router)
 app.include_router(metrics.router)
 app.include_router(admin.router)
 app.include_router(imports.router)
+app.mount("/console", StaticFiles(directory=Path(__file__).parent / "static" / "console", html=True), name="console")
 
 
 @app.get("/health", tags=["health"])

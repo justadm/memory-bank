@@ -12,6 +12,13 @@ def test_create_project(client):
     assert response.json()["name"] == "Memory Bank MVP"
 
 
+def test_console_shell_served(client):
+    response = client.get("/console/")
+    assert response.status_code == 200
+    assert "MemLayer Console" in response.text
+    assert "./app.js" in response.text
+
+
 def test_project_crud_flow(client):
     created = client.post("/projects", json={"name": "Operations", "description": "Ops workspace"}).json()
 
