@@ -73,6 +73,7 @@ class MemoryService:
             project_id=payload.project_id,
             importance=payload.importance,
             metadata_=payload.metadata,
+            search_vector=self._build_search_payload(payload.title, payload.content),
         )
         return self.memory_repository.create(entry)
 
@@ -97,6 +98,8 @@ class MemoryService:
                 setattr(entry, "metadata_", value)
             else:
                 setattr(entry, field, value)
+        if "title" in data or "content" in data:
+            entry.search_vector = self._build_search_payload(entry.title, entry.content)
         self.memory_repository.db.add(entry)
         self.memory_repository.db.flush()
         self.memory_repository.db.refresh(entry)
@@ -172,3 +175,7 @@ class MemoryService:
         if project_id and not self.project_repository.get(project_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
+    @staticmethod
+    def _build_search_payload(title: str | None, content: str) -> str:
+        # Keep a normalized search payload in the row even when Postgres FTS is not available.
+        return " ".join(part.strip() for part in [title or "", content] if part and part.strip())

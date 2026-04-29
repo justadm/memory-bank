@@ -2,14 +2,32 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from app.models.access_log import MemoryAccessLog
 from app.models.memory_entry import MemoryEntry
-from app.models.enums import MemoryType
 
 
 def test_create_project(client):
     response = client.post("/projects", json={"name": "Memory Bank MVP", "description": "Simple memory layer"})
     assert response.status_code == 201
     assert response.json()["name"] == "Memory Bank MVP"
+
+
+def test_project_crud_flow(client):
+    created = client.post("/projects", json={"name": "Operations", "description": "Ops workspace"}).json()
+
+    fetched = client.get(f"/projects/{created['id']}")
+    assert fetched.status_code == 200
+    assert fetched.json()["name"] == "Operations"
+
+    updated = client.patch(f"/projects/{created['id']}", json={"description": "Updated ops workspace"})
+    assert updated.status_code == 200
+    assert updated.json()["description"] == "Updated ops workspace"
+
+    deleted = client.delete(f"/projects/{created['id']}")
+    assert deleted.status_code == 204
+
+    missing = client.get(f"/projects/{created['id']}")
+    assert missing.status_code == 404
 
 
 def test_create_memory_entry(client):
@@ -28,6 +46,7 @@ def test_create_memory_entry(client):
     body = response.json()
     assert body["title"] == "Use PostgreSQL"
     assert body["importance"] == 4
+    assert body["metadata"] == {}
 
 
 def test_update_memory_entry(client):
@@ -35,6 +54,7 @@ def test_update_memory_entry(client):
     response = client.patch(f"/memory/{created['id']}", json={"title": "Updated", "content": "Updated content"})
     assert response.status_code == 200
     assert response.json()["title"] == "Updated"
+    assert response.json()["content"] == "Updated content"
 
 
 def test_archive_memory_entry(client):
@@ -55,6 +75,26 @@ def test_create_memory_link(client):
     links = client.get(f"/memory/{first['id']}/links")
     assert links.status_code == 200
     assert len(links.json()["outgoing"]) == 1
+
+
+def test_list_memory_with_filters(client):
+    project_a = client.post("/projects", json={"name": "A"}).json()
+    project_b = client.post("/projects", json={"name": "B"}).json()
+    active = client.post(
+        "/memory",
+        json={"type": "decision", "content": "Active A", "project_id": project_a["id"]},
+    ).json()
+    archived = client.post(
+        "/memory",
+        json={"type": "note", "content": "Archived B", "project_id": project_b["id"]},
+    ).json()
+    client.post(f"/memory/{archived['id']}/archive")
+
+    response = client.get("/memory", params={"project_id": project_a["id"], "type": "decision", "archived": "false"})
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["id"] == active["id"]
 
 
 def test_search_memory(client):
@@ -80,6 +120,32 @@ def test_get_relevant_memory(client):
     items = response.json()["context"]
     assert items[0]["id"] == created["id"]
 
+    updated = client.get(f"/memory/{created['id']}")
+    assert updated.status_code == 200
+    assert updated.json()["usage_count"] == 1
+    assert updated.json()["last_used_at"] is not None
+
+
+def test_graph_endpoint(client):
+    root = client.post("/memory", json={"type": "task", "title": "Task root", "content": "root"}).json()
+    decision = client.post("/memory", json={"type": "decision", "title": "Decision", "content": "decide"}).json()
+    artifact = client.post("/memory", json={"type": "artifact", "title": "Artifact", "content": "artifact"}).json()
+
+    client.post(
+        "/memory-links",
+        json={"from_entry_id": root["id"], "to_entry_id": decision["id"], "type": "depends_on"},
+    )
+    client.post(
+        "/memory-links",
+        json={"from_entry_id": decision["id"], "to_entry_id": artifact["id"], "type": "derived_from"},
+    )
+
+    response = client.get(f"/memory/{root['id']}/graph", params={"depth": 2})
+    assert response.status_code == 200
+    graph = response.json()
+    assert len(graph["nodes"]) == 3
+    assert len(graph["edges"]) == 2
+
 
 def test_archive_stale_memory(client, db_session: Session):
     created = client.post("/memory", json={"type": "note", "content": "old note", "importance": 1}).json()
@@ -98,3 +164,21 @@ def test_archive_stale_memory(client, db_session: Session):
     detail = client.get(f"/memory/{created['id']}")
     assert detail.status_code == 200
     assert detail.json()["archived"] is True
+
+
+def test_relevant_memory_creates_access_log(client, db_session: Session):
+    created = client.post(
+        "/memory",
+        json={"type": "decision", "title": "Store facts", "content": "Agents should store useful facts"},
+    ).json()
+
+    response = client.post(
+        "/memory/relevant",
+        json={"query": "store useful facts", "agent_id": "retriever-agent", "metadata": {"trace_id": "abc-123"}},
+    )
+    assert response.status_code == 200
+
+    logs = db_session.query(MemoryAccessLog).filter(MemoryAccessLog.entry_id == uuid.UUID(created["id"])).all()
+    assert len(logs) == 1
+    assert logs[0].agent_id == "retriever-agent"
+    assert logs[0].metadata_ == {"trace_id": "abc-123"}

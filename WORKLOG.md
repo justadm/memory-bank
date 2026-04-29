@@ -23,8 +23,26 @@
 - Verification moved to a dedicated Python 3.13 virtualenv because the host default Python 3.14 cannot currently build `pydantic-core` in this stack.
 - Ran the full API test suite in `.venv313`; result: `8 passed`.
 - Initialized a local Git repository on branch `main` in preparation for public publication.
+- Created public GitHub repository `justadm/memory-bank`, connected `origin`, and pushed the initial `main` branch.
 
 ### Notes
 
 - This file will be appended as implementation continues so later turns remain auditable.
-- The working directory currently is not an initialized Git repository, so change tracking is file-based rather than Git-based for now.
+- Change tracking is now available both in Git and in this file-based journal.
+
+## 2026-04-29 - Iteration 2
+
+### Goal
+
+- Continue development after the initial public push with the next roadmap-aligned improvements.
+
+### Plan
+
+- Improve search data preparation so stored entries carry a normalized searchable payload.
+- Extend test coverage for filters, graph traversal, project CRUD, and memory usage logging behavior.
+
+### Actions
+
+- Added normalized `search_vector` payload preparation on memory create/update.
+- Expanded API coverage for project CRUD, memory filters, graph traversal, and access-log/usage tracking scenarios.
+- Re-ran the test suite in `.venv313`; result: `12 passed`.
