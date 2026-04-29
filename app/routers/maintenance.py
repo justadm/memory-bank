@@ -1,3 +1,5 @@
+import uuid
+
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -23,6 +25,14 @@ class ArchiveStaleResponse(BaseModel):
     archived_ids: list[str]
 
 
+class RebuildSearchVectorsRequest(BaseModel):
+    project_id: uuid.UUID | None = None
+
+
+class RebuildSearchVectorsResponse(BaseModel):
+    rebuilt_count: int
+
+
 def get_memory_service(db: Session = Depends(get_db)) -> MemoryService:
     return MemoryService(MemoryRepository(db), ProjectRepository(db), LinkRepository(db))
 
@@ -36,3 +46,11 @@ def archive_stale(payload: ArchiveStaleRequest, service: MemoryService = Depends
     )
     return ArchiveStaleResponse(archived_count=len(items), archived_ids=[str(item.id) for item in items])
 
+
+@router.post("/rebuild-search-vectors", response_model=RebuildSearchVectorsResponse)
+def rebuild_search_vectors(
+    payload: RebuildSearchVectorsRequest,
+    service: MemoryService = Depends(get_memory_service),
+) -> RebuildSearchVectorsResponse:
+    rebuilt_count = service.rebuild_search_vectors(project_id=payload.project_id)
+    return RebuildSearchVectorsResponse(rebuilt_count=rebuilt_count)

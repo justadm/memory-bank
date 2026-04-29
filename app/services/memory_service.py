@@ -84,6 +84,7 @@ class MemoryService:
             search_vector=self._build_search_payload(payload.title, payload.content),
         )
         created = self.memory_repository.create(entry)
+        self.memory_repository.sync_search_vector(created, self._build_search_payload(created.title, created.content))
         self.auto_link_service.link_entry(created)
         return created
 
@@ -113,6 +114,7 @@ class MemoryService:
         self.memory_repository.db.add(entry)
         self.memory_repository.db.flush()
         self.memory_repository.db.refresh(entry)
+        self.memory_repository.sync_search_vector(entry, self._build_search_payload(entry.title, entry.content))
         return entry
 
     def archive_memory(self, entry_id: uuid.UUID) -> MemoryEntry:
@@ -180,6 +182,9 @@ class MemoryService:
             max_usage_count=max_usage_count,
             max_importance=max_importance,
         )
+
+    def rebuild_search_vectors(self, *, project_id: uuid.UUID | None = None) -> int:
+        return self.memory_repository.rebuild_search_vectors(project_id=project_id)
 
     def _validate_project(self, project_id: uuid.UUID | None) -> None:
         if project_id and not self.project_repository.get(project_id):

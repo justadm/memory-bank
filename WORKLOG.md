@@ -54,3 +54,5 @@
 - Implemented optional server-side auto-linking on `POST /memory` using bag-of-words cosine similarity and added coverage for it.
 - Started an embedded integration layer inside this repository: `memorybank_sdk` plus an example memory-aware agent following `READ -> ACT -> WRITE -> LINK`.
 - Verified the embedded SDK layer with imports and tests; total suite status is now `14 passed`.
+- Upgraded the search path toward fuller PostgreSQL FTS: stored `search_vector` sync on create/update, rebuild endpoint, and a follow-up migration to `tsvector`.
+- Re-ran the suite after the FTS work; total status is now `15 passed`.

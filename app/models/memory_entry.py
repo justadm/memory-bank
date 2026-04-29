@@ -3,7 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.sql.sqltypes import Text as SqlText
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -27,7 +27,7 @@ class MemoryEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     metadata_: Mapped[dict] = mapped_column(
         "metadata", JSON().with_variant(JSONB, "postgresql"), default=dict, nullable=False
     )
-    search_vector: Mapped[str | None] = mapped_column(SqlText(), nullable=True)
+    search_vector: Mapped[str | None] = mapped_column(SqlText().with_variant(TSVECTOR, "postgresql"), nullable=True)
 
     project = relationship("Project", back_populates="memory_entries")
     outgoing_links = relationship(

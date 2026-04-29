@@ -9,6 +9,7 @@
 - CRUD для памяти, архивирование и листинг
 - связи между записями и простой подграф
 - поиск по памяти с PostgreSQL FTS и fallback для SQLite-тестов
+- rebuild endpoint для `search_vector` и более полноценный PostgreSQL stored FTS runtime
 - endpoint `POST /memory/relevant` с учётом usage/access logs
 - maintenance endpoint для архивации устаревшей памяти
 - опциональное auto-linking новых записей через bag-of-words similarity
@@ -36,6 +37,18 @@ AUTO_LINK_MAX_LINKS=5
 ```
 
 Фича вдохновлена подходом из `memorybank_agent_pack` и работает без внешних embeddings-сервисов.
+
+## Full-Text Search
+
+Для PostgreSQL проект теперь использует stored `search_vector` и отдельную миграцию до `tsvector`.
+
+После массовых правок или импорта данных можно вручную пересобрать поисковые векторы:
+
+```bash
+curl -X POST http://localhost:8000/maintenance/rebuild-search-vectors \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
 
 ## SDK и Example Agent
 

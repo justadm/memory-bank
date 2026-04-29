@@ -61,17 +61,10 @@ class MemoryRepository:
         dialect = self.db.bind.dialect.name if self.db.bind else "unknown"
         if dialect == "postgresql":
             ts_query = func.plainto_tsquery("english", query)
-            rank = func.ts_rank(
-                func.to_tsvector("english", func.coalesce(MemoryEntry.title, "") + " " + MemoryEntry.content),
-                ts_query,
-            )
+            rank = func.ts_rank(MemoryEntry.search_vector, ts_query)
             stmt = (
                 stmt.add_columns(rank.label("score"))
-                .where(
-                    func.to_tsvector("english", func.coalesce(MemoryEntry.title, "") + " " + MemoryEntry.content).op(
-                        "@@"
-                    )(ts_query)
-                )
+                .where(MemoryEntry.search_vector.is_not(None), MemoryEntry.search_vector.op("@@")(ts_query))
                 .order_by(rank.desc(), MemoryEntry.created_at.desc())
                 .limit(limit)
             )
@@ -102,6 +95,29 @@ class MemoryRepository:
         entry.usage_count += 1
         entry.last_used_at = datetime.now(timezone.utc)
         self.db.add(entry)
+
+    def sync_search_vector(self, entry: MemoryEntry, payload: str) -> None:
+        dialect = self.db.bind.dialect.name if self.db.bind else "unknown"
+        if dialect == "postgresql":
+            self.db.query(MemoryEntry).filter(MemoryEntry.id == entry.id).update(
+                {"search_vector": func.to_tsvector("english", payload)},
+                synchronize_session=False,
+            )
+            self.db.flush()
+            self.db.refresh(entry)
+            return
+
+        entry.search_vector = payload
+        self.db.add(entry)
+        self.db.flush()
+        self.db.refresh(entry)
+
+    def rebuild_search_vectors(self, *, project_id: uuid.UUID | None = None) -> int:
+        items = self.list(project_id=project_id, archived=None)
+        for item in items:
+            payload = f"{item.title or ''} {item.content}".strip()
+            self.sync_search_vector(item, payload)
+        return len(items)
 
     def add_access_log(self, log: MemoryAccessLog) -> MemoryAccessLog:
         self.db.add(log)

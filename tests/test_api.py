@@ -56,6 +56,10 @@ def test_update_memory_entry(client):
     assert response.json()["title"] == "Updated"
     assert response.json()["content"] == "Updated content"
 
+    detail = client.get(f"/memory/{created['id']}")
+    assert detail.status_code == 200
+    assert "Updated content" in (detail.json().get("content") or "")
+
 
 def test_archive_memory_entry(client):
     created = client.post("/memory", json={"type": "note", "content": "archive me"}).json()
@@ -164,6 +168,15 @@ def test_archive_stale_memory(client, db_session: Session):
     detail = client.get(f"/memory/{created['id']}")
     assert detail.status_code == 200
     assert detail.json()["archived"] is True
+
+
+def test_rebuild_search_vectors(client):
+    client.post("/memory", json={"type": "decision", "title": "FTS", "content": "search vector rebuild"})
+    client.post("/memory", json={"type": "note", "title": "Other", "content": "another search vector"})
+
+    response = client.post("/maintenance/rebuild-search-vectors", json={})
+    assert response.status_code == 200
+    assert response.json()["rebuilt_count"] == 2
 
 
 def test_relevant_memory_creates_access_log(client, db_session: Session):
