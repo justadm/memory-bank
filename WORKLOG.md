@@ -62,3 +62,5 @@
 - Added a built-in metrics overview API so the service can expose key memory/graph/task observability data without requiring an external dashboard first.
 - Extended the eval layer with batch evaluation and task-log import flow so evaluation payloads and experiment logs can move in larger chunks.
 - Upgraded the embedded SDK so `MemoryAwareAgent` can automatically evaluate completed runs and write `task_logs` without extra orchestration code.
+- Reviewed `/Users/just/apps/memorybank_production_addons` and used its observability direction to add a lightweight admin summary endpoint instead of dragging in the entire production stack.
+- Reviewed `/Users/just/apps/Importer.md` and started aligning the API with a real import-agent workflow: structured project import plus explicit `constraint` and `risk` memory types.

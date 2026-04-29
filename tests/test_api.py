@@ -327,6 +327,130 @@ def test_metrics_overview_endpoint(client):
     assert body["tasks"]["memory_usage_rate"] == 1.0
 
 
+def test_admin_observability_summary_endpoint(client):
+    client.post("/memory", json={"type": "decision", "title": "Memory A", "content": "Observe this memory"})
+    client.post("/memory", json={"type": "note", "title": "Memory B", "content": "Another observed memory"})
+    client.post(
+        "/task-logs",
+        json={
+            "experiment_id": "obs-exp-a",
+            "agent_id": "obs-agent-a",
+            "task_description": "Inspect observability",
+            "used_memory": True,
+            "memory_entries_count": 2,
+            "duration_seconds": 5.0,
+            "result_quality_score": 0.8,
+            "duplicate_count": 0,
+            "consistency_score": 0.9,
+        },
+    )
+    client.post(
+        "/task-logs",
+        json={
+            "experiment_id": "obs-exp-a",
+            "agent_id": "obs-agent-a",
+            "task_description": "Inspect observability again",
+            "used_memory": False,
+            "memory_entries_count": 0,
+            "duration_seconds": 6.0,
+            "result_quality_score": 0.7,
+            "duplicate_count": 0,
+            "consistency_score": 0.85,
+        },
+    )
+    client.post(
+        "/task-logs",
+        json={
+            "experiment_id": "obs-exp-b",
+            "agent_id": "obs-agent-b",
+            "task_description": "Secondary agent task",
+            "used_memory": True,
+            "memory_entries_count": 1,
+            "duration_seconds": 4.0,
+            "result_quality_score": 0.95,
+            "duplicate_count": 0,
+            "consistency_score": 1.0,
+        },
+    )
+
+    response = client.get("/admin/observability/summary")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["environment"] == "development"
+    assert body["memory"]["total_entries"] == 2
+    assert body["tasks"]["total_tasks"] == 3
+    assert body["recent_activity"]["memory_entries_created"] == 2
+    assert body["recent_activity"]["task_logs_created"] == 3
+    assert body["top_agents"][0]["key"] == "obs-agent-a"
+    assert body["top_agents"][0]["total_tasks"] == 2
+    assert body["top_experiments"][0]["key"] == "obs-exp-a"
+    assert body["top_experiments"][0]["total_tasks"] == 2
+
+
+def test_project_import_scan_endpoint(client):
+    response = client.post(
+        "/imports/project-scan",
+        json={
+            "project": {
+                "name": "Imported Repo",
+                "description": "Imported from analyzer",
+            },
+            "entries": [
+                {
+                    "ref": "decision-db",
+                    "type": "decision",
+                    "title": "Use PostgreSQL",
+                    "content": "Primary database is PostgreSQL.",
+                    "importance": 4,
+                    "metadata": {"evidence": ["docker-compose.yml"]},
+                },
+                {
+                    "ref": "risk-secrets",
+                    "type": "risk",
+                    "title": "Secrets leak risk",
+                    "content": "Never store api_key=super-secret-value in imported memory.",
+                    "importance": 5,
+                    "metadata": {"note": "token=abc123"},
+                },
+                {
+                    "ref": "constraint-stack",
+                    "type": "constraint",
+                    "title": "FastAPI stack",
+                    "content": "Service must stay on FastAPI and PostgreSQL.",
+                    "importance": 4,
+                },
+            ],
+            "links": [
+                {
+                    "from_ref": "risk-secrets",
+                    "to_ref": "decision-db",
+                    "type": "affects",
+                },
+                {
+                    "from_ref": "constraint-stack",
+                    "to_ref": "decision-db",
+                    "type": "depends_on",
+                },
+            ],
+        },
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["entries_created"] == 3
+    assert body["links_created"] == 2
+    assert "decision-db" in body["entry_refs"]
+
+    project_id = body["project"]["id"]
+    listed = client.get("/memory", params={"project_id": project_id})
+    assert listed.status_code == 200
+    items = listed.json()["items"]
+    assert len(items) == 4
+    imported_risk = next(item for item in items if item["type"] == "risk")
+    assert "[REDACTED]" in imported_risk["content"]
+    assert "super-secret-value" not in imported_risk["content"]
+
+
 def test_relevant_memory_creates_access_log(client, db_session: Session):
     created = client.post(
         "/memory",

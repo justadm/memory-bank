@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import Float, case, cast, func, or_, select
 from sqlalchemy.orm import Session
@@ -100,3 +101,45 @@ class MetricsRepository:
             "avg_duplicate_count": float(avg_duplicate) if avg_duplicate is not None else None,
         }
 
+    def task_breakdown_by_field(self, field_name: str, *, limit: int = 5) -> list[dict]:
+        field = getattr(TaskLog, field_name)
+        stmt = (
+            select(
+                field.label("key"),
+                func.count(TaskLog.id).label("total_tasks"),
+                func.avg(case((TaskLog.used_memory.is_(True), 1.0), else_=0.0)).label("memory_usage_rate"),
+                func.avg(TaskLog.result_quality_score).label("avg_quality_score"),
+                func.avg(TaskLog.consistency_score).label("avg_consistency_score"),
+            )
+            .where(field.is_not(None))
+            .group_by(field)
+            .order_by(func.count(TaskLog.id).desc(), field.asc())
+            .limit(limit)
+        )
+        rows = self.db.execute(stmt).all()
+        return [
+            {
+                "key": row.key,
+                "total_tasks": int(row.total_tasks or 0),
+                "memory_usage_rate": float(row.memory_usage_rate or 0.0),
+                "avg_quality_score": float(row.avg_quality_score) if row.avg_quality_score is not None else None,
+                "avg_consistency_score": float(row.avg_consistency_score)
+                if row.avg_consistency_score is not None
+                else None,
+            }
+            for row in rows
+        ]
+
+    def recent_activity_overview(self, *, window_hours: int = 24) -> dict:
+        threshold = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+        memory_entries_created = int(
+            self.db.scalar(select(func.count(MemoryEntry.id)).where(MemoryEntry.created_at >= threshold)) or 0
+        )
+        task_logs_created = int(
+            self.db.scalar(select(func.count(TaskLog.id)).where(TaskLog.created_at >= threshold)) or 0
+        )
+        return {
+            "window_hours": window_hours,
+            "memory_entries_created": memory_entries_created,
+            "task_logs_created": task_logs_created,
+        }

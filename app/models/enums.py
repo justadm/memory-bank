@@ -7,6 +7,8 @@ class MemoryType(str, Enum):
     artifact = "artifact"
     event = "event"
     note = "note"
+    constraint = "constraint"
+    risk = "risk"
 
 
 class MemoryLinkType(str, Enum):
@@ -17,4 +19,3 @@ class MemoryLinkType(str, Enum):
     derived_from = "derived_from"
     blocks = "blocks"
     resolves = "resolves"
-

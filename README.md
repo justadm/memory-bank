@@ -13,10 +13,12 @@
 - task logs и базовая eval/experiment analytics summary
 - встроенный evaluator endpoint для rule-based оценки использования памяти
 - встроенный metrics overview endpoint для observability без внешнего dashboard
+- admin observability snapshot для быстрого production-style обзора состояния сервиса
 - endpoint `POST /memory/relevant` с учётом usage/access logs
 - maintenance endpoint для архивации устаревшей памяти
 - опциональное auto-linking новых записей через bag-of-words similarity
 - встроенный `memorybank_sdk` и пример memory-aware агента
+- structured project import endpoint для первичного наполнения MemoryBank
 - Docker, Alembic и базовые API-тесты
 
 ## Быстрый старт
@@ -108,6 +110,7 @@ READ -> ACT -> WRITE -> LINK
 Для базовой observability без внешнего dashboard доступен:
 
 - `GET /metrics/overview`
+- `GET /admin/observability/summary`
 
 Он возвращает сводку по:
 
@@ -116,6 +119,32 @@ READ -> ACT -> WRITE -> LINK
 - task logs: `total_tasks`, `memory_usage_rate`, `avg_duration_seconds`, `avg_quality_score`
 
 Можно фильтровать по `project_id` для memory/graph и по `agent_id` / `experiment_id` для task logs.
+
+`GET /admin/observability/summary` даёт единый snapshot: environment, recent activity за 24 часа, top agents и top experiments.
+
+## Project Import API
+
+Для сценария из `Importer.md` теперь доступен:
+
+- `POST /imports/project-scan`
+
+Он умеет:
+
+- создать новый `project` или использовать существующий `project_id`
+- автоматически создать import `event`
+- пакетно создать memory entries с `ref`
+- пакетно создать связи между ними через `from_ref` / `to_ref`
+- базово маскировать строки вида `api_key=...`, `token=...`, `password=...`, `secret=...`
+
+Поддерживаемые типы памяти теперь включают:
+
+- `decision`
+- `task`
+- `artifact`
+- `event`
+- `note`
+- `constraint`
+- `risk`
 
 ## Журнал
 
