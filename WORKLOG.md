@@ -52,3 +52,5 @@
 - Added `.dockerignore` and a PostgreSQL healthcheck in `docker-compose.yml` to make container startup lighter and more reliable.
 - Reviewed `/Users/just/apps/memorybank_agent_pack` and reused its most practical next-step idea: synchronous auto-linking for newly created memory entries.
 - Implemented optional server-side auto-linking on `POST /memory` using bag-of-words cosine similarity and added coverage for it.
+- Started an embedded integration layer inside this repository: `memorybank_sdk` plus an example memory-aware agent following `READ -> ACT -> WRITE -> LINK`.
+- Verified the embedded SDK layer with imports and tests; total suite status is now `14 passed`.

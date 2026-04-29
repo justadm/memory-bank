@@ -12,6 +12,7 @@
 - endpoint `POST /memory/relevant` с учётом usage/access logs
 - maintenance endpoint для архивации устаревшей памяти
 - опциональное auto-linking новых записей через bag-of-words similarity
+- встроенный `memorybank_sdk` и пример memory-aware агента
 - Docker, Alembic и базовые API-тесты
 
 ## Быстрый старт
@@ -35,6 +36,30 @@ AUTO_LINK_MAX_LINKS=5
 ```
 
 Фича вдохновлена подходом из `memorybank_agent_pack` и работает без внешних embeddings-сервисов.
+
+## SDK и Example Agent
+
+В репозитории есть встроенный минимальный SDK для агентных сценариев:
+
+```python
+from memorybank_sdk import MemoryBankClient
+
+with MemoryBankClient("http://localhost:8000") as client:
+    health = client.health()
+    print(health)
+```
+
+И пример агента:
+
+```bash
+PYTHONPATH=$PWD .venv313/bin/python examples/simple_agent.py
+```
+
+Он следует циклу:
+
+```text
+READ -> ACT -> WRITE -> LINK
+```
 
 ## Журнал
 
