@@ -1,4 +1,5 @@
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
@@ -54,22 +55,26 @@ def list_memory(
 def search_memory(
     query: str,
     project_id: uuid.UUID | None = None,
+    mode: Literal["lexical", "semantic", "hybrid"] = Query(default="hybrid"),
     limit: int = Query(default=10, ge=1, le=50),
     service: MemoryService = Depends(get_memory_service),
 ) -> MemorySearchResponse:
-    results = service.search_memory(query=query, project_id=project_id, limit=limit)
+    results = service.search_memory(query=query, project_id=project_id, limit=limit, mode=mode)
     return MemorySearchResponse(
         items=[
             MemorySearchItem(
-                id=entry.id,
-                type=entry.type,
-                title=entry.title,
-                content_preview=entry.content[:180],
-                score=score,
-                importance=entry.importance,
-                usage_count=entry.usage_count,
+                id=match.entry.id,
+                type=match.entry.type,
+                title=match.entry.title,
+                content_preview=match.entry.content[:180],
+                score=match.score,
+                lexical_score=match.lexical_score,
+                semantic_score=match.semantic_score,
+                match_mode=match.match_mode,
+                importance=match.entry.importance,
+                usage_count=match.entry.usage_count,
             )
-            for entry, score in results
+            for match in results
         ]
     )
 

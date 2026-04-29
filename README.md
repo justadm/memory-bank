@@ -267,6 +267,19 @@ curl -X POST http://localhost:8000/maintenance/rebuild-search-vectors \
   -d '{}'
 ```
 
+## Hybrid Search
+
+Поиск теперь поддерживает три режима:
+
+- `lexical` — текущий FTS / text-match путь
+- `semantic` — локальный semantic-ish token similarity с query expansion
+- `hybrid` — смешанный режим по умолчанию
+
+Это доступно в:
+
+- `GET /memory/search?query=...&mode=hybrid`
+- `POST /memory/relevant` через поле `search_mode`
+
 ## SDK и Example Agent
 
 В репозитории есть встроенный минимальный SDK для агентных сценариев:

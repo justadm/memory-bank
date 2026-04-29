@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -59,6 +60,9 @@ class MemorySearchItem(BaseModel):
     title: str | None
     content_preview: str
     score: float
+    lexical_score: float | None = None
+    semantic_score: float | None = None
+    match_mode: Literal["lexical", "semantic", "hybrid"] = "hybrid"
     importance: int
     usage_count: int
 
@@ -72,6 +76,7 @@ class MemoryRelevantRequest(BaseModel):
     project_id: uuid.UUID | None = None
     agent_id: str | None = Field(default=None, max_length=100)
     types: list[MemoryType] | None = None
+    search_mode: Literal["lexical", "semantic", "hybrid"] = "hybrid"
     limit: int = Field(default=8, ge=1, le=50)
     metadata: dict = Field(default_factory=dict)
 

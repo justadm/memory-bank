@@ -126,9 +126,14 @@ class MemoryService:
         return entry
 
     def search_memory(
-        self, *, query: str, project_id: uuid.UUID | None = None, limit: int = 10
-    ) -> list[tuple[MemoryEntry, float]]:
-        return self.search_service.search(query=query, project_id=project_id, limit=limit)
+        self,
+        *,
+        query: str,
+        project_id: uuid.UUID | None = None,
+        limit: int = 10,
+        mode: str = "hybrid",
+    ):
+        return self.search_service.search(query=query, project_id=project_id, limit=limit, mode=mode)
 
     def get_relevant_memory(self, payload: MemoryRelevantRequest) -> list[tuple[MemoryEntry, float]]:
         results = self.search_service.search(
@@ -136,18 +141,19 @@ class MemoryService:
             project_id=payload.project_id,
             limit=payload.limit,
             types=payload.types,
+            mode=payload.search_mode,
         )
-        for entry, _score in results:
-            self.memory_repository.increment_usage(entry)
+        for match in results:
+            self.memory_repository.increment_usage(match.entry)
             self.memory_repository.add_access_log(
                 MemoryAccessLog(
-                    entry_id=entry.id,
+                    entry_id=match.entry.id,
                     agent_id=payload.agent_id,
                     task_context=payload.query,
                     metadata_=payload.metadata,
                 )
             )
-        return results
+        return [(match.entry, match.score) for match in results]
 
     def create_link(self, payload: LinkCreate) -> MemoryLink:
         self.get_memory(payload.from_entry_id)

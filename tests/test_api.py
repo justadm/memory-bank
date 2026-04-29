@@ -109,6 +109,39 @@ def test_search_memory(client):
     items = response.json()["items"]
     assert len(items) == 1
     assert items[0]["title"] == "Use PostgreSQL"
+    assert items[0]["match_mode"] == "hybrid"
+
+
+def test_semantic_search_memory(client):
+    client.post(
+        "/memory",
+        json={"type": "decision", "title": "Use PostgreSQL", "content": "Primary database selection for the system"},
+    )
+    client.post(
+        "/memory",
+        json={"type": "artifact", "title": "Frontend style", "content": "CSS palette and layout details"},
+    )
+    response = client.get("/memory/search", params={"query": "database choice", "mode": "semantic"})
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) >= 1
+    assert items[0]["title"] == "Use PostgreSQL"
+    assert items[0]["semantic_score"] is not None
+    assert items[0]["match_mode"] == "semantic"
+
+
+def test_relevant_memory_supports_hybrid_search_mode(client):
+    created = client.post(
+        "/memory",
+        json={"type": "decision", "title": "Use PostgreSQL", "content": "Database platform for MVP"},
+    ).json()
+    response = client.post(
+        "/memory/relevant",
+        json={"query": "database platform", "agent_id": "hybrid-agent", "search_mode": "hybrid"},
+    )
+    assert response.status_code == 200
+    items = response.json()["context"]
+    assert items[0]["id"] == created["id"]
 
 
 def test_get_relevant_memory(client):

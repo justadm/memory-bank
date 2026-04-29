@@ -74,3 +74,4 @@
 - Added re-import modes for project scans (`create`, `skip`, `update`) so repeated imports can avoid duplicates or refresh previously imported entries in place.
 - Closed another roadmap-docs gap by extending `README.md` with an API quick reference, explicit memory/link type lists, `curl` examples, and the formal Docker test command.
 - Added an optional API-key auth layer with `write`, `import`, and `admin` scopes, protected critical routes, updated the SDK/CLI/examples to read `MEMORYBANK_API_KEY`, and covered the security flow with API tests.
+- Added a practical semantic layer without external services: `lexical / semantic / hybrid` search modes, local token-expansion scoring, and support for the same mode in `/memory/relevant`.
