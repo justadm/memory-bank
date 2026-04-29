@@ -1,4 +1,5 @@
 from app.schemas.links import LinkCreate, LinkResponse
+from app.schemas.metrics import GraphMetricsResponse, MemoryMetricsResponse, MetricsOverviewResponse, TaskMetricsResponse
 from app.schemas.memory import (
     MemoryArchiveResponse,
     MemoryCreate,
@@ -31,6 +32,10 @@ __all__ = [
     "MemoryRelevantResponse",
     "LinkCreate",
     "LinkResponse",
+    "MemoryMetricsResponse",
+    "GraphMetricsResponse",
+    "TaskMetricsResponse",
+    "MetricsOverviewResponse",
     "EvaluationRequest",
     "EvaluationResponse",
     "TaskLogCreate",

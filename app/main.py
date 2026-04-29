@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from app.config import get_settings
-from app.routers import evaluation, links, maintenance, memory, projects, task_logs
+from app.routers import evaluation, links, maintenance, memory, metrics, projects, task_logs
 
 
 settings = get_settings()
@@ -13,6 +13,7 @@ app.include_router(links.router)
 app.include_router(maintenance.router)
 app.include_router(task_logs.router)
 app.include_router(evaluation.router)
+app.include_router(metrics.router)
 
 
 @app.get("/health", tags=["health"])

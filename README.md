@@ -12,6 +12,7 @@
 - rebuild endpoint для `search_vector` и более полноценный PostgreSQL stored FTS runtime
 - task logs и базовая eval/experiment analytics summary
 - встроенный evaluator endpoint для rule-based оценки использования памяти
+- встроенный metrics overview endpoint для observability без внешнего dashboard
 - endpoint `POST /memory/relevant` с учётом usage/access logs
 - maintenance endpoint для архивации устаревшей памяти
 - опциональное auto-linking новых записей через bag-of-words similarity
@@ -91,6 +92,20 @@ READ -> ACT -> WRITE -> LINK
 - `POST /evaluation/evaluate`
 
 Он принимает `task`, `memory`, `reasoning`, `answer` и возвращает explainable rule-based оценку того, насколько память действительно повлияла на результат.
+
+## Metrics API
+
+Для базовой observability без внешнего dashboard доступен:
+
+- `GET /metrics/overview`
+
+Он возвращает сводку по:
+
+- памяти: `total_entries`, `active_entries`, `archived_entries`, `reuse_rate`, `orphan_rate`
+- графу: `total_links`, `avg_link_strength`
+- task logs: `total_tasks`, `memory_usage_rate`, `avg_duration_seconds`, `avg_quality_score`
+
+Можно фильтровать по `project_id` для memory/graph и по `agent_id` / `experiment_id` для task logs.
 
 ## Журнал
 

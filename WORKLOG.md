@@ -59,3 +59,4 @@
 - Reviewed `/Users/just/apps/memorybank_eval_pack` and pulled its most practical backend extension into the core service: `task_logs` plus a basic analytics summary API.
 - Switched Docker host ports to less conflict-prone configurable defaults (`18100` for API, `15432` for Postgres) while keeping internal container ports standard.
 - Added an embedded evaluator endpoint inspired by `memorybank_eval_pack` for rule-based memory-usage assessment.
+- Added a built-in metrics overview API so the service can expose key memory/graph/task observability data without requiring an external dashboard first.

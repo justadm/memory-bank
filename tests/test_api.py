@@ -228,6 +228,48 @@ def test_evaluation_endpoint(client):
     assert body["quality_score"] >= 0.8
 
 
+def test_metrics_overview_endpoint(client):
+    project = client.post("/projects", json={"name": "Metrics Project"}).json()
+    first = client.post(
+        "/memory",
+        json={"type": "decision", "title": "Use PostgreSQL", "content": "Architecture memory", "project_id": project["id"]},
+    ).json()
+    second = client.post(
+        "/memory",
+        json={"type": "artifact", "title": "Implementation", "content": "Derived work", "project_id": project["id"]},
+    ).json()
+    client.post(
+        "/memory-links",
+        json={"from_entry_id": second["id"], "to_entry_id": first["id"], "type": "derived_from", "strength": 0.8},
+    )
+    client.post(
+        "/task-logs",
+        json={
+            "experiment_id": "metrics-exp",
+            "agent_id": "metrics-agent",
+            "task_description": "Check metrics",
+            "used_memory": True,
+            "memory_entries_count": 2,
+            "duration_seconds": 8.0,
+            "result_quality_score": 0.75,
+            "duplicate_count": 0,
+            "consistency_score": 0.9,
+        },
+    )
+
+    response = client.get(
+        "/metrics/overview",
+        params={"project_id": project["id"], "agent_id": "metrics-agent", "experiment_id": "metrics-exp"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["memory"]["total_entries"] == 2
+    assert body["memory"]["active_entries"] == 2
+    assert body["graph"]["total_links"] == 1
+    assert body["tasks"]["total_tasks"] == 1
+    assert body["tasks"]["memory_usage_rate"] == 1.0
+
+
 def test_relevant_memory_creates_access_log(client, db_session: Session):
     created = client.post(
         "/memory",
