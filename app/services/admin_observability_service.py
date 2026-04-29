@@ -41,3 +41,6 @@ class AdminObservabilityService:
                 for item in items
             ]
         }
+
+    def get_import_summaries(self, *, limit: int = 20) -> dict:
+        return {"items": self.memory_repository.list_import_project_summaries(limit=limit)}

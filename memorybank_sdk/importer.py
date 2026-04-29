@@ -15,6 +15,10 @@ IMPORTANT_FILENAMES = [
     "requirements.txt",
     "package.json",
     "pyproject.toml",
+    "go.mod",
+    "pnpm-workspace.yaml",
+    "turbo.json",
+    "Makefile",
     ".env.example",
 ]
 
@@ -32,6 +36,14 @@ TEXT_FILE_SUFFIXES = {
 }
 
 EXCLUDED_DIRS = {".git", ".venv", ".venv313", "__pycache__", "node_modules", ".pytest_cache"}
+COMMON_ENTRYPOINTS = [
+    "app/main.py",
+    "src/main.py",
+    "src/index.ts",
+    "src/main.ts",
+    "main.go",
+    "cmd/server/main.go",
+]
 
 
 def build_project_import_payload(
@@ -58,6 +70,7 @@ def build_project_import_payload(
 
     entries.extend(_derive_decisions(files))
     entries.extend(_derive_constraints(files))
+    entries.extend(_derive_risks(files))
     entries.extend(_derive_notes(files, root))
     entries.extend(_derive_tasks(root))
 
@@ -76,6 +89,24 @@ def build_project_import_payload(
             {
                 "from_ref": "artifact-app-main-py",
                 "to_ref": "constraint-fastapi-stack",
+                "type": "derived_from",
+                "strength": 0.7,
+            }
+        )
+    if "artifact-package-json" in refs and "constraint-nodejs-runtime" in refs:
+        links.append(
+            {
+                "from_ref": "artifact-package-json",
+                "to_ref": "constraint-nodejs-runtime",
+                "type": "derived_from",
+                "strength": 0.7,
+            }
+        )
+    if "artifact-go-mod" in refs and "constraint-go-runtime" in refs:
+        links.append(
+            {
+                "from_ref": "artifact-go-mod",
+                "to_ref": "constraint-go-runtime",
                 "type": "derived_from",
                 "strength": 0.7,
             }
@@ -127,9 +158,10 @@ def _read_important_files(root: Path) -> dict[str, str]:
         if path.exists() and path.is_file():
             files[candidate] = _read_text(path)
 
-    entrypoint = root / "app" / "main.py"
-    if entrypoint.exists():
-        files["app/main.py"] = _read_text(entrypoint)
+    for candidate in COMMON_ENTRYPOINTS:
+        entrypoint = root / candidate
+        if entrypoint.exists() and entrypoint.is_file():
+            files[candidate] = _read_text(entrypoint)
 
     tests_dir = root / "tests"
     if tests_dir.exists():
@@ -142,8 +174,9 @@ def _looks_like_project(path: Path) -> bool:
     for candidate in IMPORTANT_FILENAMES:
         if (path / candidate).exists():
             return True
-    if (path / "app" / "main.py").exists():
-        return True
+    for candidate in COMMON_ENTRYPOINTS:
+        if (path / candidate).exists():
+            return True
     if (path / "tests").exists():
         return True
     return False
@@ -166,6 +199,8 @@ def _artifact_entry_for_file(name: str, content: str) -> dict[str, Any] | None:
     if "docker" in name.lower():
         artifact_type = "infrastructure"
     elif name.endswith(".py"):
+        artifact_type = "source"
+    elif name.endswith(".ts") or name.endswith(".go"):
         artifact_type = "source"
     elif name.endswith(".json") or name.endswith(".toml") or name.endswith(".txt"):
         artifact_type = "configuration"
@@ -191,6 +226,32 @@ def _derive_decisions(files: dict[str, str]) -> list[dict[str, Any]]:
                 "content": "Project configuration and dependencies indicate PostgreSQL as the primary database.",
                 "importance": 4,
                 "metadata": {"evidence": _evidence(files, ["docker-compose.yml", "requirements.txt", "README.md"]), "confidence": 0.9},
+            }
+        )
+    package_json = _load_package_json(files.get("package.json"))
+    if package_json:
+        package_manager = _guess_package_manager(files)
+        framework = _guess_node_framework(package_json, combined)
+        decisions.append(
+            {
+                "ref": "decision-nodejs-runtime",
+                "type": "decision",
+                "title": "Use Node.js application runtime",
+                "content": f"Project includes a package-managed JavaScript/TypeScript runtime{f' with {framework}' if framework else ''}{f' and {package_manager}' if package_manager else ''}.",
+                "importance": 4,
+                "metadata": {"evidence": _evidence(files, ["package.json", "pnpm-workspace.yaml", "turbo.json"]), "confidence": 0.88},
+            }
+        )
+    if "go.mod" in files:
+        module_name = _first_nonempty_line(files["go.mod"], prefix="module ")
+        decisions.append(
+            {
+                "ref": "decision-go-runtime",
+                "type": "decision",
+                "title": "Use Go application runtime",
+                "content": f"Project includes Go module configuration{f' for {module_name}' if module_name else ''}.",
+                "importance": 4,
+                "metadata": {"evidence": _evidence(files, ["go.mod"]), "confidence": 0.88},
             }
         )
     return decisions
@@ -221,11 +282,100 @@ def _derive_constraints(files: dict[str, str]) -> list[dict[str, Any]]:
                 "metadata": {"confidence": 0.85},
             }
         )
+    if "package.json" in files:
+        constraints.append(
+            {
+                "ref": "constraint-nodejs-runtime",
+                "type": "constraint",
+                "title": "Node.js package-managed runtime",
+                "content": "Project runtime and scripts depend on package.json-managed JavaScript or TypeScript tooling.",
+                "importance": 4,
+                "metadata": {"confidence": 0.88},
+            }
+        )
+    if "go.mod" in files:
+        constraints.append(
+            {
+                "ref": "constraint-go-runtime",
+                "type": "constraint",
+                "title": "Go module runtime",
+                "content": "Project build and execution depend on Go module tooling.",
+                "importance": 4,
+                "metadata": {"confidence": 0.88},
+            }
+        )
+    if "pnpm-workspace.yaml" in files or "turbo.json" in files:
+        constraints.append(
+            {
+                "ref": "constraint-monorepo-layout",
+                "type": "constraint",
+                "title": "Monorepo workspace layout",
+                "content": "Project structure appears to be multi-package and should be handled as a monorepo during tooling and imports.",
+                "importance": 4,
+                "metadata": {"confidence": 0.85},
+            }
+        )
     return constraints
+
+
+def _derive_risks(files: dict[str, str]) -> list[dict[str, Any]]:
+    risks: list[dict[str, Any]] = []
+    combined = _compact_text("\n".join(files.values())).lower()
+    env_example = files.get(".env.example", "")
+    if env_example:
+        risks.append(
+            {
+                "ref": "risk-env-secrets",
+                "type": "risk",
+                "title": "Environment secret handling",
+                "content": "Project exposes environment-variable configuration and imported knowledge should avoid storing real credentials or tokens.",
+                "importance": 4,
+                "metadata": {"evidence": _evidence(files, [".env.example"]), "confidence": 0.9},
+            }
+        )
+    if "0.0.0.0" in combined or "ports:" in combined:
+        risks.append(
+            {
+                "ref": "risk-public-runtime-surface",
+                "type": "risk",
+                "title": "Published runtime surface",
+                "content": "Project configuration publishes network services and should be reviewed for accidental port exposure or permissive defaults.",
+                "importance": 3,
+                "metadata": {"confidence": 0.82},
+            }
+        )
+    return risks
 
 
 def _derive_notes(files: dict[str, str], root: Path) -> list[dict[str, Any]]:
     notes: list[dict[str, Any]] = []
+    package_json = _load_package_json(files.get("package.json"))
+    if package_json:
+        scripts = sorted((package_json.get("scripts") or {}).keys())
+        if scripts:
+            notes.append(
+                {
+                    "ref": "note-package-scripts",
+                    "type": "note",
+                    "title": "Package scripts snapshot",
+                    "content": _truncate(f"package.json scripts: {', '.join(scripts)}"),
+                    "importance": 3,
+                    "metadata": {"path": "package.json", "confidence": 0.9},
+                }
+            )
+    if "go.mod" in files:
+        module_name = _first_nonempty_line(files["go.mod"], prefix="module ")
+        if module_name:
+            notes.append(
+                {
+                    "ref": "note-go-module",
+                    "type": "note",
+                    "title": "Go module path",
+                    "content": f"Detected Go module path: {module_name}",
+                    "importance": 3,
+                    "metadata": {"path": "go.mod", "confidence": 0.9},
+                }
+            )
     if "tests/" in files:
         notes.append(
             {
@@ -290,6 +440,51 @@ def _scan_todos(root: Path, *, limit: int = 10) -> list[dict[str, Any]]:
         except OSError:
             continue
     return findings
+
+
+def _load_package_json(raw: str | None) -> dict[str, Any] | None:
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _guess_package_manager(files: dict[str, str]) -> str | None:
+    if "pnpm-workspace.yaml" in files:
+        return "pnpm workspaces"
+    if "turbo.json" in files:
+        return "turbo monorepo tooling"
+    return "npm-compatible package management" if "package.json" in files else None
+
+
+def _guess_node_framework(package_json: dict[str, Any], combined: str) -> str | None:
+    deps = {
+        *list((package_json.get("dependencies") or {}).keys()),
+        *list((package_json.get("devDependencies") or {}).keys()),
+    }
+    lowered = {item.lower() for item in deps}
+    if "next" in lowered:
+        return "Next.js"
+    if "react" in lowered:
+        return "React"
+    if "vue" in lowered:
+        return "Vue"
+    if "express" in lowered or "express" in combined:
+        return "Express"
+    if "nestjs" in lowered or "@nestjs/core" in lowered:
+        return "NestJS"
+    return None
+
+
+def _first_nonempty_line(text: str, *, prefix: str) -> str | None:
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(prefix):
+            return stripped[len(prefix) :].strip()
+    return None
 
 
 def _summarize_tests_dir(tests_dir: Path) -> str:

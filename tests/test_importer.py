@@ -40,3 +40,29 @@ def test_build_directory_import_payloads_collects_child_projects(tmp_path):
 
     names = [item["project"]["name"] for item in payloads]
     assert names == ["alpha", "beta"]
+
+
+def test_build_project_import_payload_detects_node_go_and_monorepo_signals(tmp_path):
+    (tmp_path / "README.md").write_text("# Poly Repo\n", encoding="utf-8")
+    (tmp_path / "package.json").write_text(
+        '{"name":"poly","scripts":{"dev":"next dev"},"dependencies":{"next":"15.0.0","react":"19.0.0"}}',
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module github.com/example/poly\n\ngo 1.24\n", encoding="utf-8")
+    (tmp_path / "pnpm-workspace.yaml").write_text("packages:\n  - apps/*\n", encoding="utf-8")
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "index.ts").write_text("console.log('hello')\n", encoding="utf-8")
+
+    payload = build_project_import_payload(tmp_path, project_name="Poly Repo")
+    refs = {item["ref"] for item in payload["entries"]}
+
+    assert "decision-nodejs-runtime" in refs
+    assert "decision-go-runtime" in refs
+    assert "constraint-monorepo-layout" in refs
+    assert "constraint-nodejs-runtime" in refs
+    assert "constraint-go-runtime" in refs
+    assert "note-package-scripts" in refs
+    assert "note-go-module" in refs
+    assert "risk-env-secrets" not in refs
+    assert "artifact-src-index-ts" in refs

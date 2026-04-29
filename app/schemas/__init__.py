@@ -1,6 +1,8 @@
 from app.schemas.admin import (
     ImportConflictItemResponse,
     ImportConflictListResponse,
+    ImportProjectSummaryItemResponse,
+    ImportProjectSummaryListResponse,
     ObservabilityBreakdownItem,
     ObservabilityRecentActivityResponse,
     ObservabilitySummaryResponse,
@@ -53,6 +55,8 @@ __all__ = [
     "ObservabilitySummaryResponse",
     "ImportConflictItemResponse",
     "ImportConflictListResponse",
+    "ImportProjectSummaryItemResponse",
+    "ImportProjectSummaryListResponse",
     "ProjectImportEvent",
     "ProjectImportEntry",
     "ProjectImportLink",

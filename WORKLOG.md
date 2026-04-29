@@ -69,3 +69,4 @@
 - Extended the importer to batch-import child projects from a directory and added an admin endpoint for reviewing import conflicts after those scans.
 - Live verification uncovered two runtime integration issues: the SDK helper initially missed the `detect_conflicts` flag, and the Dockerized PostgreSQL runtime needed the `20260429_0004` enum migration before real project imports could succeed.
 - After fixing that path, successfully batch-imported the real local projects `/Users/just/projects/APUAI` and `/Users/just/projects/max`; the live `/admin/import-conflicts` endpoint currently reports no detected conflicts for those imports.
+- Continued by deepening importer heuristics for Node.js, Go, and monorepo-style repositories and added an admin import summary view so operators can review what has already been imported, not just where conflicts happened.

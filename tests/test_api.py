@@ -529,6 +529,44 @@ def test_admin_import_conflicts_endpoint(client):
     assert body["items"][0]["conflicts"]
 
 
+def test_admin_import_summary_endpoint(client):
+    project = client.post(
+        "/projects",
+        json={"name": "Imported Summary Project", "metadata": {"source_path": "/tmp/imported-summary-project"}},
+    ).json()
+    client.post(
+        "/memory",
+        json={
+            "type": "event",
+            "title": "Initial project import",
+            "content": "Imported existing project into MemoryBank.",
+            "source_agent": "memorybank-import-agent",
+            "project_id": project["id"],
+            "metadata": {"import_type": "initial_project_scan"},
+        },
+    )
+    client.post(
+        "/memory",
+        json={
+            "type": "artifact",
+            "title": "README.md",
+            "content": "Imported artifact",
+            "source_agent": "memorybank-import-agent",
+            "project_id": project["id"],
+            "metadata": {},
+        },
+    )
+
+    response = client.get("/admin/imports/summary", params={"limit": 10})
+    assert response.status_code == 200
+    body = response.json()
+    match = next(item for item in body["items"] if item["project_id"] == project["id"])
+    assert match["project_name"] == "Imported Summary Project"
+    assert match["source_path"] == "/tmp/imported-summary-project"
+    assert match["import_events_count"] == 1
+    assert match["imported_entries_count"] == 2
+
+
 def test_relevant_memory_creates_access_log(client, db_session: Session):
     created = client.post(
         "/memory",

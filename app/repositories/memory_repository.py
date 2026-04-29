@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.models.access_log import MemoryAccessLog
 from app.models.memory_entry import MemoryEntry
 from app.models.enums import MemoryType
+from app.models.project import Project
 
 
 class MemoryRepository:
@@ -62,6 +63,45 @@ class MemoryRepository:
             and item.metadata_.get("import_conflicts")
         ]
         return conflicted[:limit]
+
+    def list_import_project_summaries(self, *, limit: int = 20) -> list[dict]:
+        projects = self.db.scalars(select(Project).order_by(Project.updated_at.desc()).limit(limit * 3)).all()
+        summaries: list[dict] = []
+        for project in projects:
+            entries = self.db.scalars(select(MemoryEntry).where(MemoryEntry.project_id == project.id)).all()
+            import_entries = [item for item in entries if item.source_agent == "memorybank-import-agent"]
+            import_events = [
+                item
+                for item in import_entries
+                if item.type == MemoryType.event and isinstance(item.metadata_, dict) and item.metadata_.get("import_type")
+            ]
+            if not import_entries and not project.metadata_.get("source_path"):
+                continue
+            conflict_count = sum(
+                1
+                for item in import_entries
+                if isinstance(item.metadata_, dict) and item.metadata_.get("requires_review") and item.metadata_.get("import_conflicts")
+            )
+            last_imported_at = max((item.created_at for item in import_entries), default=None)
+            summaries.append(
+                {
+                    "project_id": project.id,
+                    "project_name": project.name,
+                    "source_path": project.metadata_.get("source_path") if isinstance(project.metadata_, dict) else None,
+                    "imported_entries_count": len(import_entries),
+                    "import_events_count": len(import_events),
+                    "conflicts_detected_count": conflict_count,
+                    "last_imported_at": last_imported_at,
+                }
+            )
+        summaries.sort(
+            key=lambda item: (
+                item["last_imported_at"] is not None,
+                item["last_imported_at"] or datetime.min.replace(tzinfo=timezone.utc),
+            ),
+            reverse=True,
+        )
+        return summaries[:limit]
 
     def search(
         self,

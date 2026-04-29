@@ -155,6 +155,7 @@ READ -> ACT -> WRITE -> LINK
 - `GET /metrics/overview`
 - `GET /admin/observability/summary`
 - `GET /admin/import-conflicts`
+- `GET /admin/imports/summary`
 
 Он возвращает сводку по:
 
@@ -167,6 +168,8 @@ READ -> ACT -> WRITE -> LINK
 `GET /admin/observability/summary` даёт единый snapshot: environment, recent activity за 24 часа, top agents и top experiments.
 
 `GET /admin/import-conflicts` возвращает импортированные записи, которые были помечены как `requires_review` из-за конфликтующих решений.
+
+`GET /admin/imports/summary` даёт компактную сводку по импортированным проектам: `source_path`, число импортированных entries, число import events, число конфликтов и время последнего импорта.
 
 ## Project Import API
 
@@ -182,6 +185,14 @@ READ -> ACT -> WRITE -> LINK
 - пакетно создать связи между ними через `from_ref` / `to_ref`
 - базово маскировать строки вида `api_key=...`, `token=...`, `password=...`, `secret=...`
 - консервативно помечать конфликтующие `decision` entries как `requires_review=true`
+
+Импортёр теперь дополнительно лучше распознаёт:
+
+- `package.json` и scripts/dependencies
+- `go.mod`
+- `pnpm-workspace.yaml` и `turbo.json`
+- common entrypoints вроде `src/index.ts`, `src/main.ts`, `main.go`, `cmd/server/main.go`
+- monorepo/runtime constraints и базовые runtime risks
 
 При включённом conflict detection response также возвращает список найденных конфликтов с `reason` и `confidence`.
 

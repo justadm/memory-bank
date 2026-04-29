@@ -44,3 +44,17 @@ class ImportConflictItemResponse(BaseModel):
 
 class ImportConflictListResponse(BaseModel):
     items: list[ImportConflictItemResponse]
+
+
+class ImportProjectSummaryItemResponse(BaseModel):
+    project_id: uuid.UUID
+    project_name: str
+    source_path: str | None
+    imported_entries_count: int
+    import_events_count: int
+    conflicts_detected_count: int
+    last_imported_at: datetime | None
+
+
+class ImportProjectSummaryListResponse(BaseModel):
+    items: list[ImportProjectSummaryItemResponse]

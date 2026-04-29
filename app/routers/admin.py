@@ -7,7 +7,11 @@ from app.config import get_settings
 from app.database import get_db
 from app.repositories.memory_repository import MemoryRepository
 from app.repositories.metrics_repository import MetricsRepository
-from app.schemas.admin import ImportConflictListResponse, ObservabilitySummaryResponse
+from app.schemas.admin import (
+    ImportConflictListResponse,
+    ImportProjectSummaryListResponse,
+    ObservabilitySummaryResponse,
+)
 from app.services.admin_observability_service import AdminObservabilityService
 
 
@@ -32,3 +36,11 @@ def get_import_conflicts(
     service: AdminObservabilityService = Depends(get_admin_observability_service),
 ) -> ImportConflictListResponse:
     return ImportConflictListResponse(**service.get_import_conflicts(project_id=project_id, limit=limit))
+
+
+@router.get("/imports/summary", response_model=ImportProjectSummaryListResponse)
+def get_import_summaries(
+    limit: int = 20,
+    service: AdminObservabilityService = Depends(get_admin_observability_service),
+) -> ImportProjectSummaryListResponse:
+    return ImportProjectSummaryListResponse(**service.get_import_summaries(limit=limit))
