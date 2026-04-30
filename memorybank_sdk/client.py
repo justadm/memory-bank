@@ -5,8 +5,8 @@ from typing import Any, Literal
 
 import httpx
 
-DEFAULT_MEMORYBANK_URL = "https://memlayer.loc/api"
-DEFAULT_MEMORYBANK_FALLBACK_URL = "http://127.0.0.1:18100"
+DEFAULT_MEMORYBANK_URL = "http://127.0.0.1:18100"
+DEFAULT_MEMORYBANK_FALLBACK_URL = "https://memlayer.loc/api"
 
 MemoryType = Literal["decision", "task", "artifact", "event", "note", "constraint", "risk"]
 LinkType = Literal[

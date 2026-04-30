@@ -35,10 +35,17 @@ def test_upsert_managed_section_replaces_existing_block() -> None:
 
 def test_build_project_config_contains_expected_defaults(tmp_path: Path) -> None:
     project_root = tmp_path / "ExampleProject"
-    config = build_project_config(project_root, "https://memlayer.loc/api", "http://127.0.0.1:18100")
+    config = build_project_config(
+        project_root,
+        "http://127.0.0.1:18100",
+        "https://memlayer.loc/api",
+        "https://memlayer.loc/api",
+    )
 
     assert config["project_name"] == "ExampleProject"
     assert config["project_root"] == str(project_root)
+    assert config["preferred_url"] == "http://127.0.0.1:18100"
+    assert config["human_preferred_url"] == "https://memlayer.loc/api"
     assert config["existing_entry_mode"] == "update"
     assert config["recommended_search_mode"] == "hybrid"
 
@@ -49,8 +56,9 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
 
     result = install_for_project(
         project_root,
-        preferred_url="https://memlayer.loc/api",
-        local_url="http://127.0.0.1:18100",
+        preferred_url="http://127.0.0.1:18100",
+        local_url="https://memlayer.loc/api",
+        human_url="https://memlayer.loc/api",
         dry_run=False,
     )
 
@@ -69,8 +77,9 @@ def test_install_for_project_merges_existing_agents_file(tmp_path: Path) -> None
 
     result = install_for_project(
         project_root,
-        preferred_url="https://memlayer.loc/api",
-        local_url="http://127.0.0.1:18100",
+        preferred_url="http://127.0.0.1:18100",
+        local_url="https://memlayer.loc/api",
+        human_url="https://memlayer.loc/api",
         dry_run=False,
     )
 

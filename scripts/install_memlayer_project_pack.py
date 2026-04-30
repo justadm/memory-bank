@@ -17,13 +17,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--preferred-url",
-        default="https://memlayer.loc/api",
-        help="Primary MemLayer API URL that agents should prefer.",
+        default="http://127.0.0.1:18100",
+        help="Primary MemLayer API URL that local sandboxed agents should prefer.",
     )
     parser.add_argument(
         "--local-url",
-        default="http://127.0.0.1:18100",
-        help="Local fallback MemLayer API URL.",
+        default="https://memlayer.loc/api",
+        help="Fallback MemLayer API URL when localhost is unavailable.",
+    )
+    parser.add_argument(
+        "--human-url",
+        default="https://memlayer.loc/api",
+        help="Human-friendly MemLayer API URL for browsers and non-sandboxed tools.",
     )
     parser.add_argument(
         "--names",
@@ -57,7 +62,7 @@ def upsert_managed_section(existing_text: str, managed_section: str) -> str:
     return f"{trimmed}\n\n{block}\n"
 
 
-def build_project_config(project_root: Path, preferred_url: str, local_url: str) -> dict[str, object]:
+def build_project_config(project_root: Path, preferred_url: str, local_url: str, human_url: str) -> dict[str, object]:
     project_name = project_root.name
     return {
         "schema_version": 1,
@@ -65,6 +70,7 @@ def build_project_config(project_root: Path, preferred_url: str, local_url: str)
         "project_root": str(project_root),
         "preferred_url": preferred_url,
         "local_fallback_url": local_url,
+        "human_preferred_url": human_url,
         "existing_entry_mode": "update",
         "read_before_write": True,
         "recommended_search_mode": "hybrid",
@@ -100,7 +106,7 @@ def write_json(path: Path, payload: dict[str, object], dry_run: bool) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def install_for_project(project_root: Path, preferred_url: str, local_url: str, dry_run: bool) -> dict[str, object]:
+def install_for_project(project_root: Path, preferred_url: str, local_url: str, human_url: str, dry_run: bool) -> dict[str, object]:
     project_name = project_root.name
     managed_section = render_template("AGENTS_SECTION.md.tmpl")
     agents_path = project_root / "AGENTS.md"
@@ -126,6 +132,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
         project_root=str(project_root),
         preferred_url=preferred_url,
         local_url=local_url,
+        human_url=human_url,
     )
     env_text = render_template(
         "env.memlayer.example.tmpl",
@@ -133,8 +140,14 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
         project_root=str(project_root),
         preferred_url=preferred_url,
         local_url=local_url,
+        human_url=human_url,
     )
-    config_payload = build_project_config(project_root, preferred_url=preferred_url, local_url=local_url)
+    config_payload = build_project_config(
+        project_root,
+        preferred_url=preferred_url,
+        local_url=local_url,
+        human_url=human_url,
+    )
 
     write_text(agents_path, new_agents_text, dry_run=dry_run)
     write_text(memlayer_path, memlayer_text, dry_run=dry_run)
@@ -159,7 +172,13 @@ def main() -> None:
     projects_root = Path(args.projects_root).expanduser().resolve()
     names = [item.strip() for item in args.names.split(",") if item.strip()] if args.names else None
     results = [
-        install_for_project(project_root, args.preferred_url, args.local_url, dry_run=args.dry_run)
+        install_for_project(
+            project_root,
+            args.preferred_url,
+            args.local_url,
+            args.human_url,
+            dry_run=args.dry_run,
+        )
         for project_root in list_projects(projects_root, names)
     ]
     print(json.dumps(results, indent=2, ensure_ascii=False))

@@ -30,8 +30,8 @@
 
 Для локальных агентов, CLI и automation wrapper-ов теперь рекомендуется:
 
-- preferred endpoint: `https://memlayer.loc/api`
-- local fallback: `http://127.0.0.1:18100`
+- sandbox-friendly default: `http://127.0.0.1:18100`
+- escalated or browser-friendly fallback: `https://memlayer.loc/api`
 
 Встроенная консоль MemLayer уже умеет:
 - работать с same-origin API по умолчанию
@@ -119,7 +119,7 @@ PYTHONPATH=$PWD .venv313/bin/python scripts/runtime_smoke_check.py \
 Для лёгкой read-only проверки есть endpoint:
 
 ```bash
-curl -sS 'https://memlayer.loc/api/admin/runtime/self-check?search_query=architecture&limit=5' \
+curl -sS 'http://127.0.0.1:18100/admin/runtime/self-check?search_query=architecture&limit=5' \
   -H 'Authorization: Bearer ops-admin-key'
 ```
 
@@ -429,7 +429,7 @@ PYTHONPATH=$PWD .venv313/bin/python examples/simple_agent.py
 И пример импортёра:
 
 ```bash
-PYTHONPATH=$PWD MEMORYBANK_URL=https://memlayer.loc/api .venv313/bin/python examples/project_importer.py
+PYTHONPATH=$PWD MEMORYBANK_URL=http://127.0.0.1:18100 .venv313/bin/python examples/project_importer.py
 ```
 
 И CLI-импорт локального проекта:
@@ -437,7 +437,7 @@ PYTHONPATH=$PWD MEMORYBANK_URL=https://memlayer.loc/api .venv313/bin/python exam
 ```bash
 PYTHONPATH=$PWD .venv313/bin/python scripts/import_project_cli.py \
   --project-root /path/to/project \
-  --memorybank-url https://memlayer.loc/api \
+  --memorybank-url http://127.0.0.1:18100 \
   --dry-run
 ```
 
@@ -448,7 +448,7 @@ PYTHONPATH=$PWD .venv313/bin/python scripts/import_project_cli.py \
   --projects-directory /Users/just/projects \
   --names max,APUAI \
   --existing-entry-mode update \
-  --memorybank-url https://memlayer.loc/api
+  --memorybank-url http://127.0.0.1:18100
 ```
 
 Он следует циклу:

@@ -4,8 +4,9 @@ This repository is expected to use MemLayer as its shared working memory.
 
 ## Endpoints
 
-- Preferred: `{preferred_url}`
-- Local fallback: `{local_url}`
+- Agent default: `{preferred_url}`
+- Escalated fallback: `{local_url}`
+- Browser/UI-friendly: `{human_url}`
 
 ## Local Project Identity
 
@@ -106,7 +107,7 @@ PYTHONPATH=$PWD .venv313/bin/python scripts/import_project_cli.py \
   --project-root "{project_root}" \
   --project-name "{project_name}" \
   --existing-entry-mode update \
-  --memorybank-url "{local_url}"
+  --memorybank-url "{preferred_url}"
 ```
 
 ## Working Rule
