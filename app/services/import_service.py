@@ -2,6 +2,7 @@ import re
 import uuid
 from copy import deepcopy
 from dataclasses import dataclass
+from pathlib import Path
 
 from fastapi import HTTPException, status
 
@@ -17,6 +18,7 @@ from app.schemas.memory import MemoryCreate, MemoryUpdate
 from app.schemas.projects import ProjectCreate
 from app.services.conflict_detector import ConflictDetector
 from app.services.memory_service import MemoryService, ProjectService
+from memorybank_sdk.importer import build_project_import_payload
 
 
 SECRET_PATTERNS = [
@@ -176,6 +178,41 @@ class ImportService:
             "conflicts_detected": len(conflicts),
             "conflicts": conflicts,
         }
+
+    def reimport_project_scan(
+        self,
+        *,
+        project_id: uuid.UUID,
+        source_path: str | None = None,
+        existing_entry_mode: str = "update",
+        detect_conflicts: bool = True,
+        principal: AuthPrincipal | None = None,
+    ) -> dict:
+        project = self.project_service.get_project(project_id, principal=principal)
+        resolved_source_path = source_path or (
+            project.metadata_.get("source_path") if isinstance(project.metadata_, dict) else None
+        )
+        if not resolved_source_path:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project source_path is not configured")
+
+        root = Path(resolved_source_path).expanduser()
+        if not root.exists() or not root.is_dir():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Project source_path is not accessible to the server: {resolved_source_path}",
+            )
+
+        payload = build_project_import_payload(
+            root,
+            project_name=project.name,
+            project_description=project.description,
+        )
+        payload["project_id"] = project.id
+        payload.pop("project", None)
+        payload["existing_entry_mode"] = existing_entry_mode
+        payload["detect_conflicts"] = detect_conflicts
+
+        return self.import_project_scan(ProjectImportRequest.model_validate(payload), principal=principal)
 
     def _resolve_project(
         self,

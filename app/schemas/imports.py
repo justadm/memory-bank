@@ -50,6 +50,13 @@ class ProjectImportRequest(BaseModel):
         return self
 
 
+class ProjectReimportRequest(BaseModel):
+    project_id: uuid.UUID
+    source_path: str | None = None
+    existing_entry_mode: Literal["create", "skip", "update"] = "update"
+    detect_conflicts: bool = True
+
+
 class ProjectImportConflictResponse(BaseModel):
     entry_ref: str
     conflicting_entry_id: uuid.UUID | None = None

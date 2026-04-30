@@ -162,6 +162,7 @@ const translations = {
     linkDelete: "Удалить связь",
     openProject: "Открыть проект",
     openReview: "Открыть review",
+    reimportProject: "Переимпортировать",
     memoryType: "Тип",
     projectFilter: "Проект",
     archiveFilter: "Архив",
@@ -336,6 +337,7 @@ const translations = {
     linkDelete: "Delete link",
     openProject: "Open project",
     openReview: "Open review",
+    reimportProject: "Reimport project",
     memoryType: "Type",
     projectFilter: "Project",
     archiveFilter: "Archive",
@@ -1229,6 +1231,11 @@ function renderDashboardView() {
               action: "focus-project",
               label: t("openReview"),
               data: { projectId: item.project_id, view: "review" }
+            },
+            {
+              action: "reimport-project",
+              label: t("reimportProject"),
+              data: { projectId: item.project_id, sourcePath: item.source_path || "" }
             }
           ]
         })}
@@ -1448,6 +1455,7 @@ function renderProjectsView() {
           <div class="form-actions" style="margin-top: 0; margin-bottom: 18px;">
             ${selectedProject.tenant_id ? `<div class="chip">${escapeHtml(t("projectTenantId"))}: ${escapeHtml(selectedProject.tenant_id)}</div>` : ""}
             ${selectedProject.metadata?.source_path ? `<div class="chip">source: ${escapeHtml(selectedProject.metadata.source_path)}</div>` : ""}
+            ${selectedProject.metadata?.source_path ? `<button class="ghost-button" type="button" data-action="reimport-project" data-project-id="${escapeHtml(selectedProject.id)}" data-source-path="${escapeHtml(selectedProject.metadata.source_path)}">${escapeHtml(t("reimportProject"))}</button>` : ""}
           </div>
           <div class="summary-grid">
             <div class="summary-tile">
@@ -1881,6 +1889,11 @@ function renderReviewView() {
             action: "focus-project",
             label: t("openProject"),
             data: { projectId: item.project_id, view: "projects" }
+          },
+          {
+            action: "reimport-project",
+            label: t("reimportProject"),
+            data: { projectId: item.project_id, sourcePath: item.source_path || "" }
           }
         ]
       })}
@@ -2294,6 +2307,29 @@ async function deleteLink(linkId) {
   await loadCurrentView();
 }
 
+async function reimportProject(projectId, sourcePath = "") {
+  if (!projectId) {
+    throw new Error(t("noSelection"));
+  }
+  const payload = {
+    project_id: projectId,
+    existing_entry_mode: "update",
+    detect_conflicts: true
+  };
+  if (sourcePath) {
+    payload.source_path = sourcePath;
+  }
+  const result = await apiRequest("/imports/reimport-project", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+  pushMessage(
+    "success",
+    `${t("reimportProject")}: +${formatNumber(result.entries_created)} / ~${formatNumber(result.entries_updated)}`
+  );
+  await loadCurrentView();
+}
+
 function syncFormValue(name, value) {
   if (name in state.forms) {
     state.forms[name] = value;
@@ -2346,6 +2382,9 @@ function attachEvents() {
       }
       if (action === "delete-link") {
         await deleteLink(target.dataset.linkId);
+      }
+      if (action === "reimport-project") {
+        await reimportProject(target.dataset.projectId, target.dataset.sourcePath || "");
       }
       if (action === "clear-memory-selection") {
         state.selectedMemoryIds = [];

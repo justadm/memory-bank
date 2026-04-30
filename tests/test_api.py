@@ -1,4 +1,5 @@
 import uuid
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
@@ -678,6 +679,31 @@ def test_project_import_update_existing_mode(client):
     assert len(items) == 1
     assert items[0]["content"] == "Updated imported content"
     assert items[0]["metadata"]["sync"] == "second-pass"
+
+
+def test_reimport_project_scan_endpoint(client, tmp_path: Path):
+    project_dir = tmp_path / "reimportable-project"
+    project_dir.mkdir()
+    (project_dir / "README.md").write_text("# Reimportable Project\n\nSource snapshot\n", encoding="utf-8")
+    (project_dir / "Dockerfile").write_text("FROM python:3.12-slim\n", encoding="utf-8")
+
+    project = client.post(
+        "/projects",
+        json={"name": "Reimportable Project", "metadata": {"source_path": str(project_dir)}},
+    ).json()
+
+    response = client.post(
+        "/imports/reimport-project",
+        json={"project_id": project["id"], "existing_entry_mode": "update"},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["project"]["id"] == project["id"]
+    assert body["entries_created"] >= 1
+
+    listed = client.get("/memory", params={"project_id": project["id"]})
+    assert listed.status_code == 200
+    assert len(listed.json()["items"]) >= 1
 
 
 def test_auth_protects_write_endpoints_when_enabled(client, monkeypatch):
