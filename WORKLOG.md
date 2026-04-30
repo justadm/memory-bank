@@ -84,3 +84,4 @@
 - Continued adapting the embedded MemLayer console to real backend capabilities: exposed editable `tenant_id` in project forms/tables, surfaced auth/scopes/tenant chips directly in the shell, and added `lexical / semantic / hybrid` search mode controls for the memory workspace.
 - Extended the embedded console with import visibility as well: dashboard and review screens now surface `/admin/imports/summary` so recent imports and conflict-heavy projects are visible without leaving the main shell.
 - Reworked console navigation into real SPA-style routes under `/console/*`: dashboard/projects/memory/review/settings now push browser history and survive reloads via backend index fallback instead of staying on a single static URL.
+- Added dual-mode console routing for the upcoming `memlayer.loc` switch: embedded mode still uses `/console/*`, while root-hosted mode can expose clean URLs like `/projects` and automatically redirects frontend API calls to same-origin `/api`.

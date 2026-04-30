@@ -9,9 +9,13 @@ const LEGACY_API_BASE_URL = "http://127.0.0.1:18100";
 const MEMORY_TYPES = ["decision", "task", "artifact", "event", "note", "constraint", "risk"];
 const NAV_VIEWS = new Set(["dashboard", "projects", "memory", "review", "settings"]);
 
+function isEmbeddedConsoleMode() {
+  return window.location.pathname.includes("/console");
+}
+
 function defaultApiBaseUrl() {
   if (window.location.protocol === "https:" || window.location.protocol === "http:") {
-    return window.location.origin;
+    return isEmbeddedConsoleMode() ? window.location.origin : `${window.location.origin}/api`;
   }
   return LEGACY_API_BASE_URL;
 }
@@ -24,7 +28,10 @@ function resolveInitialApiBaseUrl() {
     return preferred;
   }
 
-  if ((window.location.protocol === "https:" || window.location.protocol === "http:") && (saved === LEGACY_API_BASE_URL || saved === `${window.location.origin}/api`)) {
+  if (
+    (window.location.protocol === "https:" || window.location.protocol === "http:") &&
+    (saved === LEGACY_API_BASE_URL || saved === window.location.origin || saved === `${window.location.origin}/api`)
+  ) {
     localStorage.setItem(STORAGE_KEYS.apiBaseUrl, preferred);
     return preferred;
   }
@@ -37,6 +44,9 @@ function normalizeView(view) {
 }
 
 function baseConsolePath() {
+  if (!isEmbeddedConsoleMode()) {
+    return "";
+  }
   const marker = "/console";
   const index = window.location.pathname.indexOf(marker);
   return index >= 0 ? window.location.pathname.slice(0, index + marker.length) : "/console";
@@ -44,12 +54,22 @@ function baseConsolePath() {
 
 function routePathForView(view) {
   const normalized = normalizeView(view);
-  return normalized === "dashboard" ? `${baseConsolePath()}/` : `${baseConsolePath()}/${normalized}`;
+  const basePath = baseConsolePath();
+  if (!basePath) {
+    return normalized === "dashboard" ? "/" : `/${normalized}`;
+  }
+  return normalized === "dashboard" ? `${basePath}/` : `${basePath}/${normalized}`;
 }
 
 function resolveViewFromLocation() {
   const currentPath = window.location.pathname.replace(/\/+$/, "") || "/";
   const basePath = baseConsolePath().replace(/\/+$/, "");
+  if (!basePath) {
+    if (currentPath === "/") {
+      return "dashboard";
+    }
+    return normalizeView(currentPath.replace(/^\/+/, "").split("/")[0] || "dashboard");
+  }
   if (currentPath === basePath || currentPath === `${basePath}` || currentPath === `${basePath}/`) {
     return "dashboard";
   }

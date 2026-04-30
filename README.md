@@ -37,6 +37,11 @@
 - показывать import summaries через `GET /admin/imports/summary`
 - синхронизировать разделы с URL внутри `/console/`, например `/console/projects` и `/console/memory`
 
+Для отдельного домена вроде `memlayer.loc` console теперь поддерживает root-hosted режим:
+- пользовательские страницы могут быть красивыми, например `/`, `/projects`, `/memory`, `/review`, `/settings`
+- в этом режиме frontend автоматически использует API через same-origin prefix `/api`
+- внутренний `/console/*` namespace при этом остаётся полезным для embedded-режима внутри самого FastAPI приложения
+
 `docker-compose.yml` уже содержит healthcheck для PostgreSQL, поэтому `api` стартует после готовности БД.
 
 Для формальной локальной проверки API-тестов можно использовать:
