@@ -477,6 +477,12 @@ READ -> ACT -> WRITE -> LINK
 - вызывать evaluator
 - логировать `task_logs`
 - сохранять `duration_seconds`, `result_quality_score`, `consistency_score`
+- использовать smart retrieval default:
+  - сначала `scope=project`
+  - затем `scope=related`
+  - и только при слабом контексте расширяться до `scope=global`
+
+По умолчанию agent protocol считает результат “слабым”, если после project/related retrieval набралось меньше `2` контекстных записей. При этом в metadata памяти и task log теперь пишется `retrieval_scopes_used`, чтобы было видно, насколько далеко агенту пришлось расширять поиск.
 
 ## Task Logs и Eval Hooks
 

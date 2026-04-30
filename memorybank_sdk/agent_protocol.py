@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any, Callable
 
-from memorybank_sdk.client import MemoryBankClient, MemoryBankError, MemoryType
+from memorybank_sdk.client import MemoryBankClient, MemoryBankError, MemoryType, SearchScope
 
 
 @dataclass
@@ -18,6 +18,8 @@ class MemoryAwareAgent:
     memory: MemoryBankClient
     project_id: str | None = None
     default_limit: int = 8
+    retrieval_scopes: tuple[SearchScope, ...] = ("project", "related", "global")
+    min_context_items: int = 2
     log_task_runs: bool = True
     evaluate_task_runs: bool = True
     experiment_id: str | None = None
@@ -33,14 +35,7 @@ class MemoryAwareAgent:
         importance: int = 3,
     ) -> dict[str, Any]:
         started_at = perf_counter()
-        relevant_response = self.memory.get_relevant_memory(
-            query=task,
-            agent_id=self.agent_id,
-            project_id=self.project_id,
-            limit=self.default_limit,
-        )
-
-        context = relevant_response.get("context") or relevant_response.get("items") or []
+        context, scopes_used = self._read_context(task)
         handler_output = handler(task, context)
         normalized_output = self._normalize_handler_output(handler_output)
         result = normalized_output["answer"]
@@ -57,6 +52,7 @@ class MemoryAwareAgent:
             metadata={
                 "task": task,
                 "used_memory_ids": [item.get("id") for item in context if item.get("id")],
+                "retrieval_scopes_used": scopes_used,
                 **extra_metadata,
             },
         )
@@ -81,6 +77,7 @@ class MemoryAwareAgent:
         task_log = self._log_task_run(
             task=task,
             context=context,
+            scopes_used=scopes_used,
             duration_seconds=duration_seconds,
             evaluation=evaluation,
             memory_entry_id=saved["id"],
@@ -132,6 +129,7 @@ class MemoryAwareAgent:
         *,
         task: str,
         context: list[dict[str, Any]],
+        scopes_used: list[SearchScope],
         duration_seconds: float,
         evaluation: dict[str, Any] | None,
         memory_entry_id: str,
@@ -155,7 +153,44 @@ class MemoryAwareAgent:
                     "result_entry_id": memory_entry_id,
                     "linked_ids": linked_ids,
                     "used_memory_ids": [item.get("id") for item in context if item.get("id")],
+                    "retrieval_scopes_used": scopes_used,
                 },
             )
         except MemoryBankError:
             return None
+
+    def _read_context(self, task: str) -> tuple[list[dict[str, Any]], list[SearchScope]]:
+        seen_ids: set[str] = set()
+        context: list[dict[str, Any]] = []
+        scopes_used: list[SearchScope] = []
+
+        for scope in self._normalized_scopes():
+            relevant_response = self.memory.get_relevant_memory(
+                query=task,
+                agent_id=self.agent_id,
+                project_id=self.project_id,
+                scope=scope,
+                limit=self.default_limit,
+            )
+            items = relevant_response.get("context") or relevant_response.get("items") or []
+            appended = False
+            for item in items:
+                item_id = item.get("id")
+                if item_id and item_id in seen_ids:
+                    continue
+                if item_id:
+                    seen_ids.add(item_id)
+                context.append(item)
+                appended = True
+                if len(context) >= self.default_limit:
+                    break
+            if appended:
+                scopes_used.append(scope)
+            if len(context) >= min(self.default_limit, self.min_context_items):
+                break
+
+        return context[: self.default_limit], scopes_used
+
+    def _normalized_scopes(self) -> tuple[SearchScope, ...]:
+        scopes = tuple(scope for scope in self.retrieval_scopes if scope in {"project", "related", "global"})
+        return scopes or ("project", "related", "global")

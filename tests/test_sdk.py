@@ -7,16 +7,33 @@ class FakeMemoryClient:
         self.saved_payloads: list[dict] = []
         self.task_logs: list[dict] = []
         self.import_payloads: list[dict] = []
+        self.relevant_calls: list[dict] = []
 
     def get_relevant_memory(self, **kwargs):
+        self.relevant_calls.append(kwargs)
+        scope = kwargs.get("scope", "project")
+        if scope == "project":
+            return {"context": []}
+        if scope == "related":
+            return {
+                "context": [
+                    {
+                        "id": "old-1",
+                        "type": "decision",
+                        "title": "Use PostgreSQL",
+                        "content": "Prefer PostgreSQL for MVP",
+                        "relevance_score": 0.91,
+                    }
+                ]
+            }
         return {
             "context": [
                 {
-                    "id": "old-1",
-                    "type": "decision",
-                    "title": "Use PostgreSQL",
-                    "content": "Prefer PostgreSQL for MVP",
-                    "relevance_score": 0.91,
+                    "id": "old-2",
+                    "type": "artifact",
+                    "title": "Shared implementation note",
+                    "content": "Useful global context",
+                    "relevance_score": 0.71,
                 }
             ]
         }
@@ -70,13 +87,16 @@ def test_memory_aware_agent_run_links_used_context():
     )
 
     assert result["memory_entry"]["id"] == "new-1"
-    assert result["linked_to"] == ["old-1"]
-    assert client.saved_payloads[0]["metadata"]["used_memory_ids"] == ["old-1"]
+    assert result["linked_to"] == ["old-1", "old-2"]
+    assert client.saved_payloads[0]["metadata"]["used_memory_ids"] == ["old-1", "old-2"]
+    assert client.saved_payloads[0]["metadata"]["retrieval_scopes_used"] == ["related", "global"]
     assert client.created_links[0]["from_entry_id"] == "new-1"
     assert client.created_links[0]["to_entry_id"] == "old-1"
     assert result["evaluation"]["quality_score"] == 0.9
     assert result["task_log"]["task_description"] == "Implement DB layer"
-    assert client.task_logs[0]["memory_entries_count"] == 1
+    assert client.task_logs[0]["memory_entries_count"] == 2
+    assert client.task_logs[0]["metadata"]["retrieval_scopes_used"] == ["related", "global"]
+    assert [call["scope"] for call in client.relevant_calls] == ["project", "related", "global"]
 
 
 def test_memory_aware_agent_supports_structured_handler_output():
@@ -98,6 +118,24 @@ def test_memory_aware_agent_supports_structured_handler_output():
     assert result["reasoning"] == "According to memory, keep PostgreSQL."
     assert result["memory_entry"]["metadata"]["mode"] == "review"
     assert result["task_log"]["result_quality_score"] == 0.9
+
+
+def test_memory_aware_agent_stops_after_enough_context():
+    client = FakeMemoryClient()
+    agent = MemoryAwareAgent(
+        agent_id="sdk-agent",
+        memory=client,
+        project_id="project-1",
+        min_context_items=1,
+    )
+
+    result = agent.run(
+        "Find reusable context",
+        lambda task, context: f"{task} using {len(context)} memories",
+    )
+
+    assert result["linked_to"] == ["old-1"]
+    assert [call["scope"] for call in client.relevant_calls] == ["project", "related"]
 
 
 def test_sdk_project_import_helper():
