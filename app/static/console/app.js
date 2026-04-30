@@ -149,6 +149,10 @@ const translations = {
     searchModeHybrid: "Hybrid",
     searchModeLexical: "Lexical",
     searchModeSemantic: "Semantic",
+    memoryGraph: "Граф памяти",
+    graphDepth: "Глубина графа",
+    graphNodes: "Связанные узлы",
+    graphEdges: "Связи",
     memoryType: "Тип",
     projectFilter: "Проект",
     archiveFilter: "Архив",
@@ -311,6 +315,10 @@ const translations = {
     searchModeHybrid: "Hybrid",
     searchModeLexical: "Lexical",
     searchModeSemantic: "Semantic",
+    memoryGraph: "Memory graph",
+    graphDepth: "Graph depth",
+    graphNodes: "Connected nodes",
+    graphEdges: "Edges",
     memoryType: "Type",
     projectFilter: "Project",
     archiveFilter: "Archive",
@@ -427,6 +435,7 @@ const state = {
   taskLogs: [],
   memoryItems: [],
   memorySearchResults: [],
+  memoryGraph: null,
   projectFocus: null,
   selectedProjectId: "",
   selectedMemoryId: "",
@@ -454,6 +463,7 @@ const state = {
     memoryArchived: "false",
     memoryQuery: "",
     memorySearchMode: "hybrid",
+    memoryGraphDepth: "2",
     projectSearch: "",
     projectMemorySearch: "",
     reviewTaskSearch: "",
@@ -819,6 +829,12 @@ async function loadMemoryData() {
   const listQuery = listParams.toString() ? `?${listParams.toString()}` : "";
   const listing = await apiRequest(`/memory${listQuery}`);
   state.memoryItems = listing.items || [];
+  if (state.selectedMemoryId && !state.memoryItems.some((item) => item.id === state.selectedMemoryId)) {
+    state.selectedMemoryId = "";
+  }
+  if (!state.selectedMemoryId && state.memoryItems[0]?.id) {
+    state.selectedMemoryId = state.memoryItems[0].id;
+  }
 
   if (state.forms.memoryQuery.trim()) {
     const searchParams = new URLSearchParams({ query: state.forms.memoryQuery.trim(), limit: "20" });
@@ -830,6 +846,13 @@ async function loadMemoryData() {
     state.memorySearchResults = searchResults.items || [];
   } else {
     state.memorySearchResults = [];
+  }
+
+  if (state.selectedMemoryId) {
+    const graphDepth = Math.max(1, Number.parseInt(state.forms.memoryGraphDepth || "2", 10) || 2);
+    state.memoryGraph = await apiRequest(`/memory/${encodeURIComponent(state.selectedMemoryId)}/graph?depth=${graphDepth}`);
+  } else {
+    state.memoryGraph = null;
   }
 }
 
@@ -890,9 +913,6 @@ async function loadCurrentView() {
     }
     if (state.currentView === "memory") {
       await loadMemoryData();
-      if (!state.selectedMemoryId && state.memoryItems[0]?.id) {
-        state.selectedMemoryId = state.memoryItems[0].id;
-      }
     }
     if (state.currentView === "review") {
       await loadReviewData();
@@ -1205,6 +1225,46 @@ function renderBreakdownTable(title, items) {
   `;
 }
 
+function renderGraphNodes(items) {
+  if (!items?.length) {
+    return `<div class="empty-state">${escapeHtml(t("noData"))}</div>`;
+  }
+  return `
+    <div class="mini-list">
+      ${items
+        .map(
+          (item) => `
+        <div class="mini-list-row">
+          <div>
+            <div class="mini-list-title">${escapeHtml(item.title || item.id)}</div>
+            <div class="mini-list-meta">${escapeHtml(item.type)} · <span class="mono">${escapeHtml(item.id)}</span></div>
+          </div>
+        </div>`
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderGraphEdges(items) {
+  if (!items?.length) {
+    return `<div class="empty-state">${escapeHtml(t("noData"))}</div>`;
+  }
+  return `
+    <div class="mini-list">
+      ${items
+        .map(
+          (item) => `
+        <div class="mini-list-row">
+          <div class="mini-list-title">${escapeHtml(item.type)}</div>
+          <div class="mini-list-meta mono">${escapeHtml(item.from_)} → ${escapeHtml(item.to)}</div>
+        </div>`
+        )
+        .join("")}
+    </div>
+  `;
+}
+
 function renderProjectsView() {
   const selectedProject = state.projects.find((project) => project.id === state.selectedProjectId) || state.projects[0] || null;
   const projectMetrics = state.projectFocus?.metrics;
@@ -1344,6 +1404,8 @@ function renderProjectsView() {
 
 function renderMemoryView() {
   const selectedEntry = state.memoryItems.find((item) => item.id === state.selectedMemoryId) || state.memoryItems[0] || null;
+  const graphNodes = state.memoryGraph?.nodes || [];
+  const graphEdges = state.memoryGraph?.edges || [];
   return `
     <section class="panel toolbar-card">
       <h3>${escapeHtml(t("filters"))}</h3>
@@ -1377,6 +1439,12 @@ function renderMemoryView() {
             <option value="hybrid" ${state.forms.memorySearchMode === "hybrid" ? "selected" : ""}>${escapeHtml(t("searchModeHybrid"))}</option>
             <option value="lexical" ${state.forms.memorySearchMode === "lexical" ? "selected" : ""}>${escapeHtml(t("searchModeLexical"))}</option>
             <option value="semantic" ${state.forms.memorySearchMode === "semantic" ? "selected" : ""}>${escapeHtml(t("searchModeSemantic"))}</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>${escapeHtml(t("graphDepth"))}</label>
+          <select name="memoryGraphDepth">
+            ${[1, 2, 3].map((value) => `<option value="${value}" ${String(value) === state.forms.memoryGraphDepth ? "selected" : ""}>${value}</option>`).join("")}
           </select>
         </div>
       </div>
@@ -1493,6 +1561,39 @@ function renderMemoryView() {
               <button class="danger-button" type="button" data-action="archive-memory" data-entry-id="${escapeHtml(selectedEntry.id)}">${escapeHtml(t("archive"))}</button>
             </div>
           </form>`
+            : `<div class="empty-state">${escapeHtml(t("noSelection"))}</div>`
+        }
+      </article>
+    </section>
+
+    <section class="split" style="margin-top:18px;">
+      <article class="panel">
+        <h3>${escapeHtml(t("memoryGraph"))}</h3>
+        ${
+          selectedEntry
+            ? `
+          <div class="summary-grid">
+            <div class="summary-tile">
+              <div class="summary-kicker">${escapeHtml(t("graphNodes"))}</div>
+              <div class="summary-value">${escapeHtml(formatNumber(graphNodes.length))}</div>
+            </div>
+            <div class="summary-tile">
+              <div class="summary-kicker">${escapeHtml(t("graphEdges"))}</div>
+              <div class="summary-value">${escapeHtml(formatNumber(graphEdges.length))}</div>
+            </div>
+          </div>
+          <div class="panel" style="margin-top:18px; padding:16px;">
+            <div class="summary-kicker">${escapeHtml(t("graphNodes"))}</div>
+            ${renderGraphNodes(graphNodes)}
+          </div>`
+            : `<div class="empty-state">${escapeHtml(t("noSelection"))}</div>`
+        }
+      </article>
+      <article class="panel">
+        <h3>${escapeHtml(t("graphEdges"))}</h3>
+        ${
+          selectedEntry
+            ? renderGraphEdges(graphEdges)
             : `<div class="empty-state">${escapeHtml(t("noSelection"))}</div>`
         }
       </article>
