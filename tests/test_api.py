@@ -246,6 +246,31 @@ def test_rebuild_search_vectors(client):
     assert response.json()["rebuilt_count"] == 2
 
 
+def test_admin_runtime_self_check(client):
+    project = client.post("/projects", json={"name": "Runtime smoke"}).json()
+    client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "Use PostgreSQL",
+            "content": "Architecture and runtime storage choice",
+            "project_id": project["id"],
+        },
+    )
+
+    response = client.get(
+        "/admin/runtime/self-check",
+        params={"project_id": project["id"], "search_query": "architecture", "limit": 5},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["health_ok"] is True
+    assert payload["projects_read_ok"] is True
+    assert payload["search_ok"] is True
+    assert payload["search_results_count"] >= 1
+
+
 def test_task_logs_and_summary(client):
     created = client.post(
         "/task-logs",

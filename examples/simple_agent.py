@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from memorybank_sdk import MemoryAwareAgent, MemoryBankClient
+from memorybank_sdk import DEFAULT_MEMORYBANK_URL, MemoryAwareAgent, MemoryBankClient
 
 
 def fake_llm_handler(task: str, memory_context: list[dict]) -> str:
@@ -31,7 +31,7 @@ Implemented according to available Memory Bank context.
 
 
 def main() -> None:
-    base_url = os.getenv("MEMORYBANK_URL", "http://localhost:8000")
+    base_url = os.getenv("MEMORYBANK_URL", DEFAULT_MEMORYBANK_URL)
     project_id = os.getenv("MEMORYBANK_PROJECT_ID")
     api_key = os.getenv("MEMORYBANK_API_KEY")
 

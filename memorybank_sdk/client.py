@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 import httpx
 
+DEFAULT_MEMORYBANK_URL = "https://memlayer.loc/api"
+DEFAULT_MEMORYBANK_FALLBACK_URL = "http://127.0.0.1:18100"
 
 MemoryType = Literal["decision", "task", "artifact", "event", "note", "constraint", "risk"]
 LinkType = Literal[
@@ -52,6 +54,9 @@ class MemoryBankClient:
 
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/health")
+
+    def auth_status(self) -> dict[str, Any]:
+        return self._request("GET", "/auth/me")
 
     def create_project(
         self,
@@ -154,8 +159,9 @@ class MemoryBankClient:
         *,
         project_id: str | None = None,
         limit: int = 10,
+        mode: Literal["lexical", "semantic", "hybrid"] = "hybrid",
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {"query": query, "limit": limit}
+        params: dict[str, Any] = {"query": query, "limit": limit, "mode": mode}
         if project_id:
             params["project_id"] = project_id
         return self._request("GET", "/memory/search", params=params)
@@ -168,6 +174,7 @@ class MemoryBankClient:
         project_id: str | None = None,
         types: list[str] | None = None,
         limit: int = 8,
+        search_mode: Literal["lexical", "semantic", "hybrid"] = "hybrid",
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return self._request(
@@ -179,9 +186,22 @@ class MemoryBankClient:
                 "project_id": project_id,
                 "types": types or ["decision", "task", "artifact", "note"],
                 "limit": limit,
+                "search_mode": search_mode,
                 "metadata": metadata or {},
             },
         )
+
+    def runtime_self_check(
+        self,
+        *,
+        project_id: str | None = None,
+        search_query: str = "architecture",
+        limit: int = 5,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"search_query": search_query, "limit": limit}
+        if project_id:
+            params["project_id"] = project_id
+        return self._request("GET", "/admin/runtime/self-check", params=params)
 
     def create_link(
         self,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from memorybank_sdk import MemoryBankClient
+from memorybank_sdk import DEFAULT_MEMORYBANK_URL, MemoryBankClient
 
 
 def build_import_payload() -> dict:
@@ -70,7 +70,7 @@ def build_import_payload() -> dict:
 
 
 def main() -> None:
-    base_url = os.getenv("MEMORYBANK_URL", "http://localhost:18100")
+    base_url = os.getenv("MEMORYBANK_URL", DEFAULT_MEMORYBANK_URL)
     api_key = os.getenv("MEMORYBANK_API_KEY")
 
     with MemoryBankClient(base_url=base_url, api_key=api_key) as client:

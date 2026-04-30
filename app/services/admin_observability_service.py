@@ -1,4 +1,5 @@
 import uuid
+from time import perf_counter
 from datetime import datetime, timezone
 
 from app.config import Settings
@@ -54,3 +55,32 @@ class AdminObservabilityService:
     def get_import_summaries(self, *, limit: int = 20, principal: AuthPrincipal | None = None) -> dict:
         tenant_ids = principal.tenant_ids if principal else None
         return {"items": self.memory_repository.list_import_project_summaries(limit=limit, tenant_ids=tenant_ids)}
+
+    def get_runtime_self_check(
+        self,
+        *,
+        search_query: str = "architecture",
+        project_id: uuid.UUID | None = None,
+        limit: int = 5,
+        principal: AuthPrincipal | None = None,
+    ) -> dict:
+        tenant_ids = principal.tenant_ids if principal else None
+        started_at = perf_counter()
+        project_summaries = self.memory_repository.list_import_project_summaries(limit=5, tenant_ids=tenant_ids)
+        search_matches = self.memory_repository.search(query=search_query, project_id=project_id, limit=limit)
+        _elapsed_ms = round((perf_counter() - started_at) * 1000, 2)
+
+        return {
+            "status": "ok",
+            "environment": self.settings.app_env,
+            "generated_at": datetime.now(timezone.utc),
+            "search_query": search_query,
+            "project_id": project_id,
+            "health_ok": True,
+            "projects_read_ok": True,
+            "search_ok": True,
+            "projects_count": len(project_summaries),
+            "search_results_count": len(search_matches),
+            "search_mode": "lexical",
+            "elapsed_ms": _elapsed_ms,
+        }

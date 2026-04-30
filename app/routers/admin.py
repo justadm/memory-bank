@@ -12,6 +12,7 @@ from app.schemas.admin import (
     ImportConflictListResponse,
     ImportProjectSummaryListResponse,
     ObservabilitySummaryResponse,
+    RuntimeSelfCheckResponse,
 )
 from app.services.admin_observability_service import AdminObservabilityService
 
@@ -48,3 +49,21 @@ def get_import_summaries(
     principal=Depends(require_admin_access),
 ) -> ImportProjectSummaryListResponse:
     return ImportProjectSummaryListResponse(**service.get_import_summaries(limit=limit, principal=principal))
+
+
+@router.get("/runtime/self-check", response_model=RuntimeSelfCheckResponse)
+def get_runtime_self_check(
+    search_query: str = "architecture",
+    project_id: uuid.UUID | None = None,
+    limit: int = 5,
+    service: AdminObservabilityService = Depends(get_admin_observability_service),
+    principal=Depends(require_admin_access),
+) -> RuntimeSelfCheckResponse:
+    return RuntimeSelfCheckResponse(
+        **service.get_runtime_self_check(
+            search_query=search_query,
+            project_id=project_id,
+            limit=limit,
+            principal=principal,
+        )
+    )

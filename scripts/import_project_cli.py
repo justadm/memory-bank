@@ -5,14 +5,14 @@ import json
 import os
 from pathlib import Path
 
-from memorybank_sdk import MemoryBankClient, build_directory_import_payloads, build_project_import_payload
+from memorybank_sdk import DEFAULT_MEMORYBANK_URL, MemoryBankClient, build_directory_import_payloads, build_project_import_payload
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Scan a local project and import it into Memory Bank.")
     parser.add_argument("--project-root", default=".", help="Path to the project that should be scanned.")
     parser.add_argument("--projects-directory", default=None, help="Import all detected child projects from this directory.")
-    parser.add_argument("--memorybank-url", default=os.getenv("MEMORYBANK_URL", "http://127.0.0.1:18100"))
+    parser.add_argument("--memorybank-url", default=os.getenv("MEMORYBANK_URL", DEFAULT_MEMORYBANK_URL))
     parser.add_argument("--project-name", default=None)
     parser.add_argument("--project-description", default=None)
     parser.add_argument("--existing-project-id", default=None)

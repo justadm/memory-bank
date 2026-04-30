@@ -58,3 +58,18 @@ class ImportProjectSummaryItemResponse(BaseModel):
 
 class ImportProjectSummaryListResponse(BaseModel):
     items: list[ImportProjectSummaryItemResponse]
+
+
+class RuntimeSelfCheckResponse(BaseModel):
+    status: str
+    environment: str
+    generated_at: datetime
+    search_query: str
+    project_id: uuid.UUID | None
+    health_ok: bool
+    projects_read_ok: bool
+    search_ok: bool
+    projects_count: int
+    search_results_count: int
+    search_mode: str
+    elapsed_ms: float

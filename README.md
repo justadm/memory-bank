@@ -28,6 +28,11 @@
 3. Применить миграции: `docker compose exec api alembic upgrade head`.
 4. Открыть `http://localhost:18100/docs` для API или `http://localhost:18100/console/` для встроенной консоли MemLayer.
 
+Для локальных агентов, CLI и automation wrapper-ов теперь рекомендуется:
+
+- preferred endpoint: `https://memlayer.loc/api`
+- local fallback: `http://127.0.0.1:18100`
+
 Встроенная консоль MemLayer уже умеет:
 - работать с same-origin API по умолчанию
 - хранить локальный API key
@@ -90,6 +95,33 @@ PYTHONPATH=$PWD .venv313/bin/python scripts/install_memlayer_project_pack.py \
 ```
 
 Installer не затирает пользовательский текст в уже существующих `AGENTS.md`: он только добавляет или обновляет managed-блок между маркерами `MEMLAYER_ROOT_PACK`.
+
+## Runtime Smoke
+
+Для быстрого operational smoke-check теперь есть отдельный сценарий `health -> import -> search -> relevant`:
+
+```bash
+PYTHONPATH=$PWD .venv313/bin/python scripts/runtime_smoke_check.py \
+  --project-root /Users/just/projects/router \
+  --existing-project-id a1507c13-2397-41de-807b-f5d18d88a9d1 \
+  --query "no-disconnect router"
+```
+
+Он:
+
+- проверяет `/health`
+- пытается прочитать `/auth/me`
+- при необходимости делает reimport проекта в режиме `update`
+- запускает `GET /admin/runtime/self-check`
+- делает follow-up `search`
+- делает follow-up `relevant`
+
+Для лёгкой read-only проверки есть endpoint:
+
+```bash
+curl -sS 'https://memlayer.loc/api/admin/runtime/self-check?search_query=architecture&limit=5' \
+  -H 'Authorization: Bearer ops-admin-key'
+```
 
 ## Auth
 
@@ -362,9 +394,9 @@ curl -X POST http://localhost:8000/maintenance/rebuild-search-vectors \
 В репозитории есть встроенный минимальный SDK для агентных сценариев:
 
 ```python
-from memorybank_sdk import MemoryBankClient
+from memorybank_sdk import DEFAULT_MEMORYBANK_URL, MemoryBankClient
 
-with MemoryBankClient("http://localhost:8000") as client:
+with MemoryBankClient(DEFAULT_MEMORYBANK_URL) as client:
     health = client.health()
     print(health)
 ```
@@ -372,9 +404,9 @@ with MemoryBankClient("http://localhost:8000") as client:
 SDK теперь также умеет вызывать structured import flow:
 
 ```python
-from memorybank_sdk import MemoryBankClient
+from memorybank_sdk import DEFAULT_MEMORYBANK_URL, MemoryBankClient
 
-with MemoryBankClient("http://localhost:18100") as client:
+with MemoryBankClient(DEFAULT_MEMORYBANK_URL) as client:
     result = client.import_project_scan(
         project={"name": "Imported Project"},
         entries=[
@@ -397,7 +429,7 @@ PYTHONPATH=$PWD .venv313/bin/python examples/simple_agent.py
 И пример импортёра:
 
 ```bash
-PYTHONPATH=$PWD MEMORYBANK_URL=http://127.0.0.1:18100 .venv313/bin/python examples/project_importer.py
+PYTHONPATH=$PWD MEMORYBANK_URL=https://memlayer.loc/api .venv313/bin/python examples/project_importer.py
 ```
 
 И CLI-импорт локального проекта:
@@ -405,7 +437,7 @@ PYTHONPATH=$PWD MEMORYBANK_URL=http://127.0.0.1:18100 .venv313/bin/python exampl
 ```bash
 PYTHONPATH=$PWD .venv313/bin/python scripts/import_project_cli.py \
   --project-root /path/to/project \
-  --memorybank-url http://127.0.0.1:18100 \
+  --memorybank-url https://memlayer.loc/api \
   --dry-run
 ```
 
@@ -416,7 +448,7 @@ PYTHONPATH=$PWD .venv313/bin/python scripts/import_project_cli.py \
   --projects-directory /Users/just/projects \
   --names max,APUAI \
   --existing-entry-mode update \
-  --memorybank-url http://127.0.0.1:18100
+  --memorybank-url https://memlayer.loc/api
 ```
 
 Он следует циклу:
