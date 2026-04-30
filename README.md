@@ -40,6 +40,9 @@
 - создавать и удалять links прямо из graph pane через `POST /memory-links` и `DELETE /memory-links/{id}`
 - открывать связанные import projects из dashboard/review одним действием
 - запускать inline reimport project scan из console через `POST /imports/reimport-project` для проектов с `metadata.source_path`
+- делать bulk reimport по видимым imported projects прямо из console
+- видеть summary результата последнего import/reimport прямо в UI
+- редактировать `metadata` у memory entries при create/update
 
 Для отдельного домена вроде `memlayer.loc` console теперь поддерживает root-hosted режим:
 - пользовательские страницы могут быть красивыми, например `/`, `/projects`, `/memory`, `/review`, `/settings`

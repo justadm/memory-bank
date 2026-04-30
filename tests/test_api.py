@@ -38,6 +38,9 @@ def test_console_assets_include_tenant_and_search_controls(client):
     assert "/memory-links" in response.text
     assert "focus-project" in response.text
     assert "renderGraphMap" in response.text
+    assert "reimport-visible-dashboard" in response.text
+    assert "memoryMetadata" in response.text
+    assert "/imports/reimport-project" in response.text
     assert "history.pushState" in response.text
     assert "window.location.origin}/api" in response.text
     assert "isEmbeddedConsoleMode" in response.text

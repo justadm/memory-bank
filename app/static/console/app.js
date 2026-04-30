@@ -163,6 +163,13 @@ const translations = {
     openProject: "Открыть проект",
     openReview: "Открыть review",
     reimportProject: "Переимпортировать",
+    reimportVisible: "Переимпортировать видимые",
+    importResult: "Результат импорта",
+    entriesCreated: "Создано",
+    entriesUpdated: "Обновлено",
+    entriesSkipped: "Пропущено",
+    conflictsDetected: "Конфликтов",
+    memoryMetadata: "Metadata JSON",
     memoryType: "Тип",
     projectFilter: "Проект",
     archiveFilter: "Архив",
@@ -338,6 +345,13 @@ const translations = {
     openProject: "Open project",
     openReview: "Open review",
     reimportProject: "Reimport project",
+    reimportVisible: "Reimport visible",
+    importResult: "Import result",
+    entriesCreated: "Created",
+    entriesUpdated: "Updated",
+    entriesSkipped: "Skipped",
+    conflictsDetected: "Conflicts",
+    memoryMetadata: "Metadata JSON",
     memoryType: "Type",
     projectFilter: "Project",
     archiveFilter: "Archive",
@@ -451,6 +465,7 @@ const state = {
   taskSummary: null,
   conflicts: [],
   importSummaries: [],
+  lastImportResult: null,
   taskLogs: [],
   memoryItems: [],
   memorySearchResults: [],
@@ -1219,6 +1234,9 @@ function renderDashboardView() {
 
       <section class="table-card" style="margin-top:18px;">
         <h3>${escapeHtml(t("recentImports"))}</h3>
+        <div class="form-actions" style="margin-top:0; margin-bottom:12px;">
+          <button class="ghost-button" type="button" data-action="reimport-visible-dashboard">${escapeHtml(t("reimportVisible"))}</button>
+        </div>
         ${renderTable((state.importSummaries || []).slice(0, 6), ["project_name", "source_path", "imported_entries_count", "conflicts_detected_count", "last_imported_at"], {
           tableKey: "dashboardImportSummaries",
           customActions: (item) => [
@@ -1241,6 +1259,8 @@ function renderDashboardView() {
         })}
       </section>
     </section>
+
+    ${renderImportResultPanel(state.lastImportResult)}
 
     <section class="split" style="margin-top:18px;">
       ${renderBreakdownTable(t("dashboardSections.topAgents"), observability.top_agents)}
@@ -1322,6 +1342,35 @@ function renderGraphEdges(items) {
         )
         .join("")}
     </div>
+  `;
+}
+
+function renderImportResultPanel(result) {
+  if (!result) {
+    return "";
+  }
+  return `
+    <section class="panel import-result-panel">
+      <h3>${escapeHtml(t("importResult"))}</h3>
+      <div class="summary-grid">
+        <div class="summary-tile">
+          <div class="summary-kicker">${escapeHtml(t("entriesCreated"))}</div>
+          <div class="summary-value">${escapeHtml(formatNumber(result.entries_created))}</div>
+        </div>
+        <div class="summary-tile">
+          <div class="summary-kicker">${escapeHtml(t("entriesUpdated"))}</div>
+          <div class="summary-value">${escapeHtml(formatNumber(result.entries_updated))}</div>
+        </div>
+        <div class="summary-tile">
+          <div class="summary-kicker">${escapeHtml(t("entriesSkipped"))}</div>
+          <div class="summary-value">${escapeHtml(formatNumber(result.entries_skipped))}</div>
+        </div>
+      </div>
+      <div class="form-actions" style="margin-top:18px;">
+        <div class="chip">${escapeHtml(t("conflictsDetected"))}: ${escapeHtml(formatNumber(result.conflicts_detected))}</div>
+        <div class="chip">${escapeHtml(result.project?.name || "n/a")}</div>
+      </div>
+    </section>
   `;
 }
 
@@ -1476,6 +1525,8 @@ function renderProjectsView() {
           </div>
         </article>
 
+        ${renderImportResultPanel(state.lastImportResult)}
+
         <section class="split">
           <article class="table-card">
             <h3>${escapeHtml(t("memoryTitle"))}</h3>
@@ -1621,6 +1672,10 @@ function renderMemoryView() {
               <label>${escapeHtml(t("importance"))}</label>
               <select name="importance">${[1, 2, 3, 4, 5].map((value) => `<option value="${value}" ${value === 3 ? "selected" : ""}>${value}</option>`).join("")}</select>
             </div>
+            <div class="field" style="grid-column: span 2;">
+              <label>${escapeHtml(t("memoryMetadata"))}</label>
+              <textarea name="metadata">{}</textarea>
+            </div>
             <div class="field" style="grid-column: span 3;">
               <label>${escapeHtml(t("content"))}</label>
               <textarea name="content" required></textarea>
@@ -1664,6 +1719,10 @@ function renderMemoryView() {
                 <select name="importance">${[1, 2, 3, 4, 5]
                   .map((value) => `<option value="${value}" ${value === selectedEntry.importance ? "selected" : ""}>${value}</option>`)
                   .join("")}</select>
+              </div>
+              <div class="field" style="grid-column: span 2;">
+                <label>${escapeHtml(t("memoryMetadata"))}</label>
+                <textarea name="metadata">${escapeHtml(JSON.stringify(selectedEntry.metadata || {}, null, 2))}</textarea>
               </div>
               <div class="field" style="grid-column: span 4;">
                 <label>${escapeHtml(t("content"))}</label>
@@ -1882,6 +1941,9 @@ function renderReviewView() {
 
     <section class="table-card" style="margin-top:18px;">
       <h3>${escapeHtml(t("importSummary"))}</h3>
+      <div class="form-actions" style="margin-top:0; margin-bottom:12px;">
+        <button class="ghost-button" type="button" data-action="reimport-visible-review">${escapeHtml(t("reimportVisible"))}</button>
+      </div>
       ${renderTable(state.importSummaries, ["project_name", "source_path", "imported_entries_count", "import_events_count", "conflicts_detected_count", "last_imported_at"], {
         tableKey: "reviewImportSummaries",
         customActions: (item) => [
@@ -1898,6 +1960,8 @@ function renderReviewView() {
         ]
       })}
     </section>
+
+    ${renderImportResultPanel(state.lastImportResult)}
   `;
 }
 
@@ -2227,7 +2291,7 @@ async function handleMemoryCreate(form) {
     source_agent: String(formData.get("sourceAgent") || "").trim() || null,
     importance: Number(formData.get("importance") || 3),
     content: String(formData.get("content") || "").trim(),
-    metadata: {}
+    metadata: parseJsonInput(String(formData.get("metadata") || "{}"))
   };
   await apiRequest("/memory", {
     method: "POST",
@@ -2248,7 +2312,8 @@ async function handleMemoryUpdate(form) {
     title: String(formData.get("title") || "").trim() || null,
     source_agent: String(formData.get("sourceAgent") || "").trim() || null,
     importance: Number(formData.get("importance") || 3),
-    content: String(formData.get("content") || "").trim()
+    content: String(formData.get("content") || "").trim(),
+    metadata: parseJsonInput(String(formData.get("metadata") || "{}"))
   };
   await apiRequest(`/memory/${entryId}`, {
     method: "PATCH",
@@ -2323,10 +2388,43 @@ async function reimportProject(projectId, sourcePath = "") {
     method: "POST",
     body: JSON.stringify(payload)
   });
+  state.lastImportResult = result;
   pushMessage(
     "success",
     `${t("reimportProject")}: +${formatNumber(result.entries_created)} / ~${formatNumber(result.entries_updated)}`
   );
+  await loadCurrentView();
+}
+
+async function reimportVisibleProjects(items) {
+  const candidates = (items || []).filter((item) => item.project_id && item.source_path);
+  if (!candidates.length) {
+    throw new Error(t("noData"));
+  }
+  const aggregate = {
+    entries_created: 0,
+    entries_updated: 0,
+    entries_skipped: 0,
+    conflicts_detected: 0,
+    project: { name: `${candidates.length} projects` }
+  };
+  for (const item of candidates) {
+    const result = await apiRequest("/imports/reimport-project", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: item.project_id,
+        source_path: item.source_path,
+        existing_entry_mode: "update",
+        detect_conflicts: true
+      })
+    });
+    aggregate.entries_created += Number(result.entries_created || 0);
+    aggregate.entries_updated += Number(result.entries_updated || 0);
+    aggregate.entries_skipped += Number(result.entries_skipped || 0);
+    aggregate.conflicts_detected += Number(result.conflicts_detected || 0);
+  }
+  state.lastImportResult = aggregate;
+  pushMessage("success", `${t("reimportVisible")}: ${formatNumber(candidates.length)}`);
   await loadCurrentView();
 }
 
@@ -2385,6 +2483,12 @@ function attachEvents() {
       }
       if (action === "reimport-project") {
         await reimportProject(target.dataset.projectId, target.dataset.sourcePath || "");
+      }
+      if (action === "reimport-visible-dashboard") {
+        await reimportVisibleProjects((state.importSummaries || []).slice(0, 6));
+      }
+      if (action === "reimport-visible-review") {
+        await reimportVisibleProjects(state.importSummaries || []);
       }
       if (action === "clear-memory-selection") {
         state.selectedMemoryIds = [];
