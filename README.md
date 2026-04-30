@@ -37,6 +37,8 @@
 - показывать import summaries через `GET /admin/imports/summary`
 - синхронизировать разделы с URL внутри `/console/`, например `/console/projects` и `/console/memory`
 - показывать graph pane выбранной memory entry через `GET /memory/{id}/graph`
+- создавать и удалять links прямо из graph pane через `POST /memory-links` и `DELETE /memory-links/{id}`
+- открывать связанные import projects из dashboard/review одним действием
 
 Для отдельного домена вроде `memlayer.loc` console теперь поддерживает root-hosted режим:
 - пользовательские страницы могут быть красивыми, например `/`, `/projects`, `/memory`, `/review`, `/settings`

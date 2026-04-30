@@ -265,8 +265,8 @@ button {
 
 .icon-button,
 .toggle-group button {
-  min-width: 52px;
-  height: 52px;
+  min-width: 42px;
+  height: 42px;
 }
 
 .icon-button:hover,
@@ -280,15 +280,16 @@ button {
 .toggle-group {
   display: inline-flex;
   gap: 6px;
-  padding: 6px;
+  padding: 5px;
   border: 1px solid var(--line);
   border-radius: 18px;
   background: var(--surface);
 }
 
 .toggle-group button {
-  min-width: 62px;
-  padding: 0 16px;
+  min-width: 50px;
+  padding: 0 12px;
+  font-size: 0.92rem;
 }
 
 .toggle-group button.active {
@@ -445,6 +446,12 @@ button {
   border: 1px solid var(--line);
 }
 
+.table-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -527,6 +534,44 @@ tbody tr.is-selected {
   margin-top: 4px;
   color: var(--text-soft);
   font-size: 0.88rem;
+}
+
+.graph-canvas {
+  width: 100%;
+  min-height: 280px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(42, 181, 111, 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+}
+
+.graph-edge-line {
+  stroke: var(--line-strong);
+  stroke-width: 2;
+}
+
+.graph-node {
+  fill: var(--surface-strong);
+  stroke: var(--info);
+  stroke-width: 2;
+}
+
+.graph-node.primary {
+  fill: var(--brand-soft);
+  stroke: var(--brand);
+  stroke-width: 3;
+}
+
+.graph-node-type {
+  fill: var(--text);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+
+.graph-node-title {
+  fill: var(--text-soft);
+  font-size: 9px;
 }
 
 .bar-list {

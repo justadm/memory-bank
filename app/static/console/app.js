@@ -7,6 +7,7 @@ const STORAGE_KEYS = {
 
 const LEGACY_API_BASE_URL = "http://127.0.0.1:18100";
 const MEMORY_TYPES = ["decision", "task", "artifact", "event", "note", "constraint", "risk"];
+const LINK_TYPES = ["depends_on", "related_to", "created_after", "affects", "derived_from", "blocks", "resolves"];
 const NAV_VIEWS = new Set(["dashboard", "projects", "memory", "review", "settings"]);
 
 function isEmbeddedConsoleMode() {
@@ -153,6 +154,14 @@ const translations = {
     graphDepth: "Глубина графа",
     graphNodes: "Связанные узлы",
     graphEdges: "Связи",
+    graphMap: "Схема графа",
+    linkCreate: "Создать связь",
+    linkTarget: "Целевая запись",
+    linkType: "Тип связи",
+    linkStrength: "Сила",
+    linkDelete: "Удалить связь",
+    openProject: "Открыть проект",
+    openReview: "Открыть review",
     memoryType: "Тип",
     projectFilter: "Проект",
     archiveFilter: "Архив",
@@ -319,6 +328,14 @@ const translations = {
     graphDepth: "Graph depth",
     graphNodes: "Connected nodes",
     graphEdges: "Edges",
+    graphMap: "Graph map",
+    linkCreate: "Create link",
+    linkTarget: "Target entry",
+    linkType: "Link type",
+    linkStrength: "Strength",
+    linkDelete: "Delete link",
+    openProject: "Open project",
+    openReview: "Open review",
     memoryType: "Type",
     projectFilter: "Project",
     archiveFilter: "Archive",
@@ -436,6 +453,7 @@ const state = {
   memoryItems: [],
   memorySearchResults: [],
   memoryGraph: null,
+  memoryLinks: null,
   projectFocus: null,
   selectedProjectId: "",
   selectedMemoryId: "",
@@ -586,6 +604,11 @@ async function navigateToView(view, { push = true } = {}) {
   }
   state.drawerOpen = false;
   await loadCurrentView();
+}
+
+async function focusProject(projectId, view = "projects") {
+  state.selectedProjectId = projectId || "";
+  await navigateToView(view);
 }
 
 function compareValues(left, right, sortKey) {
@@ -850,9 +873,15 @@ async function loadMemoryData() {
 
   if (state.selectedMemoryId) {
     const graphDepth = Math.max(1, Number.parseInt(state.forms.memoryGraphDepth || "2", 10) || 2);
-    state.memoryGraph = await apiRequest(`/memory/${encodeURIComponent(state.selectedMemoryId)}/graph?depth=${graphDepth}`);
+    const [graph, links] = await Promise.all([
+      apiRequest(`/memory/${encodeURIComponent(state.selectedMemoryId)}/graph?depth=${graphDepth}`),
+      apiRequest(`/memory/${encodeURIComponent(state.selectedMemoryId)}/links`)
+    ]);
+    state.memoryGraph = graph;
+    state.memoryLinks = links;
   } else {
     state.memoryGraph = null;
+    state.memoryLinks = null;
   }
 }
 
@@ -1169,7 +1198,19 @@ function renderDashboardView() {
         <article class="table-card">
           <h3>${escapeHtml(t("reviewQueue"))}</h3>
           ${renderTable((state.conflicts || []).slice(0, 5), ["title", "type", "requires_review", "created_at"], {
-            tableKey: "dashboardReviewQueue"
+            tableKey: "dashboardReviewQueue",
+            customActions: (item) => [
+              {
+                action: "focus-project",
+                label: t("openProject"),
+                data: { projectId: item.project_id, view: "projects" }
+              },
+              {
+                action: "focus-project",
+                label: t("openReview"),
+                data: { projectId: item.project_id, view: "review" }
+              }
+            ].filter((action) => action.data.projectId)
           })}
         </article>
       </section>
@@ -1177,7 +1218,19 @@ function renderDashboardView() {
       <section class="table-card" style="margin-top:18px;">
         <h3>${escapeHtml(t("recentImports"))}</h3>
         ${renderTable((state.importSummaries || []).slice(0, 6), ["project_name", "source_path", "imported_entries_count", "conflicts_detected_count", "last_imported_at"], {
-          tableKey: "dashboardImportSummaries"
+          tableKey: "dashboardImportSummaries",
+          customActions: (item) => [
+            {
+              action: "focus-project",
+              label: t("openProject"),
+              data: { projectId: item.project_id, view: "projects" }
+            },
+            {
+              action: "focus-project",
+              label: t("openReview"),
+              data: { projectId: item.project_id, view: "review" }
+            }
+          ]
         })}
       </section>
     </section>
@@ -1262,6 +1315,56 @@ function renderGraphEdges(items) {
         )
         .join("")}
     </div>
+  `;
+}
+
+function renderGraphMap(nodes, edges, selectedEntryId) {
+  if (!nodes?.length) {
+    return `<div class="empty-state">${escapeHtml(t("noData"))}</div>`;
+  }
+  const width = 520;
+  const height = 300;
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const primary = nodes.find((node) => node.id === selectedEntryId) || nodes[0];
+  const others = nodes.filter((node) => node.id !== primary.id);
+  const radius = Math.min(width, height) / 2 - 56;
+  const positions = new Map();
+  positions.set(primary.id, { x: centerX, y: centerY });
+  others.forEach((node, index) => {
+    const angle = (Math.PI * 2 * index) / Math.max(others.length, 1) - Math.PI / 2;
+    positions.set(node.id, {
+      x: centerX + Math.cos(angle) * radius,
+      y: centerY + Math.sin(angle) * radius
+    });
+  });
+
+  return `
+    <svg class="graph-canvas" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(t("graphMap"))}">
+      ${edges
+        .map((edge) => {
+          const from = positions.get(edge.from_);
+          const to = positions.get(edge.to);
+          if (!from || !to) {
+            return "";
+          }
+          return `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" class="graph-edge-line"></line>`;
+        })
+        .join("")}
+      ${nodes
+        .map((node) => {
+          const position = positions.get(node.id);
+          const isPrimary = node.id === primary.id;
+          return `
+            <g transform="translate(${position.x}, ${position.y})">
+              <circle r="${isPrimary ? 28 : 22}" class="${isPrimary ? "graph-node primary" : "graph-node"}"></circle>
+              <text class="graph-node-type" text-anchor="middle" y="-2">${escapeHtml(node.type.slice(0, 10))}</text>
+              <text class="graph-node-title" text-anchor="middle" y="14">${escapeHtml((node.title || "Untitled").slice(0, 18))}</text>
+            </g>
+          `;
+        })
+        .join("")}
+    </svg>
   `;
 }
 
@@ -1406,6 +1509,9 @@ function renderMemoryView() {
   const selectedEntry = state.memoryItems.find((item) => item.id === state.selectedMemoryId) || state.memoryItems[0] || null;
   const graphNodes = state.memoryGraph?.nodes || [];
   const graphEdges = state.memoryGraph?.edges || [];
+  const outgoingLinks = state.memoryLinks?.outgoing || [];
+  const incomingLinks = state.memoryLinks?.incoming || [];
+  const linkTargets = state.memoryItems.filter((item) => item.id !== selectedEntry?.id);
   return `
     <section class="panel toolbar-card">
       <h3>${escapeHtml(t("filters"))}</h3>
@@ -1583,6 +1689,10 @@ function renderMemoryView() {
             </div>
           </div>
           <div class="panel" style="margin-top:18px; padding:16px;">
+            <div class="summary-kicker">${escapeHtml(t("graphMap"))}</div>
+            ${renderGraphMap(graphNodes, graphEdges, selectedEntry.id)}
+          </div>
+          <div class="panel" style="margin-top:18px; padding:16px;">
             <div class="summary-kicker">${escapeHtml(t("graphNodes"))}</div>
             ${renderGraphNodes(graphNodes)}
           </div>`
@@ -1593,7 +1703,62 @@ function renderMemoryView() {
         <h3>${escapeHtml(t("graphEdges"))}</h3>
         ${
           selectedEntry
-            ? renderGraphEdges(graphEdges)
+            ? `
+          ${renderGraphEdges(graphEdges)}
+          <div class="panel" style="margin-top:18px; padding:16px;">
+            <div class="summary-kicker">${escapeHtml(t("linkCreate"))}</div>
+            <form id="link-create-form" data-entry-id="${escapeHtml(selectedEntry.id)}">
+              <div class="field-grid compact">
+                <div class="field">
+                  <label>${escapeHtml(t("linkTarget"))}</label>
+                  <select name="toEntryId">
+                    ${linkTargets.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title || item.id)}</option>`).join("")}
+                  </select>
+                </div>
+                <div class="field">
+                  <label>${escapeHtml(t("linkType"))}</label>
+                  <select name="type">
+                    ${LINK_TYPES.map((type) => `<option value="${type}">${type}</option>`).join("")}
+                  </select>
+                </div>
+                <div class="field">
+                  <label>${escapeHtml(t("linkStrength"))}</label>
+                  <select name="strength">
+                    ${["0.5", "0.75", "1.0"].map((value) => `<option value="${value}" ${value === "1.0" ? "selected" : ""}>${value}</option>`).join("")}
+                  </select>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button class="primary-button" type="submit">${escapeHtml(t("linkCreate"))}</button>
+              </div>
+            </form>
+          </div>
+          <div class="panel" style="margin-top:18px; padding:16px;">
+            <div class="summary-kicker">Outgoing</div>
+            ${outgoingLinks.length ? renderTable(outgoingLinks, ["type", "to_entry_id", "strength", "created_at"], {
+              tableKey: "memoryOutgoingLinks",
+              customActions: (item) => [
+                {
+                  action: "delete-link",
+                  label: t("linkDelete"),
+                  data: { linkId: item.id }
+                }
+              ]
+            }) : `<div class="empty-state">${escapeHtml(t("noData"))}</div>`}
+          </div>
+          <div class="panel" style="margin-top:18px; padding:16px;">
+            <div class="summary-kicker">Incoming</div>
+            ${incomingLinks.length ? renderTable(incomingLinks, ["type", "from_entry_id", "strength", "created_at"], {
+              tableKey: "memoryIncomingLinks",
+              customActions: (item) => [
+                {
+                  action: "delete-link",
+                  label: t("linkDelete"),
+                  data: { linkId: item.id }
+                }
+              ]
+            }) : `<div class="empty-state">${escapeHtml(t("noData"))}</div>`}
+          </div>`
             : `<div class="empty-state">${escapeHtml(t("noSelection"))}</div>`
         }
       </article>
@@ -1686,7 +1851,14 @@ function renderReviewView() {
         ${renderTable(state.conflicts, ["title", "type", "requires_review", "created_at"], {
           tableKey: "reviewConflicts",
           filterQuery: state.forms.reviewConflictSearch,
-          filterKeys: ["title", "type"]
+          filterKeys: ["title", "type"],
+          customActions: (item) => [
+            {
+              action: "focus-project",
+              label: t("openProject"),
+              data: { projectId: item.project_id, view: "projects" }
+            }
+          ].filter((action) => action.data.projectId)
         })}
       </article>
       <article class="table-card">
@@ -1703,7 +1875,14 @@ function renderReviewView() {
     <section class="table-card" style="margin-top:18px;">
       <h3>${escapeHtml(t("importSummary"))}</h3>
       ${renderTable(state.importSummaries, ["project_name", "source_path", "imported_entries_count", "import_events_count", "conflicts_detected_count", "last_imported_at"], {
-        tableKey: "reviewImportSummaries"
+        tableKey: "reviewImportSummaries",
+        customActions: (item) => [
+          {
+            action: "focus-project",
+            label: t("openProject"),
+            data: { projectId: item.project_id, view: "projects" }
+          }
+        ]
       })}
     </section>
   `;
@@ -1803,6 +1982,7 @@ function renderTable(items, columns, options = {}) {
                 return `<th><button class="row-button" type="button" data-action="sort-table" data-table-key="${escapeHtml(options.tableKey)}" data-sort-key="${escapeHtml(column.key)}">${escapeHtml(column.label || column.key)}${marker}</button></th>`;
               })
               .join("")}
+            ${options.customActions ? `<th>Actions</th>` : ""}
             ${options.selectable ? `<th>${escapeHtml(t("select"))}</th>` : ""}
           </tr>
         </thead>
@@ -1830,6 +2010,22 @@ function renderTable(items, columns, options = {}) {
                   return `<td>${formatCellValue(column.key, value)}</td>`;
                 })
                 .join("")}
+              ${
+                options.customActions
+                  ? `<td>
+                  <div class="table-actions">
+                    ${(options.customActions(item) || [])
+                      .map((action) => {
+                        const dataAttrs = Object.entries(action.data || {})
+                          .map(([key, value]) => `data-${escapeHtml(key.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`))}="${escapeHtml(value)}"`)
+                          .join(" ");
+                        return `<button class="row-button" type="button" data-action="${escapeHtml(action.action)}" ${dataAttrs}>${escapeHtml(action.label)}</button>`;
+                      })
+                      .join("")}
+                  </div>
+                </td>`
+                  : ""
+              }
               ${
                 options.selectable
                   ? `<td>
@@ -1936,7 +2132,6 @@ function render() {
               <button data-action="set-theme" data-theme="light" class="${state.theme === "light" ? "active" : ""}">${escapeHtml(t("themeLight"))}</button>
               <button data-action="set-theme" data-theme="dark" class="${state.theme === "dark" ? "active" : ""}">${escapeHtml(t("themeDark"))}</button>
             </div>
-            <button class="ghost-button" data-action="refresh-view">${escapeHtml(t("refresh"))}</button>
           </div>
         </header>
 
@@ -2071,6 +2266,34 @@ async function archiveSelectedMemory() {
   await loadCurrentView();
 }
 
+async function createLink(form) {
+  const formData = new FormData(form);
+  const fromEntryId = String(form.dataset.entryId || "").trim();
+  const toEntryId = String(formData.get("toEntryId") || "").trim();
+  if (!fromEntryId || !toEntryId) {
+    throw new Error(t("noSelection"));
+  }
+  await apiRequest("/memory-links", {
+    method: "POST",
+    body: JSON.stringify({
+      from_entry_id: fromEntryId,
+      to_entry_id: toEntryId,
+      type: String(formData.get("type") || "related_to").trim(),
+      strength: Number(formData.get("strength") || 1.0)
+    })
+  });
+  pushMessage("success", t("linkCreate"));
+  await loadCurrentView();
+}
+
+async function deleteLink(linkId) {
+  await apiRequest(`/memory-links/${linkId}`, {
+    method: "DELETE"
+  });
+  pushMessage("success", t("linkDelete"));
+  await loadCurrentView();
+}
+
 function syncFormValue(name, value) {
   if (name in state.forms) {
     state.forms[name] = value;
@@ -2121,9 +2344,15 @@ function attachEvents() {
       if (action === "archive-selected-memory") {
         await archiveSelectedMemory();
       }
+      if (action === "delete-link") {
+        await deleteLink(target.dataset.linkId);
+      }
       if (action === "clear-memory-selection") {
         state.selectedMemoryIds = [];
         render();
+      }
+      if (action === "focus-project") {
+        await focusProject(target.dataset.projectId, target.dataset.view || "projects");
       }
       if (action === "select-row") {
         const selectable = target.dataset.selectable;
@@ -2210,6 +2439,9 @@ function attachEvents() {
       }
       if (form.id === "memory-update-form") {
         await handleMemoryUpdate(form);
+      }
+      if (form.id === "link-create-form") {
+        await createLink(form);
       }
       if (form.id === "settings-form") {
         const formData = new FormData(form);

@@ -34,6 +34,9 @@ def test_console_assets_include_tenant_and_search_controls(client):
     assert "/auth/me" in response.text
     assert "/admin/imports/summary" in response.text
     assert "/graph?depth=" in response.text
+    assert "/memory-links" in response.text
+    assert "focus-project" in response.text
+    assert "renderGraphMap" in response.text
     assert "history.pushState" in response.text
     assert "window.location.origin}/api" in response.text
     assert "isEmbeddedConsoleMode" in response.text
