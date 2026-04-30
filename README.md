@@ -42,6 +42,11 @@
 - в этом режиме frontend автоматически использует API через same-origin prefix `/api`
 - внутренний `/console/*` namespace при этом остаётся полезным для embedded-режима внутри самого FastAPI приложения
 
+Локальный nginx/vhost можно переключить так, чтобы:
+- `https://memlayer.loc/` открывал console root
+- `https://memlayer.loc/projects` и другие разделы были UI-маршрутами
+- `https://memlayer.loc/api/*` проксировалось в backend API
+
 `docker-compose.yml` уже содержит healthcheck для PostgreSQL, поэтому `api` стартует после готовности БД.
 
 Для формальной локальной проверки API-тестов можно использовать:
