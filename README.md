@@ -389,6 +389,14 @@ curl -X POST http://localhost:8000/maintenance/rebuild-search-vectors \
 - `GET /memory/search?query=...&mode=hybrid`
 - `POST /memory/relevant` через поле `search_mode`
 
+Также доступен retrieval scope:
+
+- `scope=project` — только текущий проект
+- `scope=related` — текущий проект плюс соседние проекты из `project.metadata.related_projects`
+- `scope=global` — поиск по всей доступной памяти
+
+Это особенно полезно для агентных сценариев, когда решение может уже лежать в соседнем репозитории, но при этом мы не хотим сразу проваливаться в глобальный шум.
+
 ## SDK и Example Agent
 
 В репозитории есть встроенный минимальный SDK для агентных сценариев:
@@ -399,6 +407,13 @@ from memorybank_sdk import DEFAULT_MEMORYBANK_URL, MemoryBankClient
 with MemoryBankClient(DEFAULT_MEMORYBANK_URL) as client:
     health = client.health()
     print(health)
+    related = client.search_memory(
+        "vpn routing fix",
+        project_id="PROJECT_UUID",
+        scope="related",
+        mode="hybrid",
+    )
+    print(related["items"])
 ```
 
 SDK теперь также умеет вызывать structured import flow:

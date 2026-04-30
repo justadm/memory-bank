@@ -1,4 +1,5 @@
 import uuid
+from pathlib import Path
 
 from fastapi import HTTPException, status
 
@@ -171,21 +172,27 @@ class MemoryService:
         *,
         query: str,
         project_id: uuid.UUID | None = None,
+        scope: str = "project",
         limit: int = 10,
         mode: str = "hybrid",
         principal: AuthPrincipal | None = None,
     ):
-        if project_id:
-            self._validate_project(project_id, principal=principal, require_for_restricted=False)
-        results = self.search_service.search(query=query, project_id=project_id, limit=limit, mode=mode)
+        project_ids = self._resolve_scope_project_ids(project_id, scope=scope, principal=principal)
+        results = self.search_service.search(
+            query=query,
+            project_id=None if project_ids else project_id,
+            project_ids=project_ids,
+            limit=limit,
+            mode=mode,
+        )
         return [match for match in results if self._can_access_entry(match.entry, principal)]
 
     def get_relevant_memory(self, payload: MemoryRelevantRequest, *, principal: AuthPrincipal | None = None) -> list[tuple[MemoryEntry, float]]:
-        if payload.project_id:
-            self._validate_project(payload.project_id, principal=principal, require_for_restricted=False)
+        project_ids = self._resolve_scope_project_ids(payload.project_id, scope=payload.scope, principal=principal)
         results = self.search_service.search(
             query=payload.query,
-            project_id=payload.project_id,
+            project_id=None if project_ids else payload.project_id,
+            project_ids=project_ids,
             limit=payload.limit,
             types=payload.types,
             mode=payload.search_mode,
@@ -262,6 +269,71 @@ class MemoryService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
         if principal:
             ensure_tenant_access(principal, project.tenant_id)
+
+    def _resolve_scope_project_ids(
+        self,
+        project_id: uuid.UUID | None,
+        *,
+        scope: str,
+        principal: AuthPrincipal | None = None,
+    ) -> list[uuid.UUID] | None:
+        if scope == "global":
+            return None
+        if project_id is None:
+            return None
+
+        project = self.project_repository.get(project_id)
+        if not project:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+        if principal:
+            ensure_tenant_access(principal, project.tenant_id)
+
+        if scope != "related":
+            return [project.id]
+
+        related_ids = [project.id]
+        related_paths = self._normalize_related_paths(project)
+        if not related_paths:
+            return related_ids
+
+        for candidate in self.project_repository.list():
+            if candidate.id == project.id:
+                continue
+            if principal and not ProjectService._can_access_project(candidate, principal):
+                continue
+            candidate_source = self._normalize_source_path(candidate)
+            if candidate_source and candidate_source in related_paths:
+                related_ids.append(candidate.id)
+        return related_ids
+
+    @staticmethod
+    def _normalize_source_path(project: Project) -> str | None:
+        if not isinstance(project.metadata_, dict):
+            return None
+        source_path = project.metadata_.get("source_path")
+        if not source_path:
+            return None
+        try:
+            return str(Path(str(source_path)).expanduser().resolve())
+        except OSError:
+            return str(source_path)
+
+    def _normalize_related_paths(self, project: Project) -> set[str]:
+        if not isinstance(project.metadata_, dict):
+            return set()
+        related_projects = project.metadata_.get("related_projects", [])
+        if not isinstance(related_projects, list):
+            return set()
+
+        normalized: set[str] = set()
+        for item in related_projects:
+            if not item:
+                continue
+            try:
+                normalized.add(str(Path(str(item)).expanduser().resolve()))
+            except OSError:
+                normalized.add(str(item))
+        return normalized
 
     def _can_access_entry(self, entry: MemoryEntry, principal: AuthPrincipal | None) -> bool:
         if principal is None or principal.tenant_ids is None:

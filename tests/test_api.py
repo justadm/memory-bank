@@ -136,13 +136,19 @@ def test_list_memory_with_filters(client):
 
 
 def test_search_memory(client):
-    client.post("/memory", json={"type": "decision", "title": "Use PostgreSQL", "content": "Architecture decision"})
+    project = client.post("/projects", json={"name": "Core Search"}).json()
+    client.post(
+        "/memory",
+        json={"type": "decision", "title": "Use PostgreSQL", "content": "Architecture decision", "project_id": project["id"]},
+    )
     client.post("/memory", json={"type": "note", "title": "Unrelated", "content": "Something else"})
-    response = client.get("/memory/search", params={"query": "PostgreSQL"})
+    response = client.get("/memory/search", params={"query": "PostgreSQL", "project_id": project["id"]})
     assert response.status_code == 200
     items = response.json()["items"]
     assert len(items) == 1
     assert items[0]["title"] == "Use PostgreSQL"
+    assert items[0]["project_id"] == project["id"]
+    assert items[0]["project_name"] == "Core Search"
     assert items[0]["match_mode"] == "hybrid"
 
 
@@ -179,22 +185,108 @@ def test_relevant_memory_supports_hybrid_search_mode(client):
 
 
 def test_get_relevant_memory(client):
+    project = client.post("/projects", json={"name": "Relevant Project"}).json()
     created = client.post(
         "/memory",
-        json={"type": "artifact", "title": "DB layer", "content": "Implement database layer for memory bank"},
+        json={
+            "type": "artifact",
+            "title": "DB layer",
+            "content": "Implement database layer for memory bank",
+            "project_id": project["id"],
+        },
     ).json()
     response = client.post(
         "/memory/relevant",
-        json={"query": "Implement database layer for memory bank", "agent_id": "backend-agent"},
+        json={"query": "Implement database layer for memory bank", "agent_id": "backend-agent", "project_id": project["id"]},
     )
     assert response.status_code == 200
     items = response.json()["context"]
     assert items[0]["id"] == created["id"]
+    assert items[0]["project_id"] == project["id"]
+    assert items[0]["project_name"] == "Relevant Project"
 
     updated = client.get(f"/memory/{created['id']}")
     assert updated.status_code == 200
     assert updated.json()["usage_count"] == 1
     assert updated.json()["last_used_at"] is not None
+
+
+def test_related_scope_search_includes_neighbor_projects(client):
+    current = client.post(
+        "/projects",
+        json={
+            "name": "Current",
+            "metadata": {
+                "source_path": "/Users/just/projects/current",
+                "related_projects": ["/Users/just/projects/neighbor"],
+            },
+        },
+    ).json()
+    neighbor = client.post(
+        "/projects",
+        json={"name": "Neighbor", "metadata": {"source_path": "/Users/just/projects/neighbor"}},
+    ).json()
+    client.post(
+        "/memory",
+        json={"type": "decision", "title": "Current note", "content": "Current context only", "project_id": current["id"]},
+    )
+    client.post(
+        "/memory",
+        json={"type": "artifact", "title": "Neighbor solution", "content": "Reusable vpn routing fix", "project_id": neighbor["id"]},
+    )
+
+    project_only = client.get(
+        "/memory/search",
+        params={"query": "vpn routing fix", "project_id": current["id"], "scope": "project"},
+    )
+    assert project_only.status_code == 200
+    assert project_only.json()["items"] == []
+
+    related = client.get(
+        "/memory/search",
+        params={"query": "vpn routing fix", "project_id": current["id"], "scope": "related"},
+    )
+    assert related.status_code == 200
+    related_items = related.json()["items"]
+    assert len(related_items) == 1
+    assert related_items[0]["project_id"] == neighbor["id"]
+    assert related_items[0]["project_name"] == "Neighbor"
+
+
+def test_related_scope_relevant_includes_neighbor_projects(client):
+    current = client.post(
+        "/projects",
+        json={
+            "name": "Router",
+            "metadata": {
+                "source_path": "/Users/just/projects/router",
+                "related_projects": ["/Users/just/projects/TUN"],
+            },
+        },
+    ).json()
+    neighbor = client.post(
+        "/projects",
+        json={"name": "TUN", "metadata": {"source_path": "/Users/just/projects/TUN"}},
+    ).json()
+    client.post(
+        "/memory",
+        json={"type": "risk", "title": "Neighbor risk", "content": "OpenVPN routing risk context", "project_id": neighbor["id"]},
+    )
+
+    response = client.post(
+        "/memory/relevant",
+        json={
+            "query": "openvpn routing risk",
+            "agent_id": "cross-project-agent",
+            "project_id": current["id"],
+            "scope": "related",
+        },
+    )
+    assert response.status_code == 200
+    items = response.json()["context"]
+    assert len(items) == 1
+    assert items[0]["project_id"] == neighbor["id"]
+    assert items[0]["project_name"] == "TUN"
 
 
 def test_graph_endpoint(client):

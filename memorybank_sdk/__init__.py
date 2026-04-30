@@ -6,6 +6,7 @@ from memorybank_sdk.client import (
     MemoryBankClient,
     MemoryBankError,
     MemoryType,
+    SearchScope,
 )
 from memorybank_sdk.importer import build_directory_import_payloads, build_project_import_payload
 
@@ -17,6 +18,7 @@ __all__ = [
     "DEFAULT_MEMORYBANK_FALLBACK_URL",
     "MemoryType",
     "LinkType",
+    "SearchScope",
     "build_directory_import_payloads",
     "build_project_import_payload",
 ]

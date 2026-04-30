@@ -20,6 +20,7 @@ from app.schemas.memory import (
     MemoryResponse,
     MemorySearchItem,
     MemorySearchResponse,
+    SearchScope,
     MemoryUpdate,
 )
 from app.services.memory_service import MemoryService
@@ -56,18 +57,28 @@ def list_memory(
 def search_memory(
     query: str,
     project_id: uuid.UUID | None = None,
+    scope: SearchScope = Query(default="project"),
     mode: Literal["lexical", "semantic", "hybrid"] = Query(default="hybrid"),
     limit: int = Query(default=10, ge=1, le=50),
     service: MemoryService = Depends(get_memory_service),
     principal=Depends(require_read_access),
 ) -> MemorySearchResponse:
-    results = service.search_memory(query=query, project_id=project_id, limit=limit, mode=mode, principal=principal)
+    results = service.search_memory(
+        query=query,
+        project_id=project_id,
+        scope=scope,
+        limit=limit,
+        mode=mode,
+        principal=principal,
+    )
     return MemorySearchResponse(
         items=[
             MemorySearchItem(
                 id=match.entry.id,
                 type=match.entry.type,
                 title=match.entry.title,
+                project_id=match.entry.project_id,
+                project_name=match.entry.project.name if match.entry.project else None,
                 content_preview=match.entry.content[:180],
                 score=match.score,
                 lexical_score=match.lexical_score,
@@ -94,6 +105,8 @@ def get_relevant_memory(
                 id=entry.id,
                 type=entry.type,
                 title=entry.title,
+                project_id=entry.project_id,
+                project_name=entry.project.name if entry.project else None,
                 content=entry.content,
                 relevance_score=score,
             )

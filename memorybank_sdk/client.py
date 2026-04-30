@@ -7,6 +7,7 @@ import httpx
 
 DEFAULT_MEMORYBANK_URL = "http://127.0.0.1:18100"
 DEFAULT_MEMORYBANK_FALLBACK_URL = "https://memlayer.loc/api"
+SearchScope = Literal["project", "related", "global"]
 
 MemoryType = Literal["decision", "task", "artifact", "event", "note", "constraint", "risk"]
 LinkType = Literal[
@@ -159,9 +160,10 @@ class MemoryBankClient:
         *,
         project_id: str | None = None,
         limit: int = 10,
+        scope: SearchScope = "project",
         mode: Literal["lexical", "semantic", "hybrid"] = "hybrid",
     ) -> dict[str, Any]:
-        params: dict[str, Any] = {"query": query, "limit": limit, "mode": mode}
+        params: dict[str, Any] = {"query": query, "limit": limit, "scope": scope, "mode": mode}
         if project_id:
             params["project_id"] = project_id
         return self._request("GET", "/memory/search", params=params)
@@ -174,6 +176,7 @@ class MemoryBankClient:
         project_id: str | None = None,
         types: list[str] | None = None,
         limit: int = 8,
+        scope: SearchScope = "project",
         search_mode: Literal["lexical", "semantic", "hybrid"] = "hybrid",
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -185,6 +188,7 @@ class MemoryBankClient:
                 "agent_id": agent_id,
                 "project_id": project_id,
                 "types": types or ["decision", "task", "artifact", "note"],
+                "scope": scope,
                 "limit": limit,
                 "search_mode": search_mode,
                 "metadata": metadata or {},

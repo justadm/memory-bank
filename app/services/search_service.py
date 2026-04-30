@@ -27,6 +27,7 @@ class SearchService:
         *,
         query: str,
         project_id: uuid.UUID | None = None,
+        project_ids: list[uuid.UUID] | None = None,
         limit: int = 10,
         types: list[MemoryType] | None = None,
         include_archived: bool = False,
@@ -35,6 +36,7 @@ class SearchService:
         lexical_matches = self.memory_repository.search(
             query=query,
             project_id=project_id,
+            project_ids=project_ids,
             limit=max(limit * 3, 20),
             types=types,
             include_archived=include_archived,
@@ -53,6 +55,7 @@ class SearchService:
 
         candidates = self.memory_repository.list(
             project_id=project_id,
+            project_ids=project_ids,
             memory_type=types[0] if types and len(types) == 1 else None,
             archived=False if not include_archived else None,
         )

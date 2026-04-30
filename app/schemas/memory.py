@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import MemoryType
 
+SearchScope = Literal["project", "related", "global"]
+
 
 class MemoryCreate(BaseModel):
     type: MemoryType
@@ -58,6 +60,8 @@ class MemorySearchItem(BaseModel):
     id: uuid.UUID
     type: MemoryType
     title: str | None
+    project_id: uuid.UUID | None
+    project_name: str | None = None
     content_preview: str
     score: float
     lexical_score: float | None = None
@@ -76,6 +80,7 @@ class MemoryRelevantRequest(BaseModel):
     project_id: uuid.UUID | None = None
     agent_id: str | None = Field(default=None, max_length=100)
     types: list[MemoryType] | None = None
+    scope: SearchScope = "project"
     search_mode: Literal["lexical", "semantic", "hybrid"] = "hybrid"
     limit: int = Field(default=8, ge=1, le=50)
     metadata: dict = Field(default_factory=dict)
@@ -85,6 +90,8 @@ class MemoryRelevantItem(BaseModel):
     id: uuid.UUID
     type: MemoryType
     title: str | None
+    project_id: uuid.UUID | None
+    project_name: str | None = None
     content: str
     relevance_score: float
 

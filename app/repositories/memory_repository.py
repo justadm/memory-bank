@@ -33,11 +33,14 @@ class MemoryRepository:
         self,
         *,
         project_id: uuid.UUID | None = None,
+        project_ids: list[uuid.UUID] | None = None,
         memory_type: MemoryType | None = None,
         archived: bool | None = None,
     ) -> list[MemoryEntry]:
         stmt = select(MemoryEntry).order_by(MemoryEntry.created_at.desc())
-        if project_id:
+        if project_ids:
+            stmt = stmt.where(MemoryEntry.project_id.in_(project_ids))
+        elif project_id:
             stmt = stmt.where(MemoryEntry.project_id == project_id)
         if memory_type:
             stmt = stmt.where(MemoryEntry.type == memory_type)
@@ -136,6 +139,7 @@ class MemoryRepository:
         *,
         query: str,
         project_id: uuid.UUID | None = None,
+        project_ids: list[uuid.UUID] | None = None,
         limit: int = 10,
         types: list[MemoryType] | None = None,
         include_archived: bool = False,
@@ -143,7 +147,9 @@ class MemoryRepository:
         stmt: Select[tuple[MemoryEntry]] = select(MemoryEntry)
         if not include_archived:
             stmt = stmt.where(MemoryEntry.archived.is_(False))
-        if project_id:
+        if project_ids:
+            stmt = stmt.where(MemoryEntry.project_id.in_(project_ids))
+        elif project_id:
             stmt = stmt.where(MemoryEntry.project_id == project_id)
         if types:
             stmt = stmt.where(MemoryEntry.type.in_(types))
