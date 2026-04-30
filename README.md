@@ -62,6 +62,35 @@
 docker compose exec api pytest
 ```
 
+## Project Root Pack
+
+Для внешних проектных репозиториев теперь есть готовый MemLayer root-pack, который можно положить в корень каждого проекта, чтобы локальные AI-агенты автоматически видели правила работы с общей памятью.
+
+Состав pack:
+
+- `AGENTS.md` — создаётся или безопасно дополняется managed-секцией MemLayer
+- `MEMLAYER.md` — подробная инструкция для агента по read/write/import workflow
+- `.env.memlayer.example` — переменные окружения для подключения к MemLayer
+- `memlayer.config.json` — машинно-читаемый проектный конфиг для агентов и tool wrappers
+
+Installer:
+
+```bash
+PYTHONPATH=$PWD .venv313/bin/python scripts/install_memlayer_project_pack.py \
+  --projects-root /Users/just/projects
+```
+
+Полезные режимы:
+
+```bash
+PYTHONPATH=$PWD .venv313/bin/python scripts/install_memlayer_project_pack.py \
+  --projects-root /Users/just/projects \
+  --names max,APUAI \
+  --dry-run
+```
+
+Installer не затирает пользовательский текст в уже существующих `AGENTS.md`: он только добавляет или обновляет managed-блок между маркерами `MEMLAYER_ROOT_PACK`.
+
 ## Auth
 
 Сервис теперь поддерживает optional API-key auth.
