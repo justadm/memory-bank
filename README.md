@@ -35,6 +35,7 @@
 - управлять `tenant_id` у проектов
 - переключать `lexical / semantic / hybrid` режимы memory search
 - показывать import summaries через `GET /admin/imports/summary`
+- синхронизировать разделы с URL внутри `/console/`, например `/console/projects` и `/console/memory`
 
 `docker-compose.yml` уже содержит healthcheck для PostgreSQL, поэтому `api` стартует после готовности БД.
 

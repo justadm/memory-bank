@@ -7,6 +7,7 @@ const STORAGE_KEYS = {
 
 const LEGACY_API_BASE_URL = "http://127.0.0.1:18100";
 const MEMORY_TYPES = ["decision", "task", "artifact", "event", "note", "constraint", "risk"];
+const NAV_VIEWS = new Set(["dashboard", "projects", "memory", "review", "settings"]);
 
 function defaultApiBaseUrl() {
   if (window.location.protocol === "https:" || window.location.protocol === "http:") {
@@ -29,6 +30,34 @@ function resolveInitialApiBaseUrl() {
   }
 
   return saved;
+}
+
+function normalizeView(view) {
+  return NAV_VIEWS.has(view) ? view : "dashboard";
+}
+
+function baseConsolePath() {
+  const marker = "/console";
+  const index = window.location.pathname.indexOf(marker);
+  return index >= 0 ? window.location.pathname.slice(0, index + marker.length) : "/console";
+}
+
+function routePathForView(view) {
+  const normalized = normalizeView(view);
+  return normalized === "dashboard" ? `${baseConsolePath()}/` : `${baseConsolePath()}/${normalized}`;
+}
+
+function resolveViewFromLocation() {
+  const currentPath = window.location.pathname.replace(/\/+$/, "") || "/";
+  const basePath = baseConsolePath().replace(/\/+$/, "");
+  if (currentPath === basePath || currentPath === `${basePath}` || currentPath === `${basePath}/`) {
+    return "dashboard";
+  }
+  if (!currentPath.startsWith(basePath)) {
+    return "dashboard";
+  }
+  const suffix = currentPath.slice(basePath.length).replace(/^\/+/, "");
+  return normalizeView(suffix.split("/")[0] || "dashboard");
 }
 
 const translations = {
@@ -363,7 +392,7 @@ const state = {
   locale: localStorage.getItem(STORAGE_KEYS.locale) || "ru",
   apiBaseUrl: resolveInitialApiBaseUrl(),
   apiKey: localStorage.getItem(STORAGE_KEYS.apiKey) || "",
-  currentView: "dashboard",
+  currentView: resolveViewFromLocation(),
   drawerOpen: false,
   messages: [],
   apiHealthy: false,
@@ -517,6 +546,16 @@ function renderAuthChips() {
     chips.push(`<span class="chip">${escapeHtml(t("tenants"))}: ${escapeHtml(authTenantsLabel())}</span>`);
   }
   return chips.join("");
+}
+
+async function navigateToView(view, { push = true } = {}) {
+  const normalized = normalizeView(view);
+  state.currentView = normalized;
+  if (push) {
+    window.history.pushState({ view: normalized }, "", routePathForView(normalized));
+  }
+  state.drawerOpen = false;
+  await loadCurrentView();
 }
 
 function compareValues(left, right, sortKey) {
@@ -1932,9 +1971,7 @@ function attachEvents() {
     const action = target.dataset.action;
     try {
       if (action === "navigate") {
-        state.currentView = target.dataset.view;
-        state.drawerOpen = false;
-        await loadCurrentView();
+        await navigateToView(target.dataset.view);
       }
       if (action === "open-drawer") {
         state.drawerOpen = true;
@@ -2073,6 +2110,11 @@ function attachEvents() {
 }
 
 async function boot() {
+  window.addEventListener("popstate", async () => {
+    state.currentView = resolveViewFromLocation();
+    state.drawerOpen = false;
+    await loadCurrentView();
+  });
   attachEvents();
   render();
   await loadCurrentView();
