@@ -66,7 +66,10 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
     assert (project_root / "AGENTS.md").exists()
     assert (project_root / "MEMLAYER.md").exists()
     assert (project_root / ".env.memlayer.example").exists()
+    assert (project_root / ".env.memlayer").exists()
     assert (project_root / "memlayer.config.json").exists()
+    assert (project_root / "memlayer_api.sh").exists()
+    assert (project_root / "memlayer_api.sh").stat().st_mode & 0o111
 
 
 def test_install_for_project_merges_existing_agents_file(tmp_path: Path) -> None:
@@ -89,3 +92,20 @@ def test_install_for_project_merges_existing_agents_file(tmp_path: Path) -> None
     assert "# Existing" in text
     assert "Keep this." in text
     assert "MemLayer Working Memory" in text
+
+
+def test_install_for_project_preserves_existing_local_env(tmp_path: Path) -> None:
+    project_root = tmp_path / "LocalEnvProject"
+    project_root.mkdir()
+    local_env_path = project_root / ".env.memlayer"
+    local_env_path.write_text("MEMORYBANK_API_KEY=secret\n", encoding="utf-8")
+
+    install_for_project(
+        project_root,
+        preferred_url="http://127.0.0.1:18100",
+        local_url="https://memlayer.loc/api",
+        human_url="https://memlayer.loc/api",
+        dry_run=False,
+    )
+
+    assert local_env_path.read_text(encoding="utf-8") == "MEMORYBANK_API_KEY=secret\n"

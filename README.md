@@ -84,6 +84,8 @@ docker compose exec api pytest
 
 - `AGENTS.md` — создаётся или безопасно дополняется managed-секцией MemLayer
 - `MEMLAYER.md` — подробная инструкция для агента по read/write/import workflow
+- `memlayer_api.sh` — локальный helper для чтения и записи в MemLayer с automatic fallback `localhost -> memlayer.loc`
+- `.env.memlayer` — локальный override-файл для `MEMORYBANK_API_KEY` и timeout helper-скрипта
 - `.env.memlayer.example` — переменные окружения для подключения к MemLayer
 - `memlayer.config.json` — машинно-читаемый проектный конфиг для агентов и tool wrappers
 
@@ -104,6 +106,7 @@ PYTHONPATH=$PWD .venv313/bin/python scripts/install_memlayer_project_pack.py \
 ```
 
 Installer не затирает пользовательский текст в уже существующих `AGENTS.md`: он только добавляет или обновляет managed-блок между маркерами `MEMLAYER_ROOT_PACK`.
+Если в проекте уже есть `.env.memlayer`, installer его сохраняет и не перезаписывает.
 
 ## Runtime Smoke
 

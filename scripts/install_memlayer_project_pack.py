@@ -106,13 +106,21 @@ def write_json(path: Path, payload: dict[str, object], dry_run: bool) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def chmod_executable(path: Path, dry_run: bool) -> None:
+    if dry_run:
+        return
+    path.chmod(0o755)
+
+
 def install_for_project(project_root: Path, preferred_url: str, local_url: str, human_url: str, dry_run: bool) -> dict[str, object]:
     project_name = project_root.name
     managed_section = render_template("AGENTS_SECTION.md.tmpl")
     agents_path = project_root / "AGENTS.md"
     memlayer_path = project_root / "MEMLAYER.md"
     env_path = project_root / ".env.memlayer.example"
+    local_env_path = project_root / ".env.memlayer"
     config_path = project_root / "memlayer.config.json"
+    helper_path = project_root / "memlayer_api.sh"
 
     if agents_path.exists():
         agents_text = agents_path.read_text(encoding="utf-8")
@@ -142,6 +150,8 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
         local_url=local_url,
         human_url=human_url,
     )
+    local_env_text = load_template("env.memlayer.tmpl")
+    helper_text = load_template("memlayer_api.sh.tmpl")
     config_payload = build_project_config(
         project_root,
         preferred_url=preferred_url,
@@ -152,7 +162,11 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
     write_text(agents_path, new_agents_text, dry_run=dry_run)
     write_text(memlayer_path, memlayer_text, dry_run=dry_run)
     write_text(env_path, env_text, dry_run=dry_run)
+    if not local_env_path.exists():
+        write_text(local_env_path, local_env_text, dry_run=dry_run)
     write_json(config_path, config_payload, dry_run=dry_run)
+    write_text(helper_path, helper_text, dry_run=dry_run)
+    chmod_executable(helper_path, dry_run=dry_run)
 
     return {
         "project": project_name,
@@ -162,7 +176,9 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
             str(agents_path),
             str(memlayer_path),
             str(env_path),
+            str(local_env_path),
             str(config_path),
+            str(helper_path),
         ],
     }
 

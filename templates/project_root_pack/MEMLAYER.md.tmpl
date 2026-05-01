@@ -17,11 +17,12 @@ This repository is expected to use MemLayer as its shared working memory.
 ## Required Agent Workflow
 
 1. Read `memlayer.config.json`.
-2. Check auth status with `GET /auth/me` if an API key is configured.
-3. Before coding or debugging, fetch relevant memory for the current task.
-4. Reuse prior decisions, constraints, risks, and artifacts whenever possible.
-5. After meaningful progress, write back new memory entries and important links.
-6. If repository structure or architecture changed, reimport the project into MemLayer.
+2. Prefer `./memlayer_api.sh` for MemLayer reads and writes instead of raw `curl`, because it automatically retries through the fallback URL when localhost is temporarily unavailable.
+3. Check auth status with `GET /auth/me` if an API key is configured.
+4. Before coding or debugging, fetch relevant memory for the current task.
+5. Reuse prior decisions, constraints, risks, and artifacts whenever possible.
+6. After meaningful progress, write back new memory entries and important links.
+7. If repository structure or architecture changed, reimport the project into MemLayer.
 
 ## Suggested Memory Types
 
@@ -67,36 +68,37 @@ Recommended metadata fields:
 Health:
 
 ```bash
-curl -sS "{preferred_url}/health"
+./memlayer_api.sh GET /health
 ```
 
 Auth status:
 
 ```bash
-curl -sS "{preferred_url}/auth/me" \
-  -H "Authorization: Bearer $MEMORYBANK_API_KEY"
+./memlayer_api.sh GET /auth/me
 ```
 
 Search memory:
 
 ```bash
-curl -sS "{preferred_url}/memory/search?query=architecture&mode=hybrid&limit=8" \
-  -H "Authorization: Bearer $MEMORYBANK_API_KEY"
+./memlayer_api.sh GET "/memory/search?query=architecture&mode=hybrid&limit=8"
 ```
 
 Get relevant memory:
 
 ```bash
-curl -sS -X POST "{preferred_url}/memory/relevant" \
-  -H "Authorization: Bearer $MEMORYBANK_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{{
+./memlayer_api.sh POST /memory/relevant '{{
     "query": "Current task context for {project_name}",
     "agent_id": "local-agent",
     "types": ["decision", "constraint", "risk", "artifact", "task", "note"],
     "limit": 8,
     "search_mode": "hybrid"
   }}'
+```
+
+Enable API key and timeout overrides:
+
+```bash
+cp .env.memlayer.example .env.memlayer
 ```
 
 Reimport this project:

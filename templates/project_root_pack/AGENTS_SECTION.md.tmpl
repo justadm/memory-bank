@@ -17,7 +17,8 @@ Minimum workflow for every meaningful task:
 Use this local config first:
 
 - [memlayer.config.json](./memlayer.config.json)
+- [memlayer_api.sh](./memlayer_api.sh)
+- [.env.memlayer](./.env.memlayer)
 - [.env.memlayer.example](./.env.memlayer.example)
 
-When in doubt, prefer the sandbox-friendly `http://127.0.0.1:18100` endpoint first.
-Use `https://memlayer.loc/api` only as a human-friendly or escalated fallback when localhost is unavailable.
+Prefer `./memlayer_api.sh` over raw `curl`: it tries localhost first and automatically falls back to `https://memlayer.loc/api` when localhost is temporarily unavailable.

@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+METHOD="${1:-GET}"
+PATH_PART="${2:-/health}"
+BODY="${3:-}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_PATH="${SCRIPT_DIR}/memlayer.config.json"
+ENV_PATH="${SCRIPT_DIR}/.env.memlayer"
+
+if [[ ! -f "${CONFIG_PATH}" ]]; then
+  echo "memlayer_api.sh: missing ${CONFIG_PATH}" >&2
+  exit 1
+fi
+
+if [[ -f "${ENV_PATH}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "${ENV_PATH}"
+  set +a
+fi
+
+read_config_value() {
+  local key="$1"
+  python3 - "$CONFIG_PATH" "$key" <<'PY'
+import json
+import sys
+
+config_path, key = sys.argv[1], sys.argv[2]
+with open(config_path, "r", encoding="utf-8") as fh:
+    data = json.load(fh)
+value = data.get(key, "")
+print(value if value is not None else "")
+PY
+}
+
+PREFERRED_URL="$(read_config_value preferred_url)"
+FALLBACK_URL="$(read_config_value local_fallback_url)"
+
+if [[ -z "${PREFERRED_URL}" ]]; then
+  echo "memlayer_api.sh: preferred_url is not configured in memlayer.config.json" >&2
+  exit 1
+fi
+
+build_url() {
+  local base_url="$1"
+  local path_part="$2"
+  local normalized_base="${base_url%/}"
+  local normalized_path="/${path_part#/}"
+  printf '%s%s' "${normalized_base}" "${normalized_path}"
+}
+
+run_request() {
+  local base_url="$1"
+  local url
+  url="$(build_url "${base_url}" "${PATH_PART}")"
+  local -a args
+  args=(-sS --max-time "${MEMLAYER_CURL_TIMEOUT_SECONDS:-8}" -X "${METHOD}" "${url}")
+  if [[ -n "${MEMORYBANK_API_KEY:-}" ]]; then
+    args+=(-H "Authorization: Bearer ${MEMORYBANK_API_KEY}")
+  fi
+  if [[ -n "${BODY}" ]]; then
+    args+=(-H "Content-Type: application/json" --data "${BODY}")
+  fi
+  curl "${args[@]}"
+}
+
+if run_request "${PREFERRED_URL}"; then
+  exit 0
+fi
+
+if [[ -n "${FALLBACK_URL}" ]]; then
+  echo "memlayer_api.sh: preferred endpoint failed, retrying via fallback ${FALLBACK_URL}" >&2
+  run_request "${FALLBACK_URL}"
+  exit 0
+fi
+
+exit 1
