@@ -22,6 +22,7 @@
 - memory quality layer с hard gate для ручной записи и soft review для import flow
 - decision authority hints и typed context builder для agent retrieval
 - metadata-based conflict resolution flow for competing decisions
+- lifecycle maintenance pass with dry-run support
 - Docker, Alembic и базовые API-тесты
 
 ## Быстрый старт
@@ -183,6 +184,23 @@ MemLayer теперь делает базовую quality-оценку при `P
 - для `supersede` связывает записи через `supersedes_entry_id` и `deprecated_by_entry_id`
 - для `reject_new` архивирует новое решение
 
+## Lifecycle
+
+Из `memlayer_next_stage_pack` я пока перенёс безопасный управляемый lifecycle-pass, а не бесконечный background worker.
+
+Новый endpoint:
+
+- `POST /maintenance/lifecycle/run`
+
+Что он умеет:
+
+- снижать `metadata.quality.score` у старых low-value `note` / `event`
+- помечать старые review-required записи как `metadata.review_overdue=true`
+- архивировать слабые stale entries по threshold-правилам
+- удалять старые weak links по `strength`
+
+Поддерживается `dry_run`, поэтому оператор может сначала посмотреть кандидатов, а потом уже применить pass по-настоящему.
+
 ## Context Builder
 
 Вместо плоского retrieval теперь доступен typed context endpoint:
@@ -283,6 +301,7 @@ AUTH_API_KEYS=tenant-agent:tenant-key:read|write|import:tenant-a|tenant-b
 - `GET /memory/{id}/graph`
 - `POST /maintenance/archive-stale`
 - `POST /maintenance/rebuild-search-vectors`
+- `POST /maintenance/lifecycle/run`
 - `POST /imports/project-scan`
 - `GET /metrics/overview`
 - `GET /admin/observability/summary`
@@ -405,6 +424,22 @@ curl -sS -X POST http://127.0.0.1:18100/maintenance/archive-stale \
     "older_than_days": 30,
     "max_usage_count": 0,
     "max_importance": 2
+  }'
+```
+
+### Запустить lifecycle pass в dry-run режиме
+
+```bash
+curl -sS -X POST http://127.0.0.1:18100/maintenance/lifecycle/run \
+  -H 'Authorization: Bearer ops-admin-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "dry_run": true,
+    "stale_days": 21,
+    "review_overdue_days": 14,
+    "weak_link_days": 30,
+    "low_quality_threshold": 0.35,
+    "weak_link_strength_threshold": 0.35
   }'
 ```
 

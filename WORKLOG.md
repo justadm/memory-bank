@@ -107,3 +107,7 @@
 - Added `GET /admin/decision-conflicts`, which flattens pending `metadata.decision_conflicts` into an admin review queue, and `POST /admin/decision-conflicts/resolve`, which supports `supersede`, `reject_new`, `keep_both`, and `needs_changes`.
 - Resolution actions now update `decision_status`, `requires_review`, `review_status`, `review_history`, and for supersession also wire `supersedes_entry_id` / `deprecated_by_entry_id`. Rejecting the new decision archives it immediately so retrieval stops surfacing it as a live choice.
 - Covered the new flow with API tests for conflict listing, superseding an old decision, and rejecting a new conflicting decision before running the full suite again.
+- Continued the next-stage extraction with a lifecycle maintenance pass, but intentionally kept it operator-triggered instead of introducing a background daemon immediately. This fits the current architecture better and is safer for early-stage runtime operations.
+- Added `LifecycleService` plus `POST /maintenance/lifecycle/run` with `dry_run` support. The pass now decays quality for stale low-value `note` / `event` entries, marks overdue review items with `metadata.review_overdue=true`, archives weak stale entries below a configurable threshold, and cleans up weak old links.
+- Covered the lifecycle pass with API tests for both dry-run preview behavior and real application behavior, including review-overdue marking, stale entry archiving, and weak-link deletion.
+- Verified the integrated lifecycle subset with the full local suite; result: `64 passed`.

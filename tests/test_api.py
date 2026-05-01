@@ -1,10 +1,12 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from app.models.access_log import MemoryAccessLog
 from app.models.memory_entry import MemoryEntry
+from app.models.memory_link import MemoryLink
 
 
 def test_create_project(client):
@@ -112,6 +114,128 @@ def test_archive_memory_entry(client):
     response = client.post(f"/memory/{created['id']}/archive")
     assert response.status_code == 200
     assert response.json()["archived"] is True
+
+
+def test_lifecycle_run_dry_run_reports_candidates(client, db_session: Session):
+    project = client.post("/projects", json={"name": "Lifecycle Dry Run"}).json()
+    review_entry = client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "Switch to MongoDB instead",
+            "content": "Switch the same runtime to MongoDB instead of PostgreSQL for future work.",
+            "project_id": project["id"],
+            "metadata": {
+                "evidence": ["proposal.md"],
+                "requires_review": True,
+                "decision_conflicts": [{"conflicts_with_entry_id": str(uuid.uuid4()), "reason": "Direction conflict"}],
+            },
+        },
+    ).json()
+    stale_note = client.post(
+        "/memory",
+        json={
+            "type": "note",
+            "content": "operational note",
+            "project_id": project["id"],
+            "importance": 1,
+            "metadata": {},
+        },
+    ).json()
+    first = client.post("/memory", json={"type": "task", "content": "Old task", "project_id": project["id"]}).json()
+    second = client.post("/memory", json={"type": "artifact", "content": "Old artifact", "project_id": project["id"]}).json()
+    weak_link = client.post(
+        "/memory-links",
+        json={"from_entry_id": first["id"], "to_entry_id": second["id"], "type": "related_to", "strength": 0.2},
+    ).json()
+
+    old_time = datetime.now(timezone.utc) - timedelta(days=40)
+    review_model = db_session.get(MemoryEntry, uuid.UUID(review_entry["id"]))
+    stale_model = db_session.get(MemoryEntry, uuid.UUID(stale_note["id"]))
+    weak_link_model = db_session.get(MemoryLink, uuid.UUID(weak_link["id"]))
+    review_model.created_at = old_time
+    stale_model.created_at = old_time
+    stale_model.last_used_at = old_time
+    weak_link_model.created_at = old_time
+    db_session.add(review_model)
+    db_session.add(stale_model)
+    db_session.add(weak_link_model)
+    db_session.commit()
+
+    response = client.post("/maintenance/lifecycle/run", json={"dry_run": True, "low_quality_threshold": 0.35})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["dry_run"] is True
+    assert body["review_overdue_marked_count"] >= 1
+    assert review_entry["id"] in body["review_overdue_ids"]
+    assert body["archived_count"] >= 1
+    assert stale_note["id"] in body["archived_ids"]
+    assert body["weak_links_deleted_count"] >= 1
+    assert weak_link["id"] in body["weak_link_ids"]
+
+    detail = client.get(f"/memory/{stale_note['id']}").json()
+    assert detail["archived"] is False
+
+
+def test_lifecycle_run_applies_archive_review_and_link_cleanup(client, db_session: Session):
+    project = client.post("/projects", json={"name": "Lifecycle Apply"}).json()
+    review_entry = client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "Switch to Django instead",
+            "content": "Switch the same service to Django instead of FastAPI for future work.",
+            "project_id": project["id"],
+            "metadata": {
+                "evidence": ["proposal.md"],
+                "requires_review": True,
+                "decision_conflicts": [{"conflicts_with_entry_id": str(uuid.uuid4()), "reason": "Direction conflict"}],
+            },
+        },
+    ).json()
+    stale_note = client.post(
+        "/memory",
+        json={
+            "type": "note",
+            "content": "operational note",
+            "project_id": project["id"],
+            "importance": 1,
+            "metadata": {},
+        },
+    ).json()
+    first = client.post("/memory", json={"type": "task", "content": "Task A", "project_id": project["id"]}).json()
+    second = client.post("/memory", json={"type": "artifact", "content": "Artifact B", "project_id": project["id"]}).json()
+    weak_link = client.post(
+        "/memory-links",
+        json={"from_entry_id": first["id"], "to_entry_id": second["id"], "type": "related_to", "strength": 0.2},
+    ).json()
+
+    old_time = datetime.now(timezone.utc) - timedelta(days=40)
+    review_model = db_session.get(MemoryEntry, uuid.UUID(review_entry["id"]))
+    stale_model = db_session.get(MemoryEntry, uuid.UUID(stale_note["id"]))
+    weak_link_model = db_session.get(MemoryLink, uuid.UUID(weak_link["id"]))
+    review_model.created_at = old_time
+    stale_model.created_at = old_time
+    stale_model.last_used_at = old_time
+    weak_link_model.created_at = old_time
+    original_quality_score = stale_model.metadata_["quality"]["score"]
+    db_session.add(review_model)
+    db_session.add(stale_model)
+    db_session.add(weak_link_model)
+    db_session.commit()
+
+    response = client.post("/maintenance/lifecycle/run", json={"low_quality_threshold": 0.35})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["dry_run"] is False
+
+    updated_review = client.get(f"/memory/{review_entry['id']}").json()
+    updated_stale = client.get(f"/memory/{stale_note['id']}").json()
+    updated_links = client.get(f"/memory/{first['id']}/links").json()
+    assert updated_review["metadata"]["review_overdue"] is True
+    assert updated_stale["archived"] is True
+    assert updated_stale["metadata"]["quality"]["score"] < original_quality_score
+    assert updated_links["outgoing"] == []
 
 
 def test_create_memory_link(client):

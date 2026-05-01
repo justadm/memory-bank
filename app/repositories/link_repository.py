@@ -1,5 +1,6 @@
 import uuid
 from collections import deque
+from datetime import datetime
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -34,6 +35,13 @@ class LinkRepository:
 
     def delete(self, link: MemoryLink) -> None:
         self.db.delete(link)
+
+    def list_weak_links(self, *, older_than: datetime, strength_threshold: float) -> list[MemoryLink]:
+        stmt = select(MemoryLink).where(
+            MemoryLink.strength < strength_threshold,
+            MemoryLink.created_at < older_than,
+        )
+        return list(self.db.scalars(stmt))
 
     def get_for_entry(self, entry_id: uuid.UUID) -> tuple[list[MemoryLink], list[MemoryLink]]:
         outgoing = list(
