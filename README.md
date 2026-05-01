@@ -21,6 +21,7 @@
 - structured project import endpoint для первичного наполнения MemoryBank
 - memory quality layer с hard gate для ручной записи и soft review для import flow
 - decision authority hints и typed context builder для agent retrieval
+- metadata-based conflict resolution flow for competing decisions
 - Docker, Alembic и базовые API-тесты
 
 ## Быстрый старт
@@ -158,6 +159,30 @@ MemLayer теперь делает базовую quality-оценку при `P
 
 Пока это metadata-based слой без тяжёлой миграции схемы, поэтому он хорошо встраивается в текущий MVP/runtime и не ломает существующие import/search flows.
 
+## Conflict Resolution
+
+Поверх decision authority теперь есть первый рабочий human-in-the-loop flow для конфликтующих решений.
+
+Новые admin endpoints:
+
+- `GET /admin/decision-conflicts`
+- `POST /admin/decision-conflicts/resolve`
+
+Поддерживаемые actions:
+
+- `supersede`
+- `reject_new`
+- `keep_both`
+- `needs_changes`
+
+Что делает resolution:
+
+- обновляет `decision_status`
+- меняет `requires_review` / `review_status`
+- пишет `review_history`
+- для `supersede` связывает записи через `supersedes_entry_id` и `deprecated_by_entry_id`
+- для `reject_new` архивирует новое решение
+
 ## Context Builder
 
 Вместо плоского retrieval теперь доступен typed context endpoint:
@@ -262,6 +287,7 @@ AUTH_API_KEYS=tenant-agent:tenant-key:read|write|import:tenant-a|tenant-b
 - `GET /metrics/overview`
 - `GET /admin/observability/summary`
 - `GET /admin/import-conflicts`
+- `GET /admin/decision-conflicts`
 - `GET /admin/imports/summary`
 
 ## curl Examples
@@ -423,6 +449,28 @@ curl -sS -X POST http://127.0.0.1:18100/imports/project-scan \
 ```
 
 В ответе import flow теперь есть `quality_review_required_count`, а слабые импортированные записи получают флаг `metadata.quality_review_required=true` вместо жёсткого отказа.
+
+### Посмотреть pending decision conflicts
+
+```bash
+curl -sS 'http://127.0.0.1:18100/admin/decision-conflicts?limit=20' \
+  -H 'Authorization: Bearer ops-admin-key'
+```
+
+### Разрешить decision conflict через supersede
+
+```bash
+curl -sS -X POST http://127.0.0.1:18100/admin/decision-conflicts/resolve \
+  -H 'Authorization: Bearer ops-admin-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "entry_id": "NEW_DECISION_UUID",
+    "conflicts_with_entry_id": "OLD_DECISION_UUID",
+    "action": "supersede",
+    "resolution": "New decision replaces the previous direction.",
+    "resolved_by": "ops-admin"
+  }'
+```
 
 ## Auto-linking
 

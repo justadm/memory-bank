@@ -9,6 +9,9 @@ from app.repositories.memory_repository import MemoryRepository
 from app.repositories.metrics_repository import MetricsRepository
 from app.security import require_admin_access
 from app.schemas.admin import (
+    DecisionConflictListResponse,
+    DecisionConflictResolutionRequest,
+    DecisionConflictResolutionResponse,
     ImportConflictListResponse,
     ImportProjectSummaryListResponse,
     ObservabilitySummaryResponse,
@@ -40,6 +43,34 @@ def get_import_conflicts(
     principal=Depends(require_admin_access),
 ) -> ImportConflictListResponse:
     return ImportConflictListResponse(**service.get_import_conflicts(project_id=project_id, limit=limit, principal=principal))
+
+
+@router.get("/decision-conflicts", response_model=DecisionConflictListResponse)
+def get_decision_conflicts(
+    project_id: uuid.UUID | None = None,
+    limit: int = 20,
+    service: AdminObservabilityService = Depends(get_admin_observability_service),
+    principal=Depends(require_admin_access),
+) -> DecisionConflictListResponse:
+    return DecisionConflictListResponse(**service.get_decision_conflicts(project_id=project_id, limit=limit, principal=principal))
+
+
+@router.post("/decision-conflicts/resolve", response_model=DecisionConflictResolutionResponse)
+def resolve_decision_conflict(
+    payload: DecisionConflictResolutionRequest,
+    service: AdminObservabilityService = Depends(get_admin_observability_service),
+    principal=Depends(require_admin_access),
+) -> DecisionConflictResolutionResponse:
+    return DecisionConflictResolutionResponse(
+        **service.resolve_decision_conflict(
+            entry_id=payload.entry_id,
+            conflicts_with_entry_id=payload.conflicts_with_entry_id,
+            action=payload.action,
+            resolution=payload.resolution,
+            resolved_by=payload.resolved_by,
+            principal=principal,
+        )
+    )
 
 
 @router.get("/imports/summary", response_model=ImportProjectSummaryListResponse)

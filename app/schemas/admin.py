@@ -46,6 +46,37 @@ class ImportConflictListResponse(BaseModel):
     items: list[ImportConflictItemResponse]
 
 
+class DecisionConflictItemResponse(BaseModel):
+    entry_id: uuid.UUID
+    project_id: uuid.UUID | None
+    title: str | None
+    conflicts_with_entry_id: uuid.UUID
+    conflicts_with_title: str | None
+    severity: str
+    reason: str
+    created_at: datetime
+    requires_review: bool
+
+
+class DecisionConflictListResponse(BaseModel):
+    items: list[DecisionConflictItemResponse]
+
+
+class DecisionConflictResolutionRequest(BaseModel):
+    entry_id: uuid.UUID
+    conflicts_with_entry_id: uuid.UUID
+    action: str
+    resolution: str
+    resolved_by: str
+
+
+class DecisionConflictResolutionResponse(BaseModel):
+    status: str
+    action: str
+    entry_id: uuid.UUID
+    conflicts_with_entry_id: uuid.UUID
+
+
 class ImportProjectSummaryItemResponse(BaseModel):
     project_id: uuid.UUID
     project_name: str

@@ -243,6 +243,102 @@ def test_context_build_returns_typed_buckets(client):
     assert body["context"]["constraints"][0]["title"] == "Keep Docker runtime"
 
 
+def test_admin_decision_conflicts_and_supersede_resolution(client):
+    project = client.post("/projects", json={"name": "Conflict Admin Project"}).json()
+    old_decision = client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "Use PostgreSQL",
+            "content": "Use PostgreSQL as the primary database for the project runtime and tooling.",
+            "project_id": project["id"],
+            "metadata": {"evidence": ["ops.md"]},
+        },
+    ).json()
+    new_decision = client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "Switch to MongoDB instead",
+            "content": "Switch the same runtime to MongoDB instead of PostgreSQL for future development.",
+            "project_id": project["id"],
+            "metadata": {"evidence": ["proposal.md"]},
+        },
+    ).json()
+
+    listed = client.get("/admin/decision-conflicts", params={"project_id": project["id"]})
+    assert listed.status_code == 200
+    items = listed.json()["items"]
+    assert len(items) == 1
+    assert items[0]["entry_id"] == new_decision["id"]
+    assert items[0]["conflicts_with_entry_id"] == old_decision["id"]
+
+    resolved = client.post(
+        "/admin/decision-conflicts/resolve",
+        json={
+            "entry_id": new_decision["id"],
+            "conflicts_with_entry_id": old_decision["id"],
+            "action": "supersede",
+            "resolution": "MongoDB was explicitly chosen for the new phase.",
+            "resolved_by": "ops-admin",
+        },
+    )
+    assert resolved.status_code == 200
+    assert resolved.json()["status"] == "resolved"
+
+    old_detail = client.get(f"/memory/{old_decision['id']}").json()
+    new_detail = client.get(f"/memory/{new_decision['id']}").json()
+    assert old_detail["metadata"]["decision_status"] == "superseded"
+    assert old_detail["metadata"]["deprecated_by_entry_id"] == new_decision["id"]
+    assert new_detail["metadata"]["decision_status"] == "active"
+    assert new_detail["metadata"]["supersedes_entry_id"] == old_decision["id"]
+    assert new_detail["metadata"]["requires_review"] is False
+
+    listed_after = client.get("/admin/decision-conflicts", params={"project_id": project["id"]})
+    assert listed_after.status_code == 200
+    assert listed_after.json()["items"] == []
+
+
+def test_admin_decision_conflict_reject_new_archives_entry(client):
+    project = client.post("/projects", json={"name": "Conflict Reject Project"}).json()
+    old_decision = client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "Use FastAPI",
+            "content": "Use FastAPI as the service framework for the current architecture.",
+            "project_id": project["id"],
+            "metadata": {"evidence": ["architecture.md"]},
+        },
+    ).json()
+    new_decision = client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "Switch to Django instead",
+            "content": "Switch the same service to Django instead of FastAPI.",
+            "project_id": project["id"],
+            "metadata": {"evidence": ["proposal.md"]},
+        },
+    ).json()
+
+    resolved = client.post(
+        "/admin/decision-conflicts/resolve",
+        json={
+            "entry_id": new_decision["id"],
+            "conflicts_with_entry_id": old_decision["id"],
+            "action": "reject_new",
+            "resolution": "The team kept the original framework decision.",
+            "resolved_by": "ops-admin",
+        },
+    )
+    assert resolved.status_code == 200
+
+    new_detail = client.get(f"/memory/{new_decision['id']}").json()
+    assert new_detail["metadata"]["decision_status"] == "rejected"
+    assert new_detail["archived"] is True
+
+
 def test_semantic_search_memory(client):
     client.post(
         "/memory",

@@ -92,6 +92,30 @@ class MemoryRepository:
         ]
         return conflicted[:limit]
 
+    def list_decision_conflicts(
+        self,
+        *,
+        project_id: uuid.UUID | None = None,
+        limit: int = 20,
+        tenant_ids: set[str] | None = None,
+    ) -> list[MemoryEntry]:
+        stmt = select(MemoryEntry).where(MemoryEntry.type == MemoryType.decision).order_by(MemoryEntry.created_at.desc())
+        if project_id:
+            stmt = stmt.where(MemoryEntry.project_id == project_id)
+        if tenant_ids is not None:
+            stmt = stmt.join(Project, Project.id == MemoryEntry.project_id).where(
+                Project.metadata_["tenant_id"].as_string().in_(sorted(tenant_ids))
+            )
+        items = list(self.db.scalars(stmt.limit(max(limit * 3, limit))))
+        conflicted = [
+            item
+            for item in items
+            if isinstance(item.metadata_, dict)
+            and item.metadata_.get("requires_review") is True
+            and item.metadata_.get("decision_conflicts")
+        ]
+        return conflicted[:limit]
+
     def list_import_project_summaries(self, *, limit: int = 20, tenant_ids: set[str] | None = None) -> list[dict]:
         stmt = select(Project).order_by(Project.updated_at.desc()).limit(limit * 3)
         if tenant_ids is not None:
