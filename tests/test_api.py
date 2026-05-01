@@ -102,6 +102,66 @@ def test_low_quality_memory_is_rejected(client):
     assert body["quality"]["reject"] is True
 
 
+def test_semantic_duplicate_memory_is_marked_for_review(client):
+    project = client.post("/projects", json={"name": "Semantic Duplicates"}).json()
+    first = client.post(
+        "/memory",
+        json={
+            "type": "artifact",
+            "title": "Primary database decision",
+            "content": "The application runtime uses PostgreSQL as the main database service.",
+            "project_id": project["id"],
+            "metadata": {"evidence": ["architecture.md"]},
+        },
+    )
+    assert first.status_code == 201
+
+    second = client.post(
+        "/memory",
+        json={
+            "type": "artifact",
+            "title": "Main datastore choice",
+            "content": "PostgreSQL is the primary database for the application runtime service.",
+            "project_id": project["id"],
+            "metadata": {"evidence": ["proposal.md"]},
+        },
+    )
+    assert second.status_code == 201
+    body = second.json()
+    assert body["metadata"]["quality"]["semantic_duplicate_risk"] is True
+    assert body["metadata"]["quality"]["semantic_duplicate_candidates"]
+    assert body["metadata"]["quality_review_required"] is True
+
+
+def test_extreme_semantic_duplicate_is_rejected(client):
+    project = client.post("/projects", json={"name": "Semantic Hard Gate"}).json()
+    first = client.post(
+        "/memory",
+        json={
+            "type": "artifact",
+            "title": "VPN routing baseline",
+            "content": "The VPN routing path uses a dedicated tunnel for all packet forwarding.",
+            "project_id": project["id"],
+            "metadata": {"evidence": ["router.md"]},
+        },
+    )
+    assert first.status_code == 201
+
+    second = client.post(
+        "/memory",
+        json={
+            "type": "artifact",
+            "title": "VPN routing baseline duplicate",
+            "content": "The VPN routing path uses a dedicated tunnel for all packet forwarding.",
+            "project_id": project["id"],
+            "metadata": {"evidence": ["router-copy.md"]},
+        },
+    )
+    assert second.status_code == 422
+    detail = second.json()["detail"]
+    assert detail["quality"]["semantic_duplicate_risk"] is True or detail["quality"]["duplicate_risk"] is True
+
+
 def test_update_memory_entry(client):
     created = client.post("/memory", json={"type": "note", "content": "draft"}).json()
     response = client.patch(f"/memory/{created['id']}", json={"title": "Updated", "content": "Updated content"})

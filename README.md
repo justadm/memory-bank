@@ -25,6 +25,7 @@
 - lifecycle maintenance pass with dry-run support
 - compaction preview/apply flow for summarizing stale low-value clusters
 - operator review queues summary and console actions for conflicts/compaction
+- local semantic duplicate detection in memory quality layer
 - Docker, Alembic и базовые API-тесты
 
 ## Быстрый старт
@@ -144,12 +145,19 @@ MemLayer теперь делает базовую quality-оценку при `P
 - отсутствие title для более структурных типов памяти
 - отсутствие evidence-like metadata для `decision`, `constraint`, `risk`, `artifact`
 - возможный дубликат внутри проекта
+- semantic duplicate candidates внутри проекта через local hashed embeddings
 
 `POST /imports/project-scan` дополнительно возвращает:
 
 - `quality_review_required_count`
 
 Это позволяет импортёрам и UI быстро видеть, сколько записей стоит вручную пересмотреть после scan/reimport.
+
+Semantic duplicate detection сейчас работает без внешней vector DB:
+
+- близкие по смыслу записи получают `metadata.quality.semantic_duplicate_risk=true`
+- quality metadata включает `semantic_similarity_max` и `semantic_duplicate_candidates`
+- очень близкие duplicate-case записи могут быть отклонены тем же `422` quality gate
 
 ## Decision Authority
 
