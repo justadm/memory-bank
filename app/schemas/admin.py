@@ -77,6 +77,37 @@ class DecisionConflictResolutionResponse(BaseModel):
     conflicts_with_entry_id: uuid.UUID
 
 
+class ReviewQueueItemResponse(BaseModel):
+    entry_id: uuid.UUID
+    project_id: uuid.UUID | None
+    title: str | None
+    type: str
+    created_at: datetime
+    review_status: str | None = None
+    review_overdue: bool = False
+    quality_review_required: bool = False
+
+
+class CompactionCandidateResponse(BaseModel):
+    project_id: uuid.UUID | None
+    entry_ids: list[uuid.UUID]
+    representative_titles: list[str]
+    types: dict[str, int]
+    suggested_title: str
+
+
+class ReviewQueuesSummaryResponse(BaseModel):
+    import_conflicts_count: int
+    decision_conflicts_count: int
+    review_overdue_count: int
+    quality_review_required_count: int
+    compaction_candidate_clusters_count: int
+    compaction_candidate_entries_count: int
+    review_overdue_items: list[ReviewQueueItemResponse]
+    quality_review_required_items: list[ReviewQueueItemResponse]
+    compaction_candidates: list[CompactionCandidateResponse]
+
+
 class ImportProjectSummaryItemResponse(BaseModel):
     project_id: uuid.UUID
     project_name: str

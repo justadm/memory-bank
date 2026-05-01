@@ -46,6 +46,11 @@ def test_console_assets_include_tenant_and_search_controls(client):
     assert "history.pushState" in response.text
     assert "window.location.origin}/api" in response.text
     assert "isEmbeddedConsoleMode" in response.text
+    assert "/admin/review-queues/summary" in response.text
+    assert "/admin/decision-conflicts/resolve" in response.text
+    assert "/maintenance/compaction/apply" in response.text
+    assert "resolve-decision-supersede" in response.text
+    assert "apply-compaction" in response.text
 
 
 def test_project_crud_flow(client):
@@ -517,6 +522,77 @@ def test_admin_decision_conflict_reject_new_archives_entry(client):
     new_detail = client.get(f"/memory/{new_decision['id']}").json()
     assert new_detail["metadata"]["decision_status"] == "rejected"
     assert new_detail["archived"] is True
+
+
+def test_admin_review_queues_summary(client, db_session: Session):
+    project = client.post("/projects", json={"name": "Review Queues Project"}).json()
+    client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "Use PostgreSQL",
+            "content": "Use PostgreSQL as the primary database for the project runtime and tooling.",
+            "project_id": project["id"],
+            "metadata": {"evidence": ["ops.md"]},
+        },
+    ).json()
+    import_candidate = client.post(
+        "/memory",
+        json={
+            "type": "artifact",
+            "title": "Imported file",
+            "content": "Imported artifact that needs quality review.",
+            "project_id": project["id"],
+            "metadata": {"quality_review_required": True},
+        },
+    ).json()
+    review_overdue = client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "Switch to MongoDB instead",
+            "content": "Switch the same runtime to MongoDB instead of PostgreSQL for future work.",
+            "project_id": project["id"],
+            "metadata": {"evidence": ["proposal.md"]},
+        },
+    ).json()
+    old_time = datetime.now(timezone.utc) - timedelta(days=40)
+    overdue_model = db_session.get(MemoryEntry, uuid.UUID(review_overdue["id"]))
+    overdue_model.created_at = old_time
+    overdue_model.metadata_ = {**overdue_model.metadata_, "review_overdue": True}
+    db_session.add(overdue_model)
+
+    compaction_ids = []
+    for index in range(4):
+        created = client.post(
+            "/memory",
+            json={
+                "type": "note",
+                "title": f"VPN routing note {index}",
+                "content": f"vpn routing mtu packet issue followup variant {index}",
+                "project_id": project["id"],
+                "importance": 2,
+                "metadata": {},
+            },
+        ).json()
+        model = db_session.get(MemoryEntry, uuid.UUID(created["id"]))
+        model.created_at = old_time
+        model.last_used_at = old_time
+        db_session.add(model)
+        compaction_ids.append(created["id"])
+    db_session.commit()
+
+    response = client.get("/admin/review-queues/summary", params={"project_id": project["id"], "limit": 10})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["decision_conflicts_count"] >= 1
+    assert body["review_overdue_count"] >= 1
+    assert body["quality_review_required_count"] >= 1
+    assert body["compaction_candidate_clusters_count"] >= 1
+    assert body["compaction_candidate_entries_count"] >= 4
+    assert any(item["entry_id"] == review_overdue["id"] for item in body["review_overdue_items"])
+    assert any(item["entry_id"] == import_candidate["id"] for item in body["quality_review_required_items"])
+    assert any(set(cluster["entry_ids"]) == set(compaction_ids) for cluster in body["compaction_candidates"])
 
 
 def test_semantic_search_memory(client):

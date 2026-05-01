@@ -24,6 +24,7 @@
 - metadata-based conflict resolution flow for competing decisions
 - lifecycle maintenance pass with dry-run support
 - compaction preview/apply flow for summarizing stale low-value clusters
+- operator review queues summary and console actions for conflicts/compaction
 - Docker, Alembic и базовые API-тесты
 
 ## Быстрый старт
@@ -224,6 +225,35 @@ MemLayer теперь делает базовую quality-оценку при `P
 - помечает исходники `metadata.compacted_into_entry_id`
 - при включённом `archive_originals` архивирует исходные записи
 
+## Review Queues
+
+Для операторского слоя теперь есть единый summary endpoint:
+
+- `GET /admin/review-queues/summary`
+
+Он собирает в одном ответе:
+
+- `import_conflicts_count`
+- `decision_conflicts_count`
+- `review_overdue_count`
+- `quality_review_required_count`
+- `compaction_candidate_clusters_count`
+- `compaction_candidate_entries_count`
+
+И дополнительно возвращает preview-списки:
+
+- `review_overdue_items`
+- `quality_review_required_items`
+- `compaction_candidates`
+
+Встроенная MemLayer console теперь использует этот слой в `dashboard` и `review`:
+
+- показывает decision conflicts отдельно от import conflicts
+- показывает overdue review и quality review queues
+- показывает compaction candidates
+- умеет делать `supersede` / `reject_new` для decision conflicts
+- умеет запускать `apply compaction` прямо из review UI
+
 ## Context Builder
 
 Вместо плоского retrieval теперь доступен typed context endpoint:
@@ -333,6 +363,7 @@ AUTH_API_KEYS=tenant-agent:tenant-key:read|write|import:tenant-a|tenant-b
 - `GET /admin/import-conflicts`
 - `GET /admin/decision-conflicts`
 - `GET /admin/imports/summary`
+- `GET /admin/review-queues/summary`
 
 ## curl Examples
 
@@ -557,6 +588,13 @@ curl -sS -X POST http://127.0.0.1:18100/admin/decision-conflicts/resolve \
     "resolution": "New decision replaces the previous direction.",
     "resolved_by": "ops-admin"
   }'
+```
+
+### Посмотреть unified review queues summary
+
+```bash
+curl -sS 'http://127.0.0.1:18100/admin/review-queues/summary?limit=10' \
+  -H 'Authorization: Bearer ops-admin-key'
 ```
 
 ## Auto-linking

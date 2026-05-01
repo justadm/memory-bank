@@ -185,6 +185,13 @@ const translations = {
     conflictLimit: "Лимит конфликтов",
     recentTaskLogs: "Логи задач",
     importConflicts: "Import conflicts",
+    decisionConflicts: "Decision conflicts",
+    reviewOverdue: "Overdue review",
+    qualityReviewRequired: "Quality review",
+    compactionCandidates: "Compaction candidates",
+    resolveSupersede: "Supersede old",
+    resolveRejectNew: "Reject new",
+    applyCompaction: "Compact cluster",
     noData: "Данные пока не найдены для текущего фильтра.",
     noSelection: "Сначала выбери объект из таблицы.",
     filters: "Фильтры",
@@ -212,6 +219,8 @@ const translations = {
     dashboardProjectCount: "Проектов",
     dashboardConflictCount: "Конфликтов",
     dashboardAgentCount: "Агентов",
+    dashboardOverdueCount: "Overdue",
+    dashboardCompactionCount: "Compaction",
     recentUpdated: "Последнее обновление",
     settingsTitle: "Настройки консоли",
     settingsDescription: "Управление локальными параметрами фронтенда, темой, языком и API-адресом.",
@@ -250,6 +259,25 @@ const translations = {
       result_quality_score: "Качество",
       logged_at: "Лог",
       source_agent: "Source agent"
+    },
+    decisionConflictHeaders: {
+      title: "Новое решение",
+      conflicts_with_title: "Старое решение",
+      severity: "Severity",
+      reason: "Причина",
+      created_at: "Создано"
+    },
+    reviewQueueHeaders: {
+      title: "Заголовок",
+      type: "Тип",
+      review_status: "Review status",
+      created_at: "Создано"
+    },
+    compactionHeaders: {
+      suggested_title: "Summary",
+      project_id: "Проект",
+      representative_titles: "Representative titles",
+      entry_ids: "Entries"
     },
     importHeaders: {
       project_name: "Проект",
@@ -367,6 +395,13 @@ const translations = {
     conflictLimit: "Conflict limit",
     recentTaskLogs: "Task logs",
     importConflicts: "Import conflicts",
+    decisionConflicts: "Decision conflicts",
+    reviewOverdue: "Overdue review",
+    qualityReviewRequired: "Quality review",
+    compactionCandidates: "Compaction candidates",
+    resolveSupersede: "Supersede old",
+    resolveRejectNew: "Reject new",
+    applyCompaction: "Compact cluster",
     noData: "No data for the current filter.",
     noSelection: "Select an item from the table first.",
     filters: "Filters",
@@ -394,6 +429,8 @@ const translations = {
     dashboardProjectCount: "Projects",
     dashboardConflictCount: "Conflicts",
     dashboardAgentCount: "Agents",
+    dashboardOverdueCount: "Overdue",
+    dashboardCompactionCount: "Compaction",
     recentUpdated: "Recently updated",
     settingsTitle: "Console settings",
     settingsDescription: "Manage local frontend preferences, theme, locale and API endpoint.",
@@ -433,6 +470,25 @@ const translations = {
       logged_at: "Logged",
       source_agent: "Source agent"
     },
+    decisionConflictHeaders: {
+      title: "New decision",
+      conflicts_with_title: "Old decision",
+      severity: "Severity",
+      reason: "Reason",
+      created_at: "Created"
+    },
+    reviewQueueHeaders: {
+      title: "Title",
+      type: "Type",
+      review_status: "Review status",
+      created_at: "Created"
+    },
+    compactionHeaders: {
+      suggested_title: "Summary",
+      project_id: "Project",
+      representative_titles: "Representative titles",
+      entry_ids: "Entries"
+    },
     importHeaders: {
       project_name: "Project",
       source_path: "Path",
@@ -464,6 +520,8 @@ const state = {
   metrics: null,
   taskSummary: null,
   conflicts: [],
+  decisionConflicts: [],
+  reviewQueues: null,
   importSummaries: [],
   lastImportResult: null,
   taskLogs: [],
@@ -482,6 +540,10 @@ const state = {
     memory: { page: 1, pageSize: 8, sortKey: "updated_at", sortDir: "desc" },
     memorySearch: { page: 1, pageSize: 6, sortKey: "score", sortDir: "desc" },
     reviewConflicts: { page: 1, pageSize: 8, sortKey: "created_at", sortDir: "desc" },
+    reviewDecisionConflicts: { page: 1, pageSize: 8, sortKey: "created_at", sortDir: "desc" },
+    reviewOverdueItems: { page: 1, pageSize: 8, sortKey: "created_at", sortDir: "desc" },
+    reviewQualityItems: { page: 1, pageSize: 8, sortKey: "created_at", sortDir: "desc" },
+    reviewCompactionCandidates: { page: 1, pageSize: 8, sortKey: "suggested_title", sortDir: "asc" },
     reviewTasks: { page: 1, pageSize: 8, sortKey: "logged_at", sortDir: "desc" },
     dashboardRecentProjects: { page: 1, pageSize: 5, sortKey: "updated_at", sortDir: "desc" },
     dashboardReviewQueue: { page: 1, pageSize: 5, sortKey: "created_at", sortDir: "desc" },
@@ -823,17 +885,21 @@ async function loadDashboardData() {
     params.set("experiment_id", state.forms.dashboardExperimentId);
   }
   const query = params.toString() ? `?${params.toString()}` : "";
-  const [metrics, observability, taskSummary, conflicts] = await Promise.all([
+  const [metrics, observability, taskSummary, conflicts, decisionConflicts, reviewQueues] = await Promise.all([
     apiRequest(`/metrics/overview${query}`),
     apiRequest("/admin/observability/summary"),
     apiRequest(`/task-logs/summary${query}`),
-    apiRequest(`/admin/import-conflicts?limit=5${state.selectedProjectId ? `&project_id=${encodeURIComponent(state.selectedProjectId)}` : ""}`)
+    apiRequest(`/admin/import-conflicts?limit=5${state.selectedProjectId ? `&project_id=${encodeURIComponent(state.selectedProjectId)}` : ""}`),
+    apiRequest(`/admin/decision-conflicts?limit=5${state.selectedProjectId ? `&project_id=${encodeURIComponent(state.selectedProjectId)}` : ""}`),
+    apiRequest(`/admin/review-queues/summary?limit=6${state.selectedProjectId ? `&project_id=${encodeURIComponent(state.selectedProjectId)}` : ""}`)
   ]);
   const importSummaries = await apiRequest("/admin/imports/summary?limit=6");
   state.metrics = metrics;
   state.observability = observability;
   state.taskSummary = taskSummary;
   state.conflicts = conflicts.items || [];
+  state.decisionConflicts = decisionConflicts.items || [];
+  state.reviewQueues = reviewQueues;
   state.importSummaries = importSummaries.items || [];
 }
 
@@ -914,13 +980,17 @@ async function loadReviewData() {
   if (state.forms.conflictExperimentId) {
     taskParams.set("experiment_id", state.forms.conflictExperimentId);
   }
-  const [conflicts, taskLogs, taskSummary] = await Promise.all([
+  const [conflicts, decisionConflicts, reviewQueues, taskLogs, taskSummary] = await Promise.all([
     apiRequest(`/admin/import-conflicts?${conflictParams.toString()}`),
+    apiRequest(`/admin/decision-conflicts?${conflictParams.toString()}`),
+    apiRequest(`/admin/review-queues/summary?${conflictParams.toString()}`),
     apiRequest(`/task-logs?${taskParams.toString()}`),
     apiRequest(`/task-logs/summary?${taskParams.toString()}`)
   ]);
   const importSummaries = await apiRequest("/admin/imports/summary?limit=20");
   state.conflicts = conflicts.items || [];
+  state.decisionConflicts = decisionConflicts.items || [];
+  state.reviewQueues = reviewQueues;
   state.taskLogs = taskLogs.items || [];
   state.taskSummary = taskSummary;
   state.importSummaries = importSummaries.items || [];
@@ -938,6 +1008,8 @@ async function loadCurrentView() {
       state.observability = null;
       state.taskSummary = null;
       state.conflicts = [];
+      state.decisionConflicts = [];
+      state.reviewQueues = null;
       state.taskLogs = [];
       state.memoryItems = [];
       state.memorySearchResults = [];
@@ -1026,6 +1098,18 @@ function columnLabel(column) {
   if (importLabel !== `importHeaders.${column}`) {
     return importLabel;
   }
+  const decisionConflictLabel = t(`decisionConflictHeaders.${column}`);
+  if (decisionConflictLabel !== `decisionConflictHeaders.${column}`) {
+    return decisionConflictLabel;
+  }
+  const reviewQueueLabel = t(`reviewQueueHeaders.${column}`);
+  if (reviewQueueLabel !== `reviewQueueHeaders.${column}`) {
+    return reviewQueueLabel;
+  }
+  const compactionLabel = t(`compactionHeaders.${column}`);
+  if (compactionLabel !== `compactionHeaders.${column}`) {
+    return compactionLabel;
+  }
   return t(`headers.${column}`);
 }
 
@@ -1103,6 +1187,7 @@ function renderDashboardView() {
   if (!metrics || !observability) {
     return `<div class="empty-state">${escapeHtml(t("noData"))}</div>`;
   }
+  const reviewQueues = state.reviewQueues || {};
 
   const cards = [
     { label: t("dashboardCards.totalEntries"), value: formatNumber(metrics.memory.total_entries), meta: `${t("dashboardCards.activeEntries")} ${formatNumber(metrics.memory.active_entries)}` },
@@ -1114,7 +1199,11 @@ function renderDashboardView() {
   ];
 
   const topAgentsCount = observability.top_agents?.length || 0;
-  const reviewQueueCount = state.conflicts?.length || 0;
+  const reviewQueueCount =
+    Number(reviewQueues.import_conflicts_count || 0) +
+    Number(reviewQueues.decision_conflicts_count || 0) +
+    Number(reviewQueues.review_overdue_count || 0) +
+    Number(reviewQueues.quality_review_required_count || 0);
   const recentProjects = [...state.projects]
     .sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime())
     .slice(0, 5);
@@ -1202,6 +1291,16 @@ function renderDashboardView() {
             <div class="summary-value">${escapeHtml(formatNumber(topAgentsCount))}</div>
             <div class="summary-copy">${escapeHtml(t("dashboardSections.topAgents"))}</div>
           </div>
+          <div class="summary-tile">
+            <div class="summary-kicker">${escapeHtml(t("dashboardOverdueCount"))}</div>
+            <div class="summary-value">${escapeHtml(formatNumber(reviewQueues.review_overdue_count || 0))}</div>
+            <div class="summary-copy">${escapeHtml(t("reviewOverdue"))}</div>
+          </div>
+          <div class="summary-tile">
+            <div class="summary-kicker">${escapeHtml(t("dashboardCompactionCount"))}</div>
+            <div class="summary-value">${escapeHtml(formatNumber(reviewQueues.compaction_candidate_clusters_count || 0))}</div>
+            <div class="summary-copy">${escapeHtml(t("compactionCandidates"))}</div>
+          </div>
         </div>
       </article>
 
@@ -1213,8 +1312,8 @@ function renderDashboardView() {
           })}
         </article>
         <article class="table-card">
-          <h3>${escapeHtml(t("reviewQueue"))}</h3>
-          ${renderTable((state.conflicts || []).slice(0, 5), ["title", "type", "requires_review", "created_at"], {
+          <h3>${escapeHtml(t("decisionConflicts"))}</h3>
+          ${renderTable((state.decisionConflicts || []).slice(0, 5), ["title", "conflicts_with_title", "severity", "created_at"], {
             tableKey: "dashboardReviewQueue",
             customActions: (item) => [
               {
@@ -1226,8 +1325,13 @@ function renderDashboardView() {
                 action: "focus-project",
                 label: t("openReview"),
                 data: { projectId: item.project_id, view: "review" }
+              },
+              {
+                action: "resolve-decision-supersede",
+                label: t("resolveSupersede"),
+                data: { entryId: item.entry_id, conflictsWithEntryId: item.conflicts_with_entry_id }
               }
-            ].filter((action) => action.data.projectId)
+            ].filter((action) => action.action !== "focus-project" || action.data.projectId)
           })}
         </article>
       </section>
@@ -1867,6 +1971,7 @@ function renderMemoryView() {
 }
 
 function renderReviewView() {
+  const reviewQueues = state.reviewQueues || {};
   return `
     <section class="panel toolbar-card">
       <h3>${escapeHtml(t("filters"))}</h3>
@@ -1900,6 +2005,11 @@ function renderReviewView() {
         <div class="stat-meta">${escapeHtml(t("tableSummary"))}</div>
       </article>
       <article class="panel stat-card">
+        <div class="stat-label">${escapeHtml(t("decisionConflicts"))}</div>
+        <div class="stat-value">${escapeHtml(formatNumber(state.decisionConflicts.length))}</div>
+        <div class="stat-meta">${escapeHtml(t("reviewQueue"))}</div>
+      </article>
+      <article class="panel stat-card">
         <div class="stat-label">${escapeHtml(t("recentTaskLogs"))}</div>
         <div class="stat-value">${escapeHtml(formatNumber(state.taskLogs.length))}</div>
         <div class="stat-meta">${escapeHtml(t("taskSummary"))}</div>
@@ -1908,6 +2018,16 @@ function renderReviewView() {
         <div class="stat-label">${escapeHtml(t("dashboardCards.memoryUsage"))}</div>
         <div class="stat-value">${escapeHtml(formatPercent(state.taskSummary?.memory_usage_rate))}</div>
         <div class="stat-meta">avg duplicates ${escapeHtml(formatNumber(state.taskSummary?.avg_duplicate_count))}</div>
+      </article>
+      <article class="panel stat-card">
+        <div class="stat-label">${escapeHtml(t("reviewOverdue"))}</div>
+        <div class="stat-value">${escapeHtml(formatNumber(reviewQueues.review_overdue_count || 0))}</div>
+        <div class="stat-meta">${escapeHtml(t("qualityReviewRequired"))}: ${escapeHtml(formatNumber(reviewQueues.quality_review_required_count || 0))}</div>
+      </article>
+      <article class="panel stat-card">
+        <div class="stat-label">${escapeHtml(t("compactionCandidates"))}</div>
+        <div class="stat-value">${escapeHtml(formatNumber(reviewQueues.compaction_candidate_clusters_count || 0))}</div>
+        <div class="stat-meta">entries ${escapeHtml(formatNumber(reviewQueues.compaction_candidate_entries_count || 0))}</div>
       </article>
     </section>
 
@@ -1926,6 +2046,74 @@ function renderReviewView() {
               data: { projectId: item.project_id, view: "projects" }
             }
           ].filter((action) => action.data.projectId)
+        })}
+      </article>
+      <article class="table-card">
+        <h3>${escapeHtml(t("decisionConflicts"))}</h3>
+        ${renderTable(state.decisionConflicts, ["title", "conflicts_with_title", "severity", "created_at"], {
+          tableKey: "reviewDecisionConflicts",
+          customActions: (item) => [
+            {
+              action: "focus-project",
+              label: t("openProject"),
+              data: { projectId: item.project_id, view: "projects" }
+            },
+            {
+              action: "resolve-decision-supersede",
+              label: t("resolveSupersede"),
+              data: { entryId: item.entry_id, conflictsWithEntryId: item.conflicts_with_entry_id }
+            },
+            {
+              action: "resolve-decision-reject",
+              label: t("resolveRejectNew"),
+              data: { entryId: item.entry_id, conflictsWithEntryId: item.conflicts_with_entry_id }
+            }
+          ]
+        })}
+      </article>
+    </section>
+
+    <section class="split" style="margin-top:18px;">
+      <article class="table-card">
+        <h3>${escapeHtml(t("reviewOverdue"))}</h3>
+        ${renderTable(reviewQueues.review_overdue_items || [], ["title", "type", "review_status", "created_at"], {
+          tableKey: "reviewOverdueItems",
+          customActions: (item) => [
+            {
+              action: "focus-project",
+              label: t("openProject"),
+              data: { projectId: item.project_id, view: "projects" }
+            }
+          ]
+        })}
+      </article>
+      <article class="table-card">
+        <h3>${escapeHtml(t("qualityReviewRequired"))}</h3>
+        ${renderTable(reviewQueues.quality_review_required_items || [], ["title", "type", "review_status", "created_at"], {
+          tableKey: "reviewQualityItems",
+          customActions: (item) => [
+            {
+              action: "focus-project",
+              label: t("openProject"),
+              data: { projectId: item.project_id, view: "projects" }
+            }
+          ]
+        })}
+      </article>
+    </section>
+
+    <section class="split" style="margin-top:18px;">
+      <article class="table-card">
+        <h3>${escapeHtml(t("compactionCandidates"))}</h3>
+        ${renderTable(reviewQueues.compaction_candidates || [], ["suggested_title", "project_id", "entry_ids"], {
+          tableKey: "reviewCompactionCandidates",
+          customActions: (item) => [
+            {
+              action: "apply-compaction",
+              label: t("applyCompaction"),
+              data: { entryIds: (item.entry_ids || []).join(",") }
+            }
+          ]
         })}
       </article>
       <article class="table-card">
@@ -2428,6 +2616,43 @@ async function reimportVisibleProjects(items) {
   await loadCurrentView();
 }
 
+async function resolveDecisionConflict(entryId, conflictsWithEntryId, action) {
+  if (!entryId || !conflictsWithEntryId) {
+    throw new Error(t("noSelection"));
+  }
+  const result = await apiRequest("/admin/decision-conflicts/resolve", {
+    method: "POST",
+    body: JSON.stringify({
+      entry_id: entryId,
+      conflicts_with_entry_id: conflictsWithEntryId,
+      action,
+      resolution: `Resolved in console via action ${action}.`,
+      resolved_by: "memlayer-console"
+    })
+  });
+  pushMessage("success", `${action}: ${result.status}`);
+  await loadCurrentView();
+}
+
+async function applyCompaction(entryIds) {
+  const ids = String(entryIds || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (ids.length < 2) {
+    throw new Error(t("noSelection"));
+  }
+  const result = await apiRequest("/maintenance/compaction/apply", {
+    method: "POST",
+    body: JSON.stringify({
+      entry_ids: ids,
+      archive_originals: true
+    })
+  });
+  pushMessage("success", `${t("applyCompaction")}: ${formatNumber(result.linked_entry_ids?.length || 0)}`);
+  await loadCurrentView();
+}
+
 function syncFormValue(name, value) {
   if (name in state.forms) {
     state.forms[name] = value;
@@ -2489,6 +2714,15 @@ function attachEvents() {
       }
       if (action === "reimport-visible-review") {
         await reimportVisibleProjects(state.importSummaries || []);
+      }
+      if (action === "resolve-decision-supersede") {
+        await resolveDecisionConflict(target.dataset.entryId, target.dataset.conflictsWithEntryId, "supersede");
+      }
+      if (action === "resolve-decision-reject") {
+        await resolveDecisionConflict(target.dataset.entryId, target.dataset.conflictsWithEntryId, "reject_new");
+      }
+      if (action === "apply-compaction") {
+        await applyCompaction(target.dataset.entryIds || "");
       }
       if (action === "clear-memory-selection") {
         state.selectedMemoryIds = [];

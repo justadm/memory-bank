@@ -5,16 +5,24 @@ from fastapi import HTTPException, status
 
 from app.config import Settings
 from app.models.enums import MemoryType
-from app.models.memory_entry import MemoryEntry
+from app.repositories.link_repository import LinkRepository
 from app.repositories.memory_repository import MemoryRepository
 from app.repositories.metrics_repository import MetricsRepository
 from app.security import AuthPrincipal
+from app.services.compaction_service import CompactionService
 
 
 class AdminObservabilityService:
-    def __init__(self, repository: MetricsRepository, memory_repository: MemoryRepository, settings: Settings):
+    def __init__(
+        self,
+        repository: MetricsRepository,
+        memory_repository: MemoryRepository,
+        link_repository: LinkRepository,
+        settings: Settings,
+    ):
         self.repository = repository
         self.memory_repository = memory_repository
+        self.compaction_service = CompactionService(memory_repository, link_repository)
         self.settings = settings
 
     def get_summary(self, *, principal: AuthPrincipal | None = None) -> dict:
@@ -58,6 +66,74 @@ class AdminObservabilityService:
     def get_import_summaries(self, *, limit: int = 20, principal: AuthPrincipal | None = None) -> dict:
         tenant_ids = principal.tenant_ids if principal else None
         return {"items": self.memory_repository.list_import_project_summaries(limit=limit, tenant_ids=tenant_ids)}
+
+    def get_review_queues_summary(
+        self,
+        *,
+        project_id: uuid.UUID | None = None,
+        limit: int = 20,
+        principal: AuthPrincipal | None = None,
+    ) -> dict:
+        tenant_ids = principal.tenant_ids if principal else None
+        import_conflicts = self.memory_repository.list_import_conflicts(project_id=project_id, limit=limit, tenant_ids=tenant_ids)
+        decision_conflicts = self.memory_repository.list_decision_conflicts(project_id=project_id, limit=limit, tenant_ids=tenant_ids)
+        review_overdue = self.memory_repository.list_review_overdue(project_id=project_id, limit=limit, tenant_ids=tenant_ids)
+        quality_review_required = self.memory_repository.list_quality_review_required(
+            project_id=project_id,
+            limit=limit,
+            tenant_ids=tenant_ids,
+        )
+        compaction_candidates = self.compaction_service.preview(
+            project_id=project_id,
+            stale_days=21,
+            min_entries=4,
+            max_entries=12,
+            min_overlap_tokens=2,
+        )
+        return {
+            "import_conflicts_count": len(import_conflicts),
+            "decision_conflicts_count": len(decision_conflicts),
+            "review_overdue_count": len(review_overdue),
+            "quality_review_required_count": len(quality_review_required),
+            "compaction_candidate_clusters_count": len(compaction_candidates),
+            "compaction_candidate_entries_count": sum(len(item.entry_ids) for item in compaction_candidates),
+            "review_overdue_items": [
+                {
+                    "entry_id": item.id,
+                    "project_id": item.project_id,
+                    "title": item.title,
+                    "type": item.type.value,
+                    "created_at": item.created_at,
+                    "review_status": (item.metadata_ or {}).get("review_status"),
+                    "review_overdue": True,
+                    "quality_review_required": bool((item.metadata_ or {}).get("quality_review_required")),
+                }
+                for item in review_overdue
+            ],
+            "quality_review_required_items": [
+                {
+                    "entry_id": item.id,
+                    "project_id": item.project_id,
+                    "title": item.title,
+                    "type": item.type.value,
+                    "created_at": item.created_at,
+                    "review_status": (item.metadata_ or {}).get("review_status"),
+                    "review_overdue": bool((item.metadata_ or {}).get("review_overdue")),
+                    "quality_review_required": True,
+                }
+                for item in quality_review_required
+            ],
+            "compaction_candidates": [
+                {
+                    "project_id": item.project_id,
+                    "entry_ids": item.entry_ids,
+                    "representative_titles": item.representative_titles,
+                    "types": item.types,
+                    "suggested_title": item.suggested_title,
+                }
+                for item in compaction_candidates
+            ],
+        }
 
     def get_decision_conflicts(
         self,
