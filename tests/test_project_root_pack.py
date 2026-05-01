@@ -7,6 +7,7 @@ from scripts.install_memlayer_project_pack import (
     MANAGED_START,
     build_project_config,
     install_for_project,
+    merge_env_text,
     upsert_managed_section,
 )
 
@@ -128,4 +129,18 @@ def test_install_for_project_preserves_existing_local_env(tmp_path: Path) -> Non
         dry_run=False,
     )
 
-    assert local_env_path.read_text(encoding="utf-8") == "MEMORYBANK_API_KEY=secret\n"
+    local_env = local_env_path.read_text(encoding="utf-8")
+    assert "MEMORYBANK_API_KEY=secret" in local_env
+    assert "MEMLAYER_API_URL=http://127.0.0.1:18100" in local_env
+    assert "MEMLAYER_EXTRA_URLS=http://host.docker.internal:18100,http://api:8000,http://memorybank-api-1:8000,https://memlayer.loc/api" in local_env
+
+
+def test_merge_env_text_appends_missing_keys_without_overwriting_existing_values() -> None:
+    existing = "MEMORYBANK_API_KEY=secret\nMEMLAYER_API_URL=http://custom:8000\n"
+    template = "MEMORYBANK_API_KEY=\nMEMLAYER_API_URL=http://127.0.0.1:18100\nMEMLAYER_EXTRA_URLS=http://api:8000\n"
+
+    merged = merge_env_text(existing, template)
+
+    assert "MEMORYBANK_API_KEY=secret" in merged
+    assert "MEMLAYER_API_URL=http://custom:8000" in merged
+    assert "MEMLAYER_EXTRA_URLS=http://api:8000" in merged

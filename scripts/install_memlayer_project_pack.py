@@ -106,6 +106,32 @@ def write_json(path: Path, payload: dict[str, object], dry_run: bool) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def merge_env_text(existing_text: str, template_text: str) -> str:
+    existing_lines = existing_text.splitlines()
+    existing_keys = set()
+    for line in existing_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        existing_keys.add(stripped.split("=", 1)[0].strip())
+
+    merged_lines = list(existing_lines)
+    if merged_lines and merged_lines[-1].strip():
+        merged_lines.append("")
+
+    for line in template_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key = stripped.split("=", 1)[0].strip()
+        if key in existing_keys:
+            continue
+        merged_lines.append(line)
+        existing_keys.add(key)
+
+    return "\n".join(merged_lines).rstrip() + "\n"
+
+
 def chmod_executable(path: Path, dry_run: bool) -> None:
     if dry_run:
         return
@@ -178,6 +204,9 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
     write_text(env_path, env_text, dry_run=dry_run)
     if not local_env_path.exists():
         write_text(local_env_path, local_env_text, dry_run=dry_run)
+    else:
+        merged_local_env = merge_env_text(local_env_path.read_text(encoding="utf-8"), local_env_text)
+        write_text(local_env_path, merged_local_env, dry_run=dry_run)
     write_json(config_path, config_payload, dry_run=dry_run)
     write_text(helper_path, helper_text, dry_run=dry_run)
     write_text(watchdog_path, watchdog_text, dry_run=dry_run)
