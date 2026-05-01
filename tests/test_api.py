@@ -80,7 +80,18 @@ def test_create_memory_entry(client):
     body = response.json()
     assert body["title"] == "Use PostgreSQL"
     assert body["importance"] == 4
-    assert body["metadata"] == {}
+    assert body["metadata"]["quality"]["score"] > 0
+
+
+def test_low_quality_memory_is_rejected(client):
+    response = client.post(
+        "/memory",
+        json={"type": "decision", "title": "tmp", "content": "todo"},
+    )
+    assert response.status_code == 422
+    body = response.json()["detail"]
+    assert body["message"] == "Memory entry did not pass quality validation"
+    assert body["quality"]["reject"] is True
 
 
 def test_update_memory_entry(client):
@@ -623,6 +634,7 @@ def test_project_import_scan_endpoint(client):
     body = response.json()
     assert body["entries_created"] == 3
     assert body["links_created"] == 2
+    assert body["quality_review_required_count"] >= 1
     assert "decision-db" in body["entry_refs"]
 
     project_id = body["project"]["id"]
@@ -633,6 +645,7 @@ def test_project_import_scan_endpoint(client):
     imported_risk = next(item for item in items if item["type"] == "risk")
     assert "[REDACTED]" in imported_risk["content"]
     assert "super-secret-value" not in imported_risk["content"]
+    assert imported_risk["metadata"]["quality_review_required"] is True
 
 
 def test_project_import_detects_conflicting_decisions(client):
@@ -675,6 +688,33 @@ def test_project_import_detects_conflicting_decisions(client):
     imported = next(item for item in listed.json()["items"] if item["title"] == "Use MongoDB")
     assert imported["metadata"]["requires_review"] is True
     assert imported["metadata"]["import_conflicts"]
+
+
+def test_import_low_quality_entries_are_marked_for_review(client):
+    project = client.post("/projects", json={"name": "Quality Import"}).json()
+    response = client.post(
+        "/imports/project-scan",
+        json={
+            "project_id": project["id"],
+            "entries": [
+                {
+                    "ref": "note-weak",
+                    "type": "note",
+                    "title": "Tmp",
+                    "content": "todo",
+                    "metadata": {},
+                }
+            ],
+            "links": [],
+        },
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["quality_review_required_count"] == 1
+    listed = client.get("/memory", params={"project_id": project["id"]})
+    imported = next(item for item in listed.json()["items"] if item["title"] == "Tmp")
+    assert imported["metadata"]["quality_review_required"] is True
+    assert imported["metadata"]["quality"]["reject"] is True
 
 
 def test_admin_import_conflicts_endpoint(client):

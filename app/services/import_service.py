@@ -69,12 +69,14 @@ class ImportService:
                 metadata=self._mask_metadata(payload.import_event.metadata),
             ),
             principal=principal,
+            enforce_quality_gate=False,
         )
 
         entry_refs: dict[str, uuid.UUID] = {}
         entries_created = 0
         entries_updated = 0
         entries_skipped = 0
+        quality_review_required_count = 0
         for item in payload.entries:
             if item.ref in entry_refs:
                 raise HTTPException(
@@ -120,8 +122,11 @@ class ImportService:
                         archived=False,
                     ),
                     principal=principal,
+                    enforce_quality_gate=False,
                 )
                 entry_refs[item.ref] = updated.id
+                if updated.metadata_.get("quality_review_required"):
+                    quality_review_required_count += 1
                 entries_updated += 1
                 continue
 
@@ -136,8 +141,11 @@ class ImportService:
                     metadata=metadata,
                 ),
                 principal=principal,
+                enforce_quality_gate=False,
             )
             entry_refs[item.ref] = created.id
+            if created.metadata_.get("quality_review_required"):
+                quality_review_required_count += 1
             entries_created += 1
 
         created_links = 0
@@ -172,6 +180,7 @@ class ImportService:
             "entries_created": entries_created,
             "entries_updated": entries_updated,
             "entries_skipped": entries_skipped,
+            "quality_review_required_count": quality_review_required_count,
             "links_created": created_links,
             "links_skipped": skipped_links,
             "entry_refs": entry_refs,

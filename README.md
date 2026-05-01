@@ -19,6 +19,7 @@
 - опциональное auto-linking новых записей через bag-of-words similarity
 - встроенный `memorybank_sdk` и пример memory-aware агента
 - structured project import endpoint для первичного наполнения MemoryBank
+- memory quality layer с hard gate для ручной записи и soft review для import flow
 - Docker, Alembic и базовые API-тесты
 
 ## Быстрый старт
@@ -122,6 +123,28 @@ PYTHONPATH=$PWD .venv313/bin/python scripts/runtime_smoke_check.py \
 curl -sS 'http://127.0.0.1:18100/admin/runtime/self-check?search_query=architecture&limit=5' \
   -H 'Authorization: Bearer ops-admin-key'
 ```
+
+## Memory Quality Layer
+
+MemLayer теперь делает базовую quality-оценку при `POST /memory` и `PATCH /memory/{id}`.
+
+- ручная запись может быть отклонена с `422`, если запись выглядит слишком слабой или placeholder-like
+- import flow не блокируется: слабые записи сохраняются, но получают `metadata.quality_review_required=true`
+- quality-метаданные сохраняются прямо в `metadata.quality`
+
+Сейчас quality layer проверяет:
+
+- слишком короткий контент
+- placeholder content вроде `todo` или `tbd`
+- отсутствие title для более структурных типов памяти
+- отсутствие evidence-like metadata для `decision`, `constraint`, `risk`, `artifact`
+- возможный дубликат внутри проекта
+
+`POST /imports/project-scan` дополнительно возвращает:
+
+- `quality_review_required_count`
+
+Это позволяет импортёрам и UI быстро видеть, сколько записей стоит вручную пересмотреть после scan/reimport.
 
 ## Auth
 
@@ -257,6 +280,8 @@ curl -sS -X POST http://127.0.0.1:18100/memory \
   }'
 ```
 
+Если запись не проходит quality gate, API вернёт `422` с полем `detail.quality`.
+
 ### Получить релевантный контекст для агента
 
 ```bash
@@ -350,6 +375,8 @@ curl -sS -X POST http://127.0.0.1:18100/imports/project-scan \
     "existing_entry_mode": "update"
   }'
 ```
+
+В ответе import flow теперь есть `quality_review_required_count`, а слабые импортированные записи получают флаг `metadata.quality_review_required=true` вместо жёсткого отказа.
 
 ## Auto-linking
 

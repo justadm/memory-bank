@@ -71,6 +71,7 @@ class ProjectImportResponse(BaseModel):
     entries_created: int
     entries_updated: int = 0
     entries_skipped: int = 0
+    quality_review_required_count: int = 0
     links_created: int
     links_skipped: int = 0
     entry_refs: dict[str, uuid.UUID]

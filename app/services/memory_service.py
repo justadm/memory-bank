@@ -17,6 +17,7 @@ from app.schemas.memory import MemoryCreate, MemoryRelevantRequest, MemoryUpdate
 from app.schemas.projects import ProjectCreate, ProjectUpdate
 from app.services.auto_link_service import AutoLinkService
 from app.services.graph_service import GraphService
+from app.services.memory_quality_service import MemoryQualityService
 from app.services.search_service import SearchService
 
 
@@ -98,14 +99,37 @@ class MemoryService:
         self.settings = get_settings()
         self.search_service = SearchService(memory_repository)
         self.graph_service = GraphService(link_repository)
+        self.quality_service = MemoryQualityService(memory_repository)
         self.auto_link_service = AutoLinkService(
             memory_repository=memory_repository,
             link_repository=link_repository,
             settings=self.settings,
         )
 
-    def create_memory(self, payload: MemoryCreate, *, principal: AuthPrincipal | None = None) -> MemoryEntry:
+    def create_memory(
+        self,
+        payload: MemoryCreate,
+        *,
+        principal: AuthPrincipal | None = None,
+        enforce_quality_gate: bool = True,
+    ) -> MemoryEntry:
         self._validate_project(payload.project_id, principal=principal, require_for_restricted=principal is not None)
+        quality = self.quality_service.assess(
+            memory_type=payload.type,
+            title=payload.title,
+            content=payload.content,
+            metadata=payload.metadata,
+            project_id=payload.project_id,
+        )
+        metadata = dict(payload.metadata)
+        metadata["quality"] = quality.as_metadata()
+        if quality.review_required:
+            metadata["quality_review_required"] = True
+        if quality.reject and enforce_quality_gate:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"message": "Memory entry did not pass quality validation", "quality": quality.as_metadata()},
+            )
         entry = MemoryEntry(
             type=payload.type,
             title=payload.title,
@@ -113,7 +137,7 @@ class MemoryService:
             source_agent=payload.source_agent,
             project_id=payload.project_id,
             importance=payload.importance,
-            metadata_=payload.metadata,
+            metadata_=metadata,
             search_vector=None if self.memory_repository.is_postgresql() else self._build_search_payload(payload.title, payload.content),
         )
         created = self.memory_repository.create(entry)
@@ -141,7 +165,14 @@ class MemoryService:
         items = self.memory_repository.list(project_id=project_id, memory_type=memory_type, archived=archived)
         return [item for item in items if self._can_access_entry(item, principal)]
 
-    def update_memory(self, entry_id: uuid.UUID, payload: MemoryUpdate, *, principal: AuthPrincipal | None = None) -> MemoryEntry:
+    def update_memory(
+        self,
+        entry_id: uuid.UUID,
+        payload: MemoryUpdate,
+        *,
+        principal: AuthPrincipal | None = None,
+        enforce_quality_gate: bool = True,
+    ) -> MemoryEntry:
         entry = self.get_memory(entry_id, principal=principal)
         data = payload.model_dump(exclude_unset=True)
         if "project_id" in data:
@@ -151,6 +182,26 @@ class MemoryService:
                 setattr(entry, "metadata_", value)
             else:
                 setattr(entry, field, value)
+        quality = self.quality_service.assess(
+            memory_type=entry.type,
+            title=entry.title,
+            content=entry.content,
+            metadata=entry.metadata_,
+            project_id=entry.project_id,
+            existing_entry_id=entry.id,
+        )
+        metadata = dict(entry.metadata_ or {})
+        metadata["quality"] = quality.as_metadata()
+        if quality.review_required:
+            metadata["quality_review_required"] = True
+        else:
+            metadata.pop("quality_review_required", None)
+        if quality.reject and enforce_quality_gate:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"message": "Memory entry did not pass quality validation", "quality": quality.as_metadata()},
+            )
+        entry.metadata_ = metadata
         if "title" in data or "content" in data:
             entry.search_vector = None if self.memory_repository.is_postgresql() else self._build_search_payload(entry.title, entry.content)
         self.memory_repository.db.add(entry)
