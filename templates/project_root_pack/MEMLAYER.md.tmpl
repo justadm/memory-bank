@@ -17,7 +17,7 @@ This repository is expected to use MemLayer as its shared working memory.
 ## Required Agent Workflow
 
 1. Read `memlayer.config.json`.
-2. Prefer `./memlayer_api.sh` for MemLayer reads and writes instead of raw `curl`, because it automatically retries through the fallback URL when localhost is temporarily unavailable.
+2. Prefer `./memlayer_api.sh` for MemLayer reads and writes instead of raw `curl`, because it retries localhost with a short backoff and then automatically retries through the fallback URL when localhost is temporarily unavailable.
 3. Check auth status with `GET /auth/me` if an API key is configured.
 4. Before coding or debugging, fetch relevant memory for the current task.
 5. Reuse prior decisions, constraints, risks, and artifacts whenever possible.
@@ -81,6 +81,18 @@ Search memory:
 
 ```bash
 ./memlayer_api.sh GET "/memory/search?query=architecture&mode=hybrid&limit=8"
+```
+
+Runtime self-check:
+
+```bash
+./memlayer_api.sh GET "/admin/runtime/self-check?search_query=architecture&limit=5"
+```
+
+Watchdog check after sleep, reboot, or flaky localhost behavior:
+
+```bash
+./memlayer_watchdog.sh
 ```
 
 Get relevant memory:

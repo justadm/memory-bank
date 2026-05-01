@@ -18,7 +18,8 @@ Use this local config first:
 
 - [memlayer.config.json](./memlayer.config.json)
 - [memlayer_api.sh](./memlayer_api.sh)
+- [memlayer_watchdog.sh](./memlayer_watchdog.sh)
 - [.env.memlayer](./.env.memlayer)
 - [.env.memlayer.example](./.env.memlayer.example)
 
-Prefer `./memlayer_api.sh` over raw `curl`: it tries localhost first and automatically falls back to `https://memlayer.loc/api` when localhost is temporarily unavailable.
+Prefer `./memlayer_api.sh` over raw `curl`: it tries localhost first, retries with a short backoff, and then automatically falls back to `https://memlayer.loc/api` when localhost is temporarily unavailable.

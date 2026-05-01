@@ -37,6 +37,8 @@ PY
 
 PREFERRED_URL="$(read_config_value preferred_url)"
 FALLBACK_URL="$(read_config_value local_fallback_url)"
+RETRY_ATTEMPTS="${MEMLAYER_RETRY_ATTEMPTS:-2}"
+RETRY_BACKOFF_SECONDS="${MEMLAYER_RETRY_BACKOFF_SECONDS:-0.5}"
 
 if [[ -z "${PREFERRED_URL}" ]]; then
   echo "memlayer_api.sh: preferred_url is not configured in memlayer.config.json" >&2
@@ -66,13 +68,38 @@ run_request() {
   curl "${args[@]}"
 }
 
-if run_request "${PREFERRED_URL}"; then
+run_with_retries() {
+  local base_url="$1"
+  local label="$2"
+  local attempt=1
+  local max_attempts
+  if [[ "${RETRY_ATTEMPTS}" =~ ^[0-9]+$ ]] && [[ "${RETRY_ATTEMPTS}" -gt 0 ]]; then
+    max_attempts="${RETRY_ATTEMPTS}"
+  else
+    max_attempts=1
+  fi
+
+  while [[ "${attempt}" -le "${max_attempts}" ]]; do
+    if run_request "${base_url}"; then
+      return 0
+    fi
+    if [[ "${attempt}" -lt "${max_attempts}" ]]; then
+      echo "memlayer_api.sh: ${label} attempt ${attempt}/${max_attempts} failed, retrying in ${RETRY_BACKOFF_SECONDS}s" >&2
+      sleep "${RETRY_BACKOFF_SECONDS}"
+    fi
+    attempt=$((attempt + 1))
+  done
+
+  return 1
+}
+
+if run_with_retries "${PREFERRED_URL}" "preferred endpoint"; then
   exit 0
 fi
 
 if [[ -n "${FALLBACK_URL}" ]]; then
   echo "memlayer_api.sh: preferred endpoint failed, retrying via fallback ${FALLBACK_URL}" >&2
-  run_request "${FALLBACK_URL}"
+  run_with_retries "${FALLBACK_URL}" "fallback endpoint"
   exit 0
 fi
 
