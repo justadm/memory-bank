@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+KIND="${1:-memory}"
+PAYLOAD="${2:-}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+QUEUE_PATH="${SCRIPT_DIR}/memlayer.offline.queue.jsonl"
+LOG_PATH="${SCRIPT_DIR}/memlayer.offline.log.md"
+
+if [[ -z "${PAYLOAD}" ]]; then
+  echo "usage: ./memlayer_write.sh <memory|task-log> '<json-payload>'" >&2
+  exit 1
+fi
+
+case "${KIND}" in
+  memory) ENDPOINT="/memory" ;;
+  task-log) ENDPOINT="/task-logs" ;;
+  *)
+    echo "memlayer_write.sh: unsupported kind ${KIND}" >&2
+    exit 1
+    ;;
+esac
+
+if MEMLAYER_API_RETRY_ATTEMPTS_OVERRIDE="${MEMLAYER_WRITE_RETRY_ATTEMPTS:-1}" "${SCRIPT_DIR}/memlayer_api.sh" POST "${ENDPOINT}" "${PAYLOAD}"; then
+  exit 0
+fi
+
+python3 - "$QUEUE_PATH" "$LOG_PATH" "$KIND" "$ENDPOINT" "$PAYLOAD" <<'PY'
+import json
+import sys
+from datetime import datetime, UTC
+from pathlib import Path
+
+queue_path, log_path, kind, endpoint, payload_text = sys.argv[1:6]
+payload = json.loads(payload_text)
+queued_at = datetime.now(UTC).isoformat()
+record = {
+    "queued_at": queued_at,
+    "kind": kind,
+    "endpoint": endpoint,
+    "payload": payload,
+}
+
+with open(queue_path, "a", encoding="utf-8") as fh:
+    fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+title = payload.get("title") or payload.get("query") or payload.get("agent_id") or "offline write"
+content = payload.get("content") or payload.get("outcome") or payload.get("notes") or ""
+content = " ".join(str(content).split())[:240]
+lines = [
+    f"- {queued_at} [{kind}] {title}",
+]
+if content:
+    lines.append(f"  - {content}")
+lines.append("  - follow-up sync needed")
+
+with open(log_path, "a", encoding="utf-8") as fh:
+    fh.write("\n".join(lines) + "\n")
+PY
+
+echo "memlayer_write.sh: live MemLayer unavailable, queued ${KIND} write in ${QUEUE_PATH}" >&2

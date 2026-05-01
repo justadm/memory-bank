@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+QUEUE_PATH="${SCRIPT_DIR}/memlayer.offline.queue.jsonl"
+
+if [[ ! -f "${QUEUE_PATH}" ]]; then
+  echo "memlayer_sync.sh: queue file ${QUEUE_PATH} is missing" >&2
+  exit 1
+fi
+
+python3 - "$QUEUE_PATH" <<'PY' | while IFS= read -r encoded; do
+import base64
+import json
+import sys
+from pathlib import Path
+
+queue_path = Path(sys.argv[1])
+lines = [line for line in queue_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+for line in lines:
+    print(base64.b64encode(line.encode("utf-8")).decode("ascii"))
+PY
+  decoded="$(python3 - "$encoded" <<'PY'
+import base64
+import sys
+print(base64.b64decode(sys.argv[1]).decode("utf-8"))
+PY
+)"
+  endpoint="$(python3 - "$decoded" <<'PY'
+import json
+import sys
+print(json.loads(sys.argv[1])["endpoint"])
+PY
+)"
+  payload="$(python3 - "$decoded" <<'PY'
+import json
+import sys
+print(json.dumps(json.loads(sys.argv[1])["payload"], ensure_ascii=False))
+PY
+)"
+  if "${SCRIPT_DIR}/memlayer_api.sh" POST "${endpoint}" "${payload}" >/dev/null; then
+    printf '%s\n' "${decoded}" >> "${QUEUE_PATH}.sent"
+  else
+    printf '%s\n' "${decoded}" >> "${QUEUE_PATH}.remaining"
+  fi
+done
+
+if [[ -f "${QUEUE_PATH}.remaining" ]]; then
+  mv "${QUEUE_PATH}.remaining" "${QUEUE_PATH}"
+else
+  : > "${QUEUE_PATH}"
+fi
+
+rm -f "${QUEUE_PATH}.sent"
+echo "memlayer_sync.sh: sync pass completed"

@@ -90,6 +90,7 @@ docker compose exec api pytest
 - `memlayer_recover.sh` — локальный recovery helper для рестарта dockerized MemLayer API из проектного корня
 - `memlayer_snapshot_pull.sh` — выгружает локальный snapshot контекста из MemLayer в проектный корень
 - `memlayer.snapshot.md` / `memlayer.snapshot.json` — offline-readable snapshot для sandboxed агентов
+- `memlayer_write.sh` / `memlayer_sync.sh` — offline queue для записи и последующего sync, если live MemLayer недоступен
 - `memlayer.offline.log.md` — локальный журнал несинхронизированного прогресса, если live MemLayer временно недоступен
 - `.env.memlayer` — локальный override-файл для `MEMORYBANK_API_KEY` и timeout helper-скрипта
 - `.env.memlayer.example` — переменные окружения для подключения к MemLayer
@@ -120,6 +121,8 @@ Helper теперь учитывает разницу окружений и мо
 Installer теперь не только сохраняет существующий `.env.memlayer`, но и мягко дописывает в него недостающие connection defaults вроде `MEMLAYER_API_URL` и `MEMLAYER_EXTRA_URLS`, не перетирая уже заданные ключи и секреты.
 Если сам runtime действительно просел, `memlayer_recover.sh` умеет перезапустить `api` через `docker compose restart api`, а watchdog можно перевести в auto-recover режим через `.env.memlayer`.
 Если в агентной сессии недоступны вообще оба endpoint'а, root-pack теперь даёт нормальный pre-task fallback: агент читает `./memlayer_context.sh`, который по умолчанию использует локальный snapshot и не блокирует старт задачи на flaky runtime. Когда нужен живой refresh, можно явно вызвать `./memlayer_context.sh --refresh "query"` или `./memlayer_snapshot_pull.sh`.
+Для write-path теперь тоже есть offline режим: `./memlayer_write.sh` пытается записать в live MemLayer, а если он недоступен, складывает JSON payload в `memlayer.offline.queue.jsonl` и добавляет запись в `memlayer.offline.log.md`. После восстановления runtime можно прогнать `./memlayer_sync.sh`.
+Чтобы агент не зависал на каждом write, `memlayer_write.sh` использует отдельный короткий retry-budget (`MEMLAYER_WRITE_RETRY_ATTEMPTS`, по умолчанию `1`) через внутренний override, тогда как `doctor` и обычный live helper могут делать более длинный endpoint discovery.
 Для import hygiene появился admin endpoint `GET /admin/projects/duplicates`: он группирует проекты по `name + source_path` и помогает быстро заметить accidental duplicate rows до того, как они начнут мешать в UI и retrieval.
 
 ## Runtime Smoke

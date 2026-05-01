@@ -150,10 +150,13 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
     watchdog_path = project_root / "memlayer_watchdog.sh"
     recover_path = project_root / "memlayer_recover.sh"
     context_path = project_root / "memlayer_context.sh"
+    write_path = project_root / "memlayer_write.sh"
+    sync_path = project_root / "memlayer_sync.sh"
     snapshot_pull_path = project_root / "memlayer_snapshot_pull.sh"
     snapshot_json_path = project_root / "memlayer.snapshot.json"
     snapshot_md_path = project_root / "memlayer.snapshot.md"
     offline_log_path = project_root / "memlayer.offline.log.md"
+    offline_queue_path = project_root / "memlayer.offline.queue.jsonl"
 
     if agents_path.exists():
         agents_text = agents_path.read_text(encoding="utf-8")
@@ -188,10 +191,13 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
     watchdog_text = load_template("memlayer_watchdog.sh.tmpl")
     recover_text = load_template("memlayer_recover.sh.tmpl")
     context_text = load_template("memlayer_context.sh.tmpl")
+    write_text_template = load_template("memlayer_write.sh.tmpl")
+    sync_text_template = load_template("memlayer_sync.sh.tmpl")
     snapshot_pull_text = load_template("memlayer_snapshot_pull.sh.tmpl")
     snapshot_json_text = load_template("memlayer.snapshot.json.tmpl")
     snapshot_md_text = load_template("memlayer.snapshot.md.tmpl")
     offline_log_text = load_template("memlayer.offline.log.md.tmpl")
+    offline_queue_text = load_template("memlayer.offline.queue.jsonl.tmpl")
     config_payload = build_project_config(
         project_root,
         preferred_url=preferred_url,
@@ -212,6 +218,8 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
     write_text(watchdog_path, watchdog_text, dry_run=dry_run)
     write_text(recover_path, recover_text, dry_run=dry_run)
     write_text(context_path, context_text, dry_run=dry_run)
+    write_text(write_path, write_text_template, dry_run=dry_run)
+    write_text(sync_path, sync_text_template, dry_run=dry_run)
     write_text(snapshot_pull_path, snapshot_pull_text, dry_run=dry_run)
     if not snapshot_json_path.exists():
         write_text(snapshot_json_path, snapshot_json_text, dry_run=dry_run)
@@ -219,10 +227,14 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
         write_text(snapshot_md_path, snapshot_md_text, dry_run=dry_run)
     if not offline_log_path.exists():
         write_text(offline_log_path, offline_log_text, dry_run=dry_run)
+    if not offline_queue_path.exists():
+        write_text(offline_queue_path, offline_queue_text, dry_run=dry_run)
     chmod_executable(helper_path, dry_run=dry_run)
     chmod_executable(watchdog_path, dry_run=dry_run)
     chmod_executable(recover_path, dry_run=dry_run)
     chmod_executable(context_path, dry_run=dry_run)
+    chmod_executable(write_path, dry_run=dry_run)
+    chmod_executable(sync_path, dry_run=dry_run)
     chmod_executable(snapshot_pull_path, dry_run=dry_run)
 
     return {
@@ -239,10 +251,13 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
             str(watchdog_path),
             str(recover_path),
             str(context_path),
+            str(write_path),
+            str(sync_path),
             str(snapshot_pull_path),
             str(snapshot_json_path),
             str(snapshot_md_path),
             str(offline_log_path),
+            str(offline_queue_path),
         ],
     }
 
