@@ -1067,6 +1067,16 @@ def test_metrics_overview_endpoint(client):
         "/memory-links",
         json={"from_entry_id": second["id"], "to_entry_id": first["id"], "type": "derived_from", "strength": 0.8},
     )
+    review_item = client.post(
+        "/memory",
+        json={
+            "type": "artifact",
+            "title": "Imported file",
+            "content": "Imported artifact that needs quality review.",
+            "project_id": project["id"],
+            "metadata": {"quality_review_required": True},
+        },
+    ).json()
     client.post(
         "/task-logs",
         json={
@@ -1081,6 +1091,15 @@ def test_metrics_overview_endpoint(client):
             "consistency_score": 0.9,
         },
     )
+    client.post(
+        "/admin/quality-review/resolve",
+        json={
+            "entry_id": review_item["id"],
+            "action": "false_positive",
+            "resolution": "Reviewed and accepted as false positive.",
+            "resolved_by": "ops-admin",
+        },
+    )
 
     response = client.get(
         "/metrics/overview",
@@ -1088,11 +1107,14 @@ def test_metrics_overview_endpoint(client):
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["memory"]["total_entries"] == 2
-    assert body["memory"]["active_entries"] == 2
+    assert body["memory"]["total_entries"] == 3
+    assert body["memory"]["active_entries"] == 3
     assert body["graph"]["total_links"] == 1
     assert body["tasks"]["total_tasks"] == 1
     assert body["tasks"]["memory_usage_rate"] == 1.0
+    assert body["review"]["false_positive_count"] >= 1
+    assert body["review"]["review_resolution_rate"] >= 0.0
+    assert body["trends"]["entries_created_7d"] >= 3
 
 
 def test_admin_observability_summary_endpoint(client):

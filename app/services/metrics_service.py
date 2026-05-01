@@ -24,4 +24,6 @@ class MetricsService:
             "memory": self.repository.memory_overview(project_id=project_id, tenant_ids=tenant_ids),
             "graph": self.repository.graph_overview(project_id=project_id, tenant_ids=tenant_ids),
             "tasks": self.repository.task_overview(agent_id=agent_id, experiment_id=experiment_id, tenant_ids=tenant_ids),
+            "review": self.repository.review_overview(project_id=project_id, tenant_ids=tenant_ids),
+            "trends": self.repository.trend_overview(project_id=project_id, tenant_ids=tenant_ids),
         }

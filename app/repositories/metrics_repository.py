@@ -183,6 +183,110 @@ class MetricsRepository:
             "task_logs_created": task_logs_created,
         }
 
+    def review_overview(self, *, project_id: uuid.UUID | None = None, tenant_ids: set[str] | None = None) -> dict:
+        items = self._memory_entries(project_id=project_id, tenant_ids=tenant_ids)
+        pending_import_conflicts = 0
+        pending_decision_conflicts = 0
+        review_overdue = 0
+        quality_review_required = 0
+        semantic_duplicate_flagged = 0
+        false_positive = 0
+        approved_review = 0
+        archived_after_review = 0
+        compaction_summary = 0
+        compacted_original = 0
+        review_resolved = 0
+
+        for item in items:
+            metadata = item.metadata_ or {}
+            quality = metadata.get("quality", {}) if isinstance(metadata, dict) else {}
+            if metadata.get("requires_review") and metadata.get("import_conflicts"):
+                pending_import_conflicts += 1
+            if metadata.get("requires_review") and metadata.get("decision_conflicts"):
+                pending_decision_conflicts += 1
+            if metadata.get("review_overdue") is True:
+                review_overdue += 1
+            if metadata.get("quality_review_required") is True:
+                quality_review_required += 1
+            if quality.get("semantic_duplicate_risk") is True:
+                semantic_duplicate_flagged += 1
+            if quality.get("false_positive") is True:
+                false_positive += 1
+            if metadata.get("review_status") == "approved":
+                approved_review += 1
+            if metadata.get("review_status") == "archived" or (
+                item.archived and metadata.get("review_history")
+            ):
+                archived_after_review += 1
+            if metadata.get("compaction") is True:
+                compaction_summary += 1
+            if metadata.get("compacted_into_entry_id"):
+                compacted_original += 1
+            if metadata.get("review_history"):
+                review_resolved += 1
+
+        resolution_rate = review_resolved / max(
+            pending_import_conflicts + pending_decision_conflicts + review_overdue + quality_review_required + review_resolved,
+            1,
+        )
+        false_positive_rate = false_positive / max(review_resolved, 1)
+        return {
+            "pending_import_conflicts_count": pending_import_conflicts,
+            "pending_decision_conflicts_count": pending_decision_conflicts,
+            "review_overdue_count": review_overdue,
+            "quality_review_required_count": quality_review_required,
+            "semantic_duplicate_flagged_count": semantic_duplicate_flagged,
+            "false_positive_count": false_positive,
+            "approved_review_count": approved_review,
+            "archived_after_review_count": archived_after_review,
+            "compaction_summary_count": compaction_summary,
+            "compacted_original_count": compacted_original,
+            "review_resolution_rate": float(resolution_rate),
+            "false_positive_rate": float(false_positive_rate),
+        }
+
+    def trend_overview(self, *, project_id: uuid.UUID | None = None, tenant_ids: set[str] | None = None) -> dict:
+        items = self._memory_entries(project_id=project_id, tenant_ids=tenant_ids)
+        threshold = datetime.now(timezone.utc) - timedelta(days=7)
+        entries_created_7d = 0
+        reviews_resolved_7d = 0
+        duplicate_flags_7d = 0
+        compactions_applied_7d = 0
+        for item in items:
+            created_at = item.created_at if item.created_at.tzinfo else item.created_at.replace(tzinfo=timezone.utc)
+            metadata = item.metadata_ or {}
+            quality = metadata.get("quality", {}) if isinstance(metadata, dict) else {}
+            if created_at >= threshold:
+                entries_created_7d += 1
+                if quality.get("semantic_duplicate_risk") is True:
+                    duplicate_flags_7d += 1
+                if metadata.get("compaction") is True:
+                    compactions_applied_7d += 1
+            for history_item in metadata.get("review_history", []):
+                resolved_at = history_item.get("resolved_at")
+                if not resolved_at:
+                    continue
+                try:
+                    resolved_dt = datetime.fromisoformat(resolved_at.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                if resolved_dt >= threshold:
+                    reviews_resolved_7d += 1
+        return {
+            "entries_created_7d": entries_created_7d,
+            "reviews_resolved_7d": reviews_resolved_7d,
+            "duplicate_flags_7d": duplicate_flags_7d,
+            "compactions_applied_7d": compactions_applied_7d,
+        }
+
+    def _memory_entries(self, *, project_id: uuid.UUID | None = None, tenant_ids: set[str] | None = None) -> list[MemoryEntry]:
+        stmt = select(MemoryEntry)
+        if project_id:
+            stmt = stmt.where(MemoryEntry.project_id == project_id)
+        if tenant_ids is not None:
+            stmt = stmt.join(Project, Project.id == MemoryEntry.project_id).where(self._project_tenant_clause(tenant_ids))
+        return list(self.db.scalars(stmt))
+
     @staticmethod
     def _project_tenant_clause(tenant_ids: set[str]):
         return Project.metadata_["tenant_id"].as_string().in_(sorted(tenant_ids))

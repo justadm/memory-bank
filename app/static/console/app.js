@@ -122,7 +122,9 @@ const translations = {
       orphanRate: "Сироты",
       memoryUsage: "Использование памяти",
       avgQuality: "Среднее качество",
-      totalTasks: "Задачи"
+      totalTasks: "Задачи",
+      falsePositives: "False positives",
+      reviewResolution: "Review resolution"
     },
     dashboardSections: {
       observability: "Observability Snapshot",
@@ -335,7 +337,9 @@ const translations = {
       orphanRate: "Orphan rate",
       memoryUsage: "Memory usage",
       avgQuality: "Average quality",
-      totalTasks: "Tasks"
+      totalTasks: "Tasks",
+      falsePositives: "False positives",
+      reviewResolution: "Review resolution"
     },
     dashboardSections: {
       observability: "Observability Snapshot",
@@ -1201,7 +1205,9 @@ function renderDashboardView() {
     { label: t("dashboardCards.totalTasks"), value: formatNumber(metrics.tasks.total_tasks), meta: `${t("dashboardCards.memoryUsage")} ${formatPercent(metrics.tasks.memory_usage_rate)}` },
     { label: t("dashboardCards.reuseRate"), value: formatPercent(metrics.memory.reuse_rate), meta: `${t("dashboardCards.orphanRate")} ${formatPercent(metrics.memory.orphan_rate)}` },
     { label: t("dashboardCards.avgQuality"), value: formatNumber(metrics.tasks.avg_quality_score), meta: `${t("dashboardCards.memoryUsage")} ${formatPercent(state.taskSummary?.memory_usage_rate)}` },
-    { label: t("dashboardCards.links"), value: formatNumber(metrics.graph.total_links), meta: `avg link strength ${formatNumber(metrics.graph.avg_link_strength)}` }
+    { label: t("dashboardCards.links"), value: formatNumber(metrics.graph.total_links), meta: `avg link strength ${formatNumber(metrics.graph.avg_link_strength)}` },
+    { label: t("dashboardCards.falsePositives"), value: formatNumber(metrics.review.false_positive_count), meta: `duplicate flags ${formatNumber(metrics.review.semantic_duplicate_flagged_count)}` },
+    { label: t("dashboardCards.reviewResolution"), value: formatPercent(metrics.review.review_resolution_rate), meta: `false-positive rate ${formatPercent(metrics.review.false_positive_rate)}` }
   ];
 
   const topAgentsCount = observability.top_agents?.length || 0;
@@ -1265,6 +1271,12 @@ function renderDashboardView() {
           <div class="metric-row"><span class="metric-name">${escapeHtml(t("dashboardCards.orphanRate"))}</span><span class="metric-value">${escapeHtml(formatPercent(observability.memory.orphan_rate))}</span></div>
           <div class="metric-row"><span class="metric-name">${escapeHtml(t("dashboardCards.avgQuality"))}</span><span class="metric-value">${escapeHtml(formatNumber(observability.tasks.avg_quality_score))}</span></div>
           <div class="metric-row"><span class="metric-name">Consistency</span><span class="metric-value">${escapeHtml(formatNumber(observability.tasks.avg_consistency_score))}</span></div>
+          <div class="metric-row"><span class="metric-name">${escapeHtml(t("qualityReviewRequired"))}</span><span class="metric-value">${escapeHtml(formatNumber(metrics.review.quality_review_required_count))}</span></div>
+          <div class="metric-row"><span class="metric-name">${escapeHtml(t("reviewOverdue"))}</span><span class="metric-value">${escapeHtml(formatNumber(metrics.review.review_overdue_count))}</span></div>
+          <div class="metric-row"><span class="metric-name">${escapeHtml(t("decisionConflicts"))}</span><span class="metric-value">${escapeHtml(formatNumber(metrics.review.pending_decision_conflicts_count))}</span></div>
+          <div class="metric-row"><span class="metric-name">${escapeHtml(t("compactionCandidates"))}</span><span class="metric-value">${escapeHtml(formatNumber(reviewQueues.compaction_candidate_clusters_count || 0))}</span></div>
+          <div class="metric-row"><span class="metric-name">Resolved 7d</span><span class="metric-value">${escapeHtml(formatNumber(metrics.trends.reviews_resolved_7d))}</span></div>
+          <div class="metric-row"><span class="metric-name">Compactions 7d</span><span class="metric-value">${escapeHtml(formatNumber(metrics.trends.compactions_applied_7d))}</span></div>
         </div>
       </article>
     </section>

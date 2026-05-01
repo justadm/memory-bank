@@ -27,6 +27,7 @@
 - operator review queues summary and console actions for conflicts/compaction
 - local semantic duplicate detection in memory quality layer
 - operator quality-review actions from API and console
+- richer review/process metrics in `metrics/overview` and dashboard
 - Docker, Alembic и базовые API-тесты
 
 ## Быстрый старт
@@ -282,6 +283,37 @@ Semantic duplicate detection сейчас работает без внешней
 - пишет `review_history`
 - для `false_positive` помечает `metadata.quality.false_positive=true`
 - для `archive` архивирует запись
+
+## Review Metrics
+
+`GET /metrics/overview` теперь включает не только `memory`, `graph` и `tasks`, но и новые блоки:
+
+- `review`
+- `trends`
+
+`review` сейчас даёт:
+
+- `pending_import_conflicts_count`
+- `pending_decision_conflicts_count`
+- `review_overdue_count`
+- `quality_review_required_count`
+- `semantic_duplicate_flagged_count`
+- `false_positive_count`
+- `approved_review_count`
+- `archived_after_review_count`
+- `compaction_summary_count`
+- `compacted_original_count`
+- `review_resolution_rate`
+- `false_positive_rate`
+
+`trends` сейчас даёт:
+
+- `entries_created_7d`
+- `reviews_resolved_7d`
+- `duplicate_flags_7d`
+- `compactions_applied_7d`
+
+MemLayer console уже использует эти сигналы в dashboard как product-health слой поверх новых review/lifecycle/compaction процессов.
 
 ## Context Builder
 
