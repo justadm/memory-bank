@@ -86,6 +86,15 @@ def build_project_config(project_root: Path, preferred_url: str, local_url: str,
     }
 
 
+def merge_project_config(existing: dict[str, object], generated: dict[str, object]) -> dict[str, object]:
+    merged = dict(existing)
+    merged.update(generated)
+    for key in ("project_id", "tenant_id"):
+        if key in existing and existing.get(key):
+            merged[key] = existing[key]
+    return merged
+
+
 def list_projects(projects_root: Path, names: list[str] | None) -> list[Path]:
     candidates = sorted(path for path in projects_root.iterdir() if path.is_dir())
     if names is None:
@@ -204,6 +213,13 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
         local_url=local_url,
         human_url=human_url,
     )
+    if config_path.exists():
+        try:
+            existing_config = json.loads(config_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            existing_config = {}
+        if isinstance(existing_config, dict):
+            config_payload = merge_project_config(existing_config, config_payload)
 
     write_text(agents_path, new_agents_text, dry_run=dry_run)
     write_text(memlayer_path, memlayer_text, dry_run=dry_run)

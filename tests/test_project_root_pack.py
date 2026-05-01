@@ -7,6 +7,7 @@ from scripts.install_memlayer_project_pack import (
     MANAGED_START,
     build_project_config,
     install_for_project,
+    merge_project_config,
     merge_env_text,
     upsert_managed_section,
 )
@@ -151,3 +152,21 @@ def test_merge_env_text_appends_missing_keys_without_overwriting_existing_values
     assert "MEMORYBANK_API_KEY=secret" in merged
     assert "MEMLAYER_API_URL=http://custom:8000" in merged
     assert "MEMLAYER_EXTRA_URLS=http://api:8000" in merged
+
+
+def test_merge_project_config_preserves_existing_project_identity() -> None:
+    existing = {
+        "project_id": "8bc076cc-300e-481c-9215-f0e24364d81d",
+        "tenant_id": "tenant-1",
+        "preferred_url": "http://old:18100",
+    }
+    generated = {
+        "preferred_url": "http://127.0.0.1:18100",
+        "local_fallback_url": "https://memlayer.loc/api",
+    }
+
+    merged = merge_project_config(existing, generated)
+
+    assert merged["project_id"] == "8bc076cc-300e-481c-9215-f0e24364d81d"
+    assert merged["tenant_id"] == "tenant-1"
+    assert merged["preferred_url"] == "http://127.0.0.1:18100"
