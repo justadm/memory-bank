@@ -111,3 +111,7 @@
 - Added `LifecycleService` plus `POST /maintenance/lifecycle/run` with `dry_run` support. The pass now decays quality for stale low-value `note` / `event` entries, marks overdue review items with `metadata.review_overdue=true`, archives weak stale entries below a configurable threshold, and cleans up weak old links.
 - Covered the lifecycle pass with API tests for both dry-run preview behavior and real application behavior, including review-overdue marking, stale entry archiving, and weak-link deletion.
 - Verified the integrated lifecycle subset with the full local suite; result: `64 passed`.
+- Continued the next-stage extraction with an operator-driven compaction workflow instead of introducing new compaction tables or a scheduler first. This keeps the feature useful immediately while staying compatible with the current schema.
+- Added `CompactionService` plus `POST /maintenance/compaction/preview` and `POST /maintenance/compaction/apply`. Preview detects stale low-value clusters by simple topic-token overlap, while apply creates a summary entry, links originals to it with `derived_from` + `metadata.compaction=true`, marks `metadata.compacted_into_entry_id`, and optionally archives the originals.
+- Covered the compaction flow with an API test that exercises the full preview/apply cycle and verifies the resulting summary metadata, outgoing links, and archived originals.
+- Verified the integrated compaction subset with the full local suite; result: `65 passed`.

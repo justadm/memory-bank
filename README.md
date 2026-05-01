@@ -23,6 +23,7 @@
 - decision authority hints и typed context builder для agent retrieval
 - metadata-based conflict resolution flow for competing decisions
 - lifecycle maintenance pass with dry-run support
+- compaction preview/apply flow for summarizing stale low-value clusters
 - Docker, Alembic и базовые API-тесты
 
 ## Быстрый старт
@@ -201,6 +202,28 @@ MemLayer теперь делает базовую quality-оценку при `P
 
 Поддерживается `dry_run`, поэтому оператор может сначала посмотреть кандидатов, а потом уже применить pass по-настоящему.
 
+## Compaction
+
+Следующий перенесённый слой из `memlayer_next_stage_pack` — operator-driven compaction.
+
+Новые endpoints:
+
+- `POST /maintenance/compaction/preview`
+- `POST /maintenance/compaction/apply`
+
+Что делает preview:
+
+- ищет stale low-value entries внутри проекта
+- группирует их в простые topic-clusters по token overlap
+- предлагает `suggested_title` и `suggested_content` для summary entry
+
+Что делает apply:
+
+- создаёт summary memory entry
+- связывает исходные записи с summary через `derived_from` link с `metadata.compaction=true`
+- помечает исходники `metadata.compacted_into_entry_id`
+- при включённом `archive_originals` архивирует исходные записи
+
 ## Context Builder
 
 Вместо плоского retrieval теперь доступен typed context endpoint:
@@ -302,6 +325,8 @@ AUTH_API_KEYS=tenant-agent:tenant-key:read|write|import:tenant-a|tenant-b
 - `POST /maintenance/archive-stale`
 - `POST /maintenance/rebuild-search-vectors`
 - `POST /maintenance/lifecycle/run`
+- `POST /maintenance/compaction/preview`
+- `POST /maintenance/compaction/apply`
 - `POST /imports/project-scan`
 - `GET /metrics/overview`
 - `GET /admin/observability/summary`
@@ -440,6 +465,33 @@ curl -sS -X POST http://127.0.0.1:18100/maintenance/lifecycle/run \
     "weak_link_days": 30,
     "low_quality_threshold": 0.35,
     "weak_link_strength_threshold": 0.35
+  }'
+```
+
+### Посмотреть compaction candidates
+
+```bash
+curl -sS -X POST http://127.0.0.1:18100/maintenance/compaction/preview \
+  -H 'Authorization: Bearer ops-admin-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "project_id": "PROJECT_UUID",
+    "stale_days": 21,
+    "min_entries": 4,
+    "max_entries": 12,
+    "min_overlap_tokens": 2
+  }'
+```
+
+### Применить compaction cluster
+
+```bash
+curl -sS -X POST http://127.0.0.1:18100/maintenance/compaction/apply \
+  -H 'Authorization: Bearer ops-admin-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "entry_ids": ["ENTRY_UUID_1", "ENTRY_UUID_2", "ENTRY_UUID_3", "ENTRY_UUID_4"],
+    "archive_originals": true
   }'
 ```
 

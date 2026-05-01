@@ -238,6 +238,62 @@ def test_lifecycle_run_applies_archive_review_and_link_cleanup(client, db_sessio
     assert updated_links["outgoing"] == []
 
 
+def test_compaction_preview_and_apply(client, db_session: Session):
+    project = client.post("/projects", json={"name": "Compaction Project"}).json()
+    old_time = datetime.now(timezone.utc) - timedelta(days=35)
+    entry_ids: list[str] = []
+    for index in range(4):
+        created = client.post(
+            "/memory",
+            json={
+                "type": "note",
+                "title": f"VPN routing note {index}",
+                "content": f"vpn routing mtu packet issue followup variant {index}",
+                "project_id": project["id"],
+                "importance": 2,
+                "metadata": {},
+            },
+        ).json()
+        model = db_session.get(MemoryEntry, uuid.UUID(created["id"]))
+        model.created_at = old_time
+        model.last_used_at = old_time
+        db_session.add(model)
+        entry_ids.append(created["id"])
+    db_session.commit()
+
+    preview = client.post(
+        "/maintenance/compaction/preview",
+        json={"project_id": project["id"], "stale_days": 21, "min_entries": 4, "max_entries": 6, "min_overlap_tokens": 2},
+    )
+    assert preview.status_code == 200
+    clusters = preview.json()["clusters"]
+    assert len(clusters) == 1
+    assert set(clusters[0]["entry_ids"]) == set(entry_ids)
+    assert "Compacted memory summary" in clusters[0]["suggested_title"]
+
+    apply = client.post(
+        "/maintenance/compaction/apply",
+        json={"entry_ids": entry_ids, "archive_originals": True},
+    )
+    assert apply.status_code == 200
+    body = apply.json()
+    assert body["archived_originals"] is True
+    assert set(body["linked_entry_ids"]) == set(entry_ids)
+
+    summary = client.get(f"/memory/{body['summary_entry_id']}")
+    assert summary.status_code == 200
+    summary_body = summary.json()
+    assert summary_body["metadata"]["compaction"] is True
+    assert set(summary_body["metadata"]["source_entry_ids"]) == set(entry_ids)
+
+    for entry_id in entry_ids:
+        detail = client.get(f"/memory/{entry_id}").json()
+        assert detail["archived"] is True
+        assert detail["metadata"]["compacted_into_entry_id"] == body["summary_entry_id"]
+        links = client.get(f"/memory/{entry_id}/links").json()
+        assert any(link["to_entry_id"] == body["summary_entry_id"] for link in links["outgoing"])
+
+
 def test_create_memory_link(client):
     first = client.post("/memory", json={"type": "task", "content": "Task A"}).json()
     second = client.post("/memory", json={"type": "decision", "content": "Decision B"}).json()
