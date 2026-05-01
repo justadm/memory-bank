@@ -31,6 +31,6 @@ Use this local config first:
 - [.env.memlayer.example](./.env.memlayer.example)
 
 Prefer `./memlayer_api.sh` over raw `curl`: it tries localhost first, retries with a short backoff, and then automatically falls back to `https://memlayer.loc/api` when localhost is temporarily unavailable.
-For pre-task reading, prefer `./memlayer_context.sh`: it reads the local project snapshot first and does not block task startup on a flaky live runtime. Use `./memlayer_context.sh --refresh "your query"` only when you explicitly want to refresh the snapshot from live MemLayer.
+For pre-task reading, prefer `./memlayer_context.sh`: it reads the local project snapshot first and does not block task startup on a flaky live runtime. If you pass a query in offline mode, it now does a local filtered search over `memlayer.snapshot.json` instead of dumping the whole snapshot unchanged. Use `./memlayer_context.sh --refresh "your query"` only when you explicitly want to refresh the snapshot from live MemLayer.
 If live access behaves strangely in the current runtime, run `./memlayer_api.sh doctor` before assuming MemLayer itself is broken: it shows the current endpoint ladder and which candidates are reachable from this exact environment.
 If both live endpoints are unavailable in the current agent session, queue writes through `./memlayer_write.sh` and later flush them with `./memlayer_sync.sh` when MemLayer is reachable again.

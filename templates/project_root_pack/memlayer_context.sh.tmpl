@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SNAPSHOT_MD="${SCRIPT_DIR}/memlayer.snapshot.md"
+SNAPSHOT_JSON="${SCRIPT_DIR}/memlayer.snapshot.json"
 REFRESH_MODE="false"
 
 if [[ "${1:-}" == "--refresh" ]]; then
@@ -16,7 +17,97 @@ print_snapshot() {
   cat "${SNAPSHOT_MD}"
 }
 
+print_local_query_context() {
+  python3 - "$SNAPSHOT_JSON" "$QUERY" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+snapshot_path = Path(sys.argv[1])
+query = sys.argv[2].strip()
+
+if not snapshot_path.exists():
+    raise SystemExit(1)
+
+data = json.loads(snapshot_path.read_text(encoding="utf-8"))
+context = data.get("context", {})
+tokens = [token for token in re.findall(r"[A-Za-z0-9_+-]+", query.lower()) if len(token) > 1]
+
+items = []
+for bucket, bucket_items in context.items():
+    for item in bucket_items:
+        haystack = " ".join(
+            str(item.get(field, "")) for field in ("title", "content", "type")
+        ).lower()
+        overlap = sum(1 for token in tokens if token in haystack)
+        if overlap <= 0:
+            continue
+        items.append(
+            {
+                "bucket": bucket,
+                "item": item,
+                "overlap": overlap,
+            }
+        )
+
+items.sort(
+    key=lambda row: (
+        -row["overlap"],
+        -float(row["item"].get("score", 0.0)),
+        -int(row["item"].get("importance", 0)),
+    )
+)
+
+bucket_titles = {
+    "active_decisions": "Active Decisions",
+    "constraints": "Constraints",
+    "risks": "Risks",
+    "artifacts": "Artifacts",
+    "tasks": "Tasks",
+    "notes": "Notes",
+    "other": "Other",
+}
+
+print("# MemLayer Local Context")
+print("")
+print(f"- mode: cached snapshot filter")
+print(f"- query: {query}")
+print(f"- project_id: {data.get('summary', {}).get('project_id', 'unknown')}")
+print(f"- matched_items: {len(items)}")
+print("")
+
+if not items:
+    print("No snapshot items matched this query.")
+    raise SystemExit(0)
+
+grouped: dict[str, list[dict]] = {}
+for row in items[:8]:
+    grouped.setdefault(row["bucket"], []).append(row)
+
+for bucket in ("active_decisions", "constraints", "risks", "artifacts", "tasks", "notes", "other"):
+    bucket_rows = grouped.get(bucket)
+    if not bucket_rows:
+        continue
+    print(f"## {bucket_titles.get(bucket, bucket)}")
+    print("")
+    for row in bucket_rows:
+        item = row["item"]
+        title = item.get("title") or item.get("id") or "untitled"
+        preview = " ".join(str(item.get("content", "")).split())[:280]
+        print(f"- **{title}**")
+        if preview:
+            print(f"  - {preview}")
+    print("")
+PY
+}
+
 if [[ -f "${SNAPSHOT_MD}" && "${REFRESH_MODE}" != "true" ]]; then
+  if [[ -n "${QUERY}" && -f "${SNAPSHOT_JSON}" ]]; then
+    if print_local_query_context; then
+      exit 0
+    fi
+  fi
   print_snapshot
   exit 0
 fi
@@ -28,6 +119,11 @@ fi
 
 if [[ -f "${SNAPSHOT_MD}" ]]; then
   echo "memlayer_context.sh: live MemLayer unavailable, using cached snapshot ${SNAPSHOT_MD}" >&2
+  if [[ -n "${QUERY}" && -f "${SNAPSHOT_JSON}" ]]; then
+    if print_local_query_context; then
+      exit 0
+    fi
+  fi
   print_snapshot
   exit 0
 fi

@@ -90,6 +90,8 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
     context_text = (project_root / "memlayer_context.sh").read_text(encoding="utf-8")
     assert "REFRESH_MODE" in context_text
     assert 'print_snapshot' in context_text
+    assert 'print_local_query_context' in context_text
+    assert 'matched_items' in context_text
     assert 'memlayer_snapshot_pull.sh' in context_text
     api_text = (project_root / "memlayer_api.sh").read_text(encoding="utf-8")
     assert "host.docker.internal:18100" in api_text
