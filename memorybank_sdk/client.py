@@ -195,6 +195,29 @@ class MemoryBankClient:
             },
         )
 
+    def build_context(
+        self,
+        *,
+        query: str,
+        project_id: str | None = None,
+        agent_id: str | None = None,
+        scope: SearchScope = "project",
+        mode: Literal["lexical", "semantic", "hybrid"] = "hybrid",
+        limit: int = 12,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/context/build",
+            json={
+                "query": query,
+                "project_id": project_id,
+                "agent_id": agent_id,
+                "scope": scope,
+                "mode": mode,
+                "limit": limit,
+            },
+        )
+
     def runtime_self_check(
         self,
         *,

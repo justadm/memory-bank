@@ -20,6 +20,7 @@
 - встроенный `memorybank_sdk` и пример memory-aware агента
 - structured project import endpoint для первичного наполнения MemoryBank
 - memory quality layer с hard gate для ручной записи и soft review для import flow
+- decision authority hints и typed context builder для agent retrieval
 - Docker, Alembic и базовые API-тесты
 
 ## Быстрый старт
@@ -146,6 +147,35 @@ MemLayer теперь делает базовую quality-оценку при `P
 
 Это позволяет импортёрам и UI быстро видеть, сколько записей стоит вручную пересмотреть после scan/reimport.
 
+## Decision Authority
+
+После переноса первых практичных идей из `memlayer_next_stage_pack` MemLayer теперь умеет базово размечать решения на уровне metadata:
+
+- новые `decision` entries по умолчанию получают `metadata.decision_status=active`
+- если новая decision конфликтует с уже активной direction внутри проекта, запись получает:
+  - `metadata.requires_review=true`
+  - `metadata.decision_conflicts=[...]`
+
+Пока это metadata-based слой без тяжёлой миграции схемы, поэтому он хорошо встраивается в текущий MVP/runtime и не ломает существующие import/search flows.
+
+## Context Builder
+
+Вместо плоского retrieval теперь доступен typed context endpoint:
+
+- `POST /context/build`
+
+Он использует существующий retrieval/search path и возвращает buckets:
+
+- `active_decisions`
+- `constraints`
+- `risks`
+- `artifacts`
+- `tasks`
+- `notes`
+- `other`
+
+Результаты дополнительно бустятся по типу памяти, `importance` и decision status, чтобы агенту было проще сначала увидеть реальные решения и ограничения, а не шум.
+
 ## Auth
 
 Сервис теперь поддерживает optional API-key auth.
@@ -222,6 +252,7 @@ AUTH_API_KEYS=tenant-agent:tenant-key:read|write|import:tenant-a|tenant-b
 - `POST /memory/{id}/archive`
 - `GET /memory/search`
 - `POST /memory/relevant`
+- `POST /context/build`
 - `POST /memory-links`
 - `GET /memory/{id}/links`
 - `GET /memory/{id}/graph`
@@ -292,6 +323,21 @@ curl -sS -X POST http://127.0.0.1:18100/memory/relevant \
     "query": "Implement database layer for memory bank",
     "agent_id": "backend-agent",
     "types": ["decision", "artifact", "task"],
+    "limit": 8
+  }'
+```
+
+### Собрать typed context для агента
+
+```bash
+curl -sS -X POST http://127.0.0.1:18100/context/build \
+  -H 'Authorization: Bearer agent-write-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "query": "database runtime",
+    "project_id": "PROJECT_UUID",
+    "scope": "project",
+    "mode": "hybrid",
     "limit": 8
   }'
 ```

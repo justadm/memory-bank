@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
 from app.config import get_settings
-from app.routers import admin, auth, evaluation, imports, links, maintenance, memory, metrics, projects, task_logs
+from app.routers import admin, auth, context, evaluation, imports, links, maintenance, memory, metrics, projects, task_logs
 
 
 settings = get_settings()
@@ -14,6 +14,7 @@ CONSOLE_DIR = Path(__file__).parent / "static" / "console"
 app.include_router(projects.router)
 app.include_router(auth.router)
 app.include_router(memory.router)
+app.include_router(context.router)
 app.include_router(links.router)
 app.include_router(maintenance.router)
 app.include_router(task_logs.router)

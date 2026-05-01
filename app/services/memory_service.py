@@ -16,6 +16,7 @@ from app.schemas.links import LinkCreate
 from app.schemas.memory import MemoryCreate, MemoryRelevantRequest, MemoryUpdate
 from app.schemas.projects import ProjectCreate, ProjectUpdate
 from app.services.auto_link_service import AutoLinkService
+from app.services.decision_authority_service import DecisionAuthorityService
 from app.services.graph_service import GraphService
 from app.services.memory_quality_service import MemoryQualityService
 from app.services.search_service import SearchService
@@ -100,6 +101,7 @@ class MemoryService:
         self.search_service = SearchService(memory_repository)
         self.graph_service = GraphService(link_repository)
         self.quality_service = MemoryQualityService(memory_repository)
+        self.decision_authority_service = DecisionAuthorityService(memory_repository)
         self.auto_link_service = AutoLinkService(
             memory_repository=memory_repository,
             link_repository=link_repository,
@@ -125,6 +127,14 @@ class MemoryService:
         metadata["quality"] = quality.as_metadata()
         if quality.review_required:
             metadata["quality_review_required"] = True
+        metadata = self.decision_authority_service.enrich_metadata(
+            entry_id=None,
+            memory_type=payload.type,
+            project_id=payload.project_id,
+            title=payload.title,
+            content=payload.content,
+            metadata=metadata,
+        )
         if quality.reject and enforce_quality_gate:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -196,6 +206,14 @@ class MemoryService:
             metadata["quality_review_required"] = True
         else:
             metadata.pop("quality_review_required", None)
+        metadata = self.decision_authority_service.enrich_metadata(
+            entry_id=entry.id,
+            memory_type=entry.type,
+            project_id=entry.project_id,
+            title=entry.title,
+            content=entry.content,
+            metadata=metadata,
+        )
         if quality.reject and enforce_quality_gate:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

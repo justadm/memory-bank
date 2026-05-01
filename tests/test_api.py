@@ -81,6 +81,7 @@ def test_create_memory_entry(client):
     assert body["title"] == "Use PostgreSQL"
     assert body["importance"] == 4
     assert body["metadata"]["quality"]["score"] > 0
+    assert body["metadata"]["decision_status"] == "active"
 
 
 def test_low_quality_memory_is_rejected(client):
@@ -161,6 +162,85 @@ def test_search_memory(client):
     assert items[0]["project_id"] == project["id"]
     assert items[0]["project_name"] == "Core Search"
     assert items[0]["match_mode"] == "hybrid"
+
+
+def test_conflicting_decision_is_marked_for_review(client):
+    project = client.post("/projects", json={"name": "Decision Review"}).json()
+    first = client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "Use PostgreSQL",
+            "content": "Use PostgreSQL as the main application database with shared operational tooling.",
+            "project_id": project["id"],
+            "metadata": {"evidence": ["docker-compose.yml"]},
+        },
+    )
+    assert first.status_code == 201
+
+    second = client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "Switch to MongoDB instead",
+            "content": "Switch the same application datastore to MongoDB instead of PostgreSQL for new work.",
+            "project_id": project["id"],
+            "metadata": {"evidence": ["proposal.md"]},
+        },
+    )
+    assert second.status_code == 201
+    body = second.json()
+    assert body["metadata"]["decision_status"] == "active"
+    assert body["metadata"]["requires_review"] is True
+    assert body["metadata"]["decision_conflicts"]
+
+
+def test_context_build_returns_typed_buckets(client):
+    project = client.post("/projects", json={"name": "Context Project"}).json()
+    client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "Use PostgreSQL",
+            "content": "Use PostgreSQL as the primary relational store for the service runtime.",
+            "project_id": project["id"],
+            "importance": 5,
+            "metadata": {"evidence": ["compose.yml"]},
+        },
+    )
+    client.post(
+        "/memory",
+        json={
+            "type": "constraint",
+            "title": "Keep Docker runtime",
+            "content": "The deployment runtime must remain Docker Compose based for now.",
+            "project_id": project["id"],
+            "importance": 4,
+            "metadata": {"evidence": ["ops-notes.md"]},
+        },
+    )
+    client.post(
+        "/memory",
+        json={
+            "type": "artifact",
+            "title": "docker-compose.yml",
+            "content": "Defines api and db services plus local runtime wiring.",
+            "project_id": project["id"],
+            "importance": 4,
+        },
+    )
+
+    response = client.post(
+        "/context/build",
+        json={"query": "database runtime", "project_id": project["id"], "scope": "project", "limit": 8},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["context_version"] == "v2"
+    assert body["summary"]["decisions"] >= 1
+    assert body["summary"]["constraints"] >= 1
+    assert body["context"]["active_decisions"][0]["title"] == "Use PostgreSQL"
+    assert body["context"]["constraints"][0]["title"] == "Keep Docker runtime"
 
 
 def test_semantic_search_memory(client):
