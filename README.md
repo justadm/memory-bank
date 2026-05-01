@@ -26,6 +26,7 @@
 - compaction preview/apply flow for summarizing stale low-value clusters
 - operator review queues summary and console actions for conflicts/compaction
 - local semantic duplicate detection in memory quality layer
+- operator quality-review actions from API and console
 - Docker, Alembic и базовые API-тесты
 
 ## Быстрый старт
@@ -261,6 +262,26 @@ Semantic duplicate detection сейчас работает без внешней
 - показывает compaction candidates
 - умеет делать `supersede` / `reject_new` для decision conflicts
 - умеет запускать `apply compaction` прямо из review UI
+- умеет закрывать quality review items через `approve`, `false_positive`, `archive`
+
+Дополнительно появился endpoint:
+
+- `POST /admin/quality-review/resolve`
+
+Поддерживаемые actions:
+
+- `approve`
+- `false_positive`
+- `archive`
+- `needs_changes`
+
+Этот flow:
+
+- обновляет `review_status`
+- снимает или оставляет `quality_review_required`
+- пишет `review_history`
+- для `false_positive` помечает `metadata.quality.false_positive=true`
+- для `archive` архивирует запись
 
 ## Context Builder
 
@@ -372,6 +393,7 @@ AUTH_API_KEYS=tenant-agent:tenant-key:read|write|import:tenant-a|tenant-b
 - `GET /admin/decision-conflicts`
 - `GET /admin/imports/summary`
 - `GET /admin/review-queues/summary`
+- `POST /admin/quality-review/resolve`
 
 ## curl Examples
 
@@ -603,6 +625,20 @@ curl -sS -X POST http://127.0.0.1:18100/admin/decision-conflicts/resolve \
 ```bash
 curl -sS 'http://127.0.0.1:18100/admin/review-queues/summary?limit=10' \
   -H 'Authorization: Bearer ops-admin-key'
+```
+
+### Закрыть quality review item
+
+```bash
+curl -sS -X POST http://127.0.0.1:18100/admin/quality-review/resolve \
+  -H 'Authorization: Bearer ops-admin-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "entry_id": "ENTRY_UUID",
+    "action": "false_positive",
+    "resolution": "This semantic duplicate warning is acceptable.",
+    "resolved_by": "ops-admin"
+  }'
 ```
 
 ## Auto-linking

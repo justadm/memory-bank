@@ -192,6 +192,9 @@ const translations = {
     resolveSupersede: "Supersede old",
     resolveRejectNew: "Reject new",
     applyCompaction: "Compact cluster",
+    approveReview: "Approve",
+    falsePositive: "False positive",
+    archiveReviewItem: "Archive",
     noData: "Данные пока не найдены для текущего фильтра.",
     noSelection: "Сначала выбери объект из таблицы.",
     filters: "Фильтры",
@@ -402,6 +405,9 @@ const translations = {
     resolveSupersede: "Supersede old",
     resolveRejectNew: "Reject new",
     applyCompaction: "Compact cluster",
+    approveReview: "Approve",
+    falsePositive: "False positive",
+    archiveReviewItem: "Archive",
     noData: "No data for the current filter.",
     noSelection: "Select an item from the table first.",
     filters: "Filters",
@@ -2096,6 +2102,21 @@ function renderReviewView() {
               action: "focus-project",
               label: t("openProject"),
               data: { projectId: item.project_id, view: "projects" }
+            },
+            {
+              action: "resolve-quality-approve",
+              label: t("approveReview"),
+              data: { entryId: item.entry_id }
+            },
+            {
+              action: "resolve-quality-false-positive",
+              label: t("falsePositive"),
+              data: { entryId: item.entry_id }
+            },
+            {
+              action: "resolve-quality-archive",
+              label: t("archiveReviewItem"),
+              data: { entryId: item.entry_id }
             }
           ]
         })}
@@ -2653,6 +2674,23 @@ async function applyCompaction(entryIds) {
   await loadCurrentView();
 }
 
+async function resolveQualityReview(entryId, action) {
+  if (!entryId) {
+    throw new Error(t("noSelection"));
+  }
+  const result = await apiRequest("/admin/quality-review/resolve", {
+    method: "POST",
+    body: JSON.stringify({
+      entry_id: entryId,
+      action,
+      resolution: `Resolved in console via action ${action}.`,
+      resolved_by: "memlayer-console"
+    })
+  });
+  pushMessage("success", `${action}: ${result.status}`);
+  await loadCurrentView();
+}
+
 function syncFormValue(name, value) {
   if (name in state.forms) {
     state.forms[name] = value;
@@ -2723,6 +2761,15 @@ function attachEvents() {
       }
       if (action === "apply-compaction") {
         await applyCompaction(target.dataset.entryIds || "");
+      }
+      if (action === "resolve-quality-approve") {
+        await resolveQualityReview(target.dataset.entryId, "approve");
+      }
+      if (action === "resolve-quality-false-positive") {
+        await resolveQualityReview(target.dataset.entryId, "false_positive");
+      }
+      if (action === "resolve-quality-archive") {
+        await resolveQualityReview(target.dataset.entryId, "archive");
       }
       if (action === "clear-memory-selection") {
         state.selectedMemoryIds = [];

@@ -16,6 +16,8 @@ from app.schemas.admin import (
     ImportConflictListResponse,
     ImportProjectSummaryListResponse,
     ObservabilitySummaryResponse,
+    QualityReviewResolutionRequest,
+    QualityReviewResolutionResponse,
     ReviewQueuesSummaryResponse,
     RuntimeSelfCheckResponse,
 )
@@ -67,6 +69,23 @@ def resolve_decision_conflict(
         **service.resolve_decision_conflict(
             entry_id=payload.entry_id,
             conflicts_with_entry_id=payload.conflicts_with_entry_id,
+            action=payload.action,
+            resolution=payload.resolution,
+            resolved_by=payload.resolved_by,
+            principal=principal,
+        )
+    )
+
+
+@router.post("/quality-review/resolve", response_model=QualityReviewResolutionResponse)
+def resolve_quality_review(
+    payload: QualityReviewResolutionRequest,
+    service: AdminObservabilityService = Depends(get_admin_observability_service),
+    principal=Depends(require_admin_access),
+) -> QualityReviewResolutionResponse:
+    return QualityReviewResolutionResponse(
+        **service.resolve_quality_review(
+            entry_id=payload.entry_id,
             action=payload.action,
             resolution=payload.resolution,
             resolved_by=payload.resolved_by,

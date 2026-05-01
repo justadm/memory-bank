@@ -108,6 +108,19 @@ class ReviewQueuesSummaryResponse(BaseModel):
     compaction_candidates: list[CompactionCandidateResponse]
 
 
+class QualityReviewResolutionRequest(BaseModel):
+    entry_id: uuid.UUID
+    action: str
+    resolution: str
+    resolved_by: str
+
+
+class QualityReviewResolutionResponse(BaseModel):
+    status: str
+    action: str
+    entry_id: uuid.UUID
+
+
 class ImportProjectSummaryItemResponse(BaseModel):
     project_id: uuid.UUID
     project_name: str

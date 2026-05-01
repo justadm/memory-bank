@@ -246,6 +246,67 @@ class AdminObservabilityService:
             "conflicts_with_entry_id": old_entry.id,
         }
 
+    def resolve_quality_review(
+        self,
+        *,
+        entry_id: uuid.UUID,
+        action: str,
+        resolution: str,
+        resolved_by: str,
+        principal: AuthPrincipal | None = None,
+    ) -> dict:
+        entry = self.memory_repository.get(entry_id)
+        if not entry:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Review entry not found")
+        if principal and principal.tenant_ids is not None:
+            allowed = principal.tenant_ids
+            if entry.project and entry.project.tenant_id not in allowed:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Review entry not found")
+
+        metadata = dict(entry.metadata_ or {})
+        now = datetime.now(timezone.utc).isoformat()
+        review_record = {
+            "action": action,
+            "resolution": resolution,
+            "resolved_by": resolved_by,
+            "resolved_at": now,
+        }
+
+        quality = dict(metadata.get("quality", {}))
+        if action == "approve":
+            metadata["review_status"] = "approved"
+            metadata["quality_review_required"] = False
+            metadata["review_overdue"] = False
+            quality["review_required"] = False
+        elif action == "false_positive":
+            metadata["review_status"] = "false_positive"
+            metadata["quality_review_required"] = False
+            metadata["review_overdue"] = False
+            quality["review_required"] = False
+            quality["false_positive"] = True
+        elif action == "archive":
+            metadata["review_status"] = "archived"
+            metadata["quality_review_required"] = False
+            metadata["review_overdue"] = False
+            entry.archived = True
+        elif action == "needs_changes":
+            metadata["review_status"] = "needs_changes"
+            metadata["quality_review_required"] = True
+            metadata["review_overdue"] = False
+            quality["review_required"] = True
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown quality review action")
+
+        history = list(metadata.get("review_history", []))
+        history.append(review_record)
+        metadata["review_history"] = history[-20:]
+        metadata["quality"] = quality
+        entry.metadata_ = metadata
+        self.memory_repository.db.add(entry)
+        self.memory_repository.db.flush()
+        self.memory_repository.db.refresh(entry)
+        return {"status": "resolved", "action": action, "entry_id": entry.id}
+
     def get_runtime_self_check(
         self,
         *,

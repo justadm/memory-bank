@@ -655,6 +655,87 @@ def test_admin_review_queues_summary(client, db_session: Session):
     assert any(set(cluster["entry_ids"]) == set(compaction_ids) for cluster in body["compaction_candidates"])
 
 
+def test_quality_review_resolution_approve(client):
+    project = client.post("/projects", json={"name": "Quality Review Resolve"}).json()
+    created = client.post(
+        "/memory",
+        json={
+            "type": "artifact",
+            "title": "Imported file",
+            "content": "Imported artifact that needs quality review.",
+            "project_id": project["id"],
+            "metadata": {"quality_review_required": True},
+        },
+    ).json()
+
+    response = client.post(
+        "/admin/quality-review/resolve",
+        json={
+            "entry_id": created["id"],
+            "action": "approve",
+            "resolution": "Reviewed and accepted.",
+            "resolved_by": "ops-admin",
+        },
+    )
+    assert response.status_code == 200
+    detail = client.get(f"/memory/{created['id']}").json()
+    assert detail["metadata"]["review_status"] == "approved"
+    assert detail["metadata"]["quality_review_required"] is False
+    assert detail["metadata"]["quality"]["review_required"] is False
+    assert detail["metadata"]["review_history"]
+
+
+def test_quality_review_resolution_false_positive_and_archive(client):
+    project = client.post("/projects", json={"name": "Quality False Positive"}).json()
+    false_positive = client.post(
+        "/memory",
+        json={
+            "type": "artifact",
+            "title": "Primary database decision",
+            "content": "The application runtime uses PostgreSQL as the main database service.",
+            "project_id": project["id"],
+            "metadata": {"quality_review_required": True},
+        },
+    ).json()
+    archive_candidate = client.post(
+        "/memory",
+        json={
+            "type": "note",
+            "content": "operational note",
+            "project_id": project["id"],
+            "metadata": {"quality_review_required": True},
+        },
+    ).json()
+
+    false_positive_response = client.post(
+        "/admin/quality-review/resolve",
+        json={
+            "entry_id": false_positive["id"],
+            "action": "false_positive",
+            "resolution": "Semantic duplicate warning was acceptable.",
+            "resolved_by": "ops-admin",
+        },
+    )
+    assert false_positive_response.status_code == 200
+    false_positive_detail = client.get(f"/memory/{false_positive['id']}").json()
+    assert false_positive_detail["metadata"]["review_status"] == "false_positive"
+    assert false_positive_detail["metadata"]["quality"]["false_positive"] is True
+
+    archive_response = client.post(
+        "/admin/quality-review/resolve",
+        json={
+            "entry_id": archive_candidate["id"],
+            "action": "archive",
+            "resolution": "Low-value note archived after review.",
+            "resolved_by": "ops-admin",
+        },
+    )
+    assert archive_response.status_code == 200
+    archive_detail = client.get(f"/memory/{archive_candidate['id']}").json()
+    assert archive_detail["metadata"]["review_status"] == "archived"
+    assert archive_detail["archived"] is True
+
+
 def test_semantic_search_memory(client):
     client.post(
         "/memory",
