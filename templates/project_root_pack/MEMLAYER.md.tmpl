@@ -95,6 +95,19 @@ Watchdog check after sleep, reboot, or flaky localhost behavior:
 ./memlayer_watchdog.sh
 ```
 
+If the local runtime is actually down and you want to restart it from the project root:
+
+```bash
+./memlayer_recover.sh
+```
+
+Optional auto-recover in watchdog:
+
+```bash
+cp .env.memlayer.example .env.memlayer
+# then set MEMLAYER_WATCHDOG_AUTO_RECOVER=true if this machine is allowed to restart dockerized MemLayer
+```
+
 Get relevant memory:
 
 ```bash

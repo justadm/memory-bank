@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 QUERY="${1:-${MEMLAYER_WATCHDOG_QUERY:-architecture}}"
 LIMIT="${MEMLAYER_WATCHDOG_LIMIT:-5}"
 PROJECT_ID="${MEMLAYER_PROJECT_ID:-}"
+AUTO_RECOVER="${MEMLAYER_WATCHDOG_AUTO_RECOVER:-false}"
 
 PATH_PART="/admin/runtime/self-check?search_query=${QUERY}&limit=${LIMIT}"
 if [[ -n "${PROJECT_ID}" ]]; then
@@ -12,7 +13,14 @@ if [[ -n "${PROJECT_ID}" ]]; then
 fi
 
 echo "memlayer_watchdog.sh: checking MemLayer health"
-"${SCRIPT_DIR}/memlayer_api.sh" GET /health >/dev/null
+if ! "${SCRIPT_DIR}/memlayer_api.sh" GET /health >/dev/null; then
+  if [[ "${AUTO_RECOVER}" == "true" ]]; then
+    echo "memlayer_watchdog.sh: health check failed, running recovery helper" >&2
+    "${SCRIPT_DIR}/memlayer_recover.sh"
+  else
+    exit 1
+  fi
+fi
 
 echo "memlayer_watchdog.sh: checking MemLayer runtime self-check"
 "${SCRIPT_DIR}/memlayer_api.sh" GET "${PATH_PART}"

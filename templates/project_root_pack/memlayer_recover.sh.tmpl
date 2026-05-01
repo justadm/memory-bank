@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_PATH="${SCRIPT_DIR}/.env.memlayer"
+
+if [[ -f "${ENV_PATH}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "${ENV_PATH}"
+  set +a
+fi
+
+RUNTIME_ROOT="${MEMLAYER_RUNTIME_ROOT:-/Users/just/apps/memory.bank}"
+DOCKER_BIN="${MEMLAYER_DOCKER_BIN:-/usr/local/bin/docker}"
+
+if [[ ! -d "${RUNTIME_ROOT}" ]]; then
+  echo "memlayer_recover.sh: runtime root does not exist: ${RUNTIME_ROOT}" >&2
+  exit 1
+fi
+
+echo "memlayer_recover.sh: restarting MemLayer API in ${RUNTIME_ROOT}"
+(
+  cd "${RUNTIME_ROOT}"
+  "${DOCKER_BIN}" compose restart api
+)
+
+echo "memlayer_recover.sh: waiting for API health"
+sleep "${MEMLAYER_RECOVER_WAIT_SECONDS:-2}"
+"${SCRIPT_DIR}/memlayer_api.sh" GET /health

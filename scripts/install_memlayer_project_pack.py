@@ -122,6 +122,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
     config_path = project_root / "memlayer.config.json"
     helper_path = project_root / "memlayer_api.sh"
     watchdog_path = project_root / "memlayer_watchdog.sh"
+    recover_path = project_root / "memlayer_recover.sh"
 
     if agents_path.exists():
         agents_text = agents_path.read_text(encoding="utf-8")
@@ -154,6 +155,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
     local_env_text = load_template("env.memlayer.tmpl")
     helper_text = load_template("memlayer_api.sh.tmpl")
     watchdog_text = load_template("memlayer_watchdog.sh.tmpl")
+    recover_text = load_template("memlayer_recover.sh.tmpl")
     config_payload = build_project_config(
         project_root,
         preferred_url=preferred_url,
@@ -169,8 +171,10 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
     write_json(config_path, config_payload, dry_run=dry_run)
     write_text(helper_path, helper_text, dry_run=dry_run)
     write_text(watchdog_path, watchdog_text, dry_run=dry_run)
+    write_text(recover_path, recover_text, dry_run=dry_run)
     chmod_executable(helper_path, dry_run=dry_run)
     chmod_executable(watchdog_path, dry_run=dry_run)
+    chmod_executable(recover_path, dry_run=dry_run)
 
     return {
         "project": project_name,
@@ -184,6 +188,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
             str(config_path),
             str(helper_path),
             str(watchdog_path),
+            str(recover_path),
         ],
     }
 

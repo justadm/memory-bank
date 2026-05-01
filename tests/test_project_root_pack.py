@@ -70,8 +70,10 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
     assert (project_root / "memlayer.config.json").exists()
     assert (project_root / "memlayer_api.sh").exists()
     assert (project_root / "memlayer_watchdog.sh").exists()
+    assert (project_root / "memlayer_recover.sh").exists()
     assert (project_root / "memlayer_api.sh").stat().st_mode & 0o111
     assert (project_root / "memlayer_watchdog.sh").stat().st_mode & 0o111
+    assert (project_root / "memlayer_recover.sh").stat().st_mode & 0o111
 
 
 def test_install_for_project_merges_existing_agents_file(tmp_path: Path) -> None:
