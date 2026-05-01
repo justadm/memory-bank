@@ -8,6 +8,7 @@ from app.database import get_db
 from app.repositories.link_repository import LinkRepository
 from app.repositories.memory_repository import MemoryRepository
 from app.repositories.metrics_repository import MetricsRepository
+from app.repositories.project_repository import ProjectRepository
 from app.security import require_admin_access
 from app.schemas.admin import (
     DecisionConflictListResponse,
@@ -16,6 +17,7 @@ from app.schemas.admin import (
     ImportConflictListResponse,
     ImportProjectSummaryListResponse,
     ObservabilitySummaryResponse,
+    ProjectDuplicateSummaryResponse,
     QualityReviewResolutionRequest,
     QualityReviewResolutionResponse,
     ReviewQueuesSummaryResponse,
@@ -28,7 +30,13 @@ router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(requir
 
 
 def get_admin_observability_service(db: Session = Depends(get_db)) -> AdminObservabilityService:
-    return AdminObservabilityService(MetricsRepository(db), MemoryRepository(db), LinkRepository(db), get_settings())
+    return AdminObservabilityService(
+        MetricsRepository(db),
+        MemoryRepository(db),
+        LinkRepository(db),
+        ProjectRepository(db),
+        get_settings(),
+    )
 
 
 @router.get("/observability/summary", response_model=ObservabilitySummaryResponse)
@@ -101,6 +109,15 @@ def get_import_summaries(
     principal=Depends(require_admin_access),
 ) -> ImportProjectSummaryListResponse:
     return ImportProjectSummaryListResponse(**service.get_import_summaries(limit=limit, principal=principal))
+
+
+@router.get("/projects/duplicates", response_model=ProjectDuplicateSummaryResponse)
+def get_project_duplicates(
+    limit: int = 20,
+    service: AdminObservabilityService = Depends(get_admin_observability_service),
+    principal=Depends(require_admin_access),
+) -> ProjectDuplicateSummaryResponse:
+    return ProjectDuplicateSummaryResponse(**service.get_project_duplicates(limit=limit, principal=principal))
 
 
 @router.get("/review-queues/summary", response_model=ReviewQueuesSummaryResponse)

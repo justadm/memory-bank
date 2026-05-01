@@ -124,7 +124,8 @@ const translations = {
       avgQuality: "Среднее качество",
       totalTasks: "Задачи",
       falsePositives: "False positives",
-      reviewResolution: "Review resolution"
+      reviewResolution: "Review resolution",
+      duplicateProjects: "Дубли проектов"
     },
     dashboardSections: {
       observability: "Observability Snapshot",
@@ -226,7 +227,9 @@ const translations = {
     dashboardAgentCount: "Агентов",
     dashboardOverdueCount: "Overdue",
     dashboardCompactionCount: "Compaction",
+    dashboardDuplicateCount: "Дубли",
     recentUpdated: "Последнее обновление",
+    duplicateProjectGroups: "Дубли проектов",
     settingsTitle: "Настройки консоли",
     settingsDescription: "Управление локальными параметрами фронтенда, темой, языком и API-адресом.",
     dashboardPageTitle: "Admin Dashboard",
@@ -292,6 +295,13 @@ const translations = {
       conflicts_detected_count: "Конфликты",
       last_imported_at: "Последний импорт"
     },
+    duplicateProjectHeaders: {
+      project_name: "Проект",
+      source_path: "Путь",
+      duplicate_count: "Дубликаты",
+      total_entries: "Записей",
+      latest_updated_at: "Последнее обновление"
+    },
     searchInTable: "Поиск по таблице",
     selectedCount: "выбрано",
     archiveSelected: "Архивировать выбранные",
@@ -339,7 +349,8 @@ const translations = {
       avgQuality: "Average quality",
       totalTasks: "Tasks",
       falsePositives: "False positives",
-      reviewResolution: "Review resolution"
+      reviewResolution: "Review resolution",
+      duplicateProjects: "Duplicate projects"
     },
     dashboardSections: {
       observability: "Observability Snapshot",
@@ -441,7 +452,9 @@ const translations = {
     dashboardAgentCount: "Agents",
     dashboardOverdueCount: "Overdue",
     dashboardCompactionCount: "Compaction",
+    dashboardDuplicateCount: "Duplicates",
     recentUpdated: "Recently updated",
+    duplicateProjectGroups: "Duplicate projects",
     settingsTitle: "Console settings",
     settingsDescription: "Manage local frontend preferences, theme, locale and API endpoint.",
     dashboardPageTitle: "Admin Dashboard",
@@ -507,6 +520,13 @@ const translations = {
       conflicts_detected_count: "Conflicts",
       last_imported_at: "Last import"
     },
+    duplicateProjectHeaders: {
+      project_name: "Project",
+      source_path: "Path",
+      duplicate_count: "Duplicates",
+      total_entries: "Entries",
+      latest_updated_at: "Last updated"
+    },
     searchInTable: "Search table",
     selectedCount: "selected",
     archiveSelected: "Archive selected",
@@ -533,6 +553,7 @@ const state = {
   decisionConflicts: [],
   reviewQueues: null,
   importSummaries: [],
+  projectDuplicates: null,
   lastImportResult: null,
   taskLogs: [],
   memoryItems: [],
@@ -558,6 +579,7 @@ const state = {
     dashboardRecentProjects: { page: 1, pageSize: 5, sortKey: "updated_at", sortDir: "desc" },
     dashboardReviewQueue: { page: 1, pageSize: 5, sortKey: "created_at", sortDir: "desc" },
     dashboardImportSummaries: { page: 1, pageSize: 6, sortKey: "last_imported_at", sortDir: "desc" },
+    dashboardProjectDuplicates: { page: 1, pageSize: 6, sortKey: "latest_updated_at", sortDir: "desc" },
     reviewImportSummaries: { page: 1, pageSize: 8, sortKey: "last_imported_at", sortDir: "desc" }
   },
   forms: {
@@ -895,13 +917,14 @@ async function loadDashboardData() {
     params.set("experiment_id", state.forms.dashboardExperimentId);
   }
   const query = params.toString() ? `?${params.toString()}` : "";
-  const [metrics, observability, taskSummary, conflicts, decisionConflicts, reviewQueues] = await Promise.all([
+  const [metrics, observability, taskSummary, conflicts, decisionConflicts, reviewQueues, projectDuplicates] = await Promise.all([
     apiRequest(`/metrics/overview${query}`),
     apiRequest("/admin/observability/summary"),
     apiRequest(`/task-logs/summary${query}`),
     apiRequest(`/admin/import-conflicts?limit=5${state.selectedProjectId ? `&project_id=${encodeURIComponent(state.selectedProjectId)}` : ""}`),
     apiRequest(`/admin/decision-conflicts?limit=5${state.selectedProjectId ? `&project_id=${encodeURIComponent(state.selectedProjectId)}` : ""}`),
-    apiRequest(`/admin/review-queues/summary?limit=6${state.selectedProjectId ? `&project_id=${encodeURIComponent(state.selectedProjectId)}` : ""}`)
+    apiRequest(`/admin/review-queues/summary?limit=6${state.selectedProjectId ? `&project_id=${encodeURIComponent(state.selectedProjectId)}` : ""}`),
+    apiRequest("/admin/projects/duplicates?limit=10")
   ]);
   const importSummaries = await apiRequest("/admin/imports/summary?limit=6");
   state.metrics = metrics;
@@ -911,6 +934,7 @@ async function loadDashboardData() {
   state.decisionConflicts = decisionConflicts.items || [];
   state.reviewQueues = reviewQueues;
   state.importSummaries = importSummaries.items || [];
+  state.projectDuplicates = projectDuplicates;
 }
 
 async function loadProjectFocusData() {
@@ -1020,6 +1044,7 @@ async function loadCurrentView() {
       state.conflicts = [];
       state.decisionConflicts = [];
       state.reviewQueues = null;
+      state.projectDuplicates = null;
       state.taskLogs = [];
       state.memoryItems = [];
       state.memorySearchResults = [];
@@ -1120,6 +1145,10 @@ function columnLabel(column) {
   if (compactionLabel !== `compactionHeaders.${column}`) {
     return compactionLabel;
   }
+  const duplicateProjectLabel = t(`duplicateProjectHeaders.${column}`);
+  if (duplicateProjectLabel !== `duplicateProjectHeaders.${column}`) {
+    return duplicateProjectLabel;
+  }
   return t(`headers.${column}`);
 }
 
@@ -1216,6 +1245,7 @@ function renderDashboardView() {
     Number(reviewQueues.decision_conflicts_count || 0) +
     Number(reviewQueues.review_overdue_count || 0) +
     Number(reviewQueues.quality_review_required_count || 0);
+  const duplicateProjects = state.projectDuplicates || { duplicate_groups_count: 0, duplicate_projects_count: 0, items: [] };
   const recentProjects = [...state.projects]
     .sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime())
     .slice(0, 5);
@@ -1319,6 +1349,11 @@ function renderDashboardView() {
             <div class="summary-value">${escapeHtml(formatNumber(reviewQueues.compaction_candidate_clusters_count || 0))}</div>
             <div class="summary-copy">${escapeHtml(t("compactionCandidates"))}</div>
           </div>
+          <div class="summary-tile">
+            <div class="summary-kicker">${escapeHtml(t("dashboardDuplicateCount"))}</div>
+            <div class="summary-value">${escapeHtml(formatNumber(duplicateProjects.duplicate_projects_count || 0))}</div>
+            <div class="summary-copy">${escapeHtml(t("dashboardCards.duplicateProjects"))}</div>
+          </div>
         </div>
       </article>
 
@@ -1378,6 +1413,13 @@ function renderDashboardView() {
               data: { projectId: item.project_id, sourcePath: item.source_path || "" }
             }
           ]
+        })}
+      </section>
+
+      <section class="table-card" style="margin-top:18px;">
+        <h3>${escapeHtml(t("duplicateProjectGroups"))}</h3>
+        ${renderTable((duplicateProjects.items || []).slice(0, 6), ["project_name", "source_path", "duplicate_count", "total_entries", "latest_updated_at"], {
+          tableKey: "dashboardProjectDuplicates"
         })}
       </section>
     </section>

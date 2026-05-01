@@ -48,6 +48,7 @@ def test_console_assets_include_tenant_and_search_controls(client):
     assert "isEmbeddedConsoleMode" in response.text
     assert "/admin/review-queues/summary" in response.text
     assert "/admin/decision-conflicts/resolve" in response.text
+    assert "/admin/projects/duplicates" in response.text
     assert "/maintenance/compaction/apply" in response.text
     assert "resolve-decision-supersede" in response.text
     assert "apply-compaction" in response.text
@@ -1176,6 +1177,38 @@ def test_admin_observability_summary_endpoint(client):
     assert body["top_agents"][0]["total_tasks"] == 2
     assert body["top_experiments"][0]["key"] == "obs-exp-a"
     assert body["top_experiments"][0]["total_tasks"] == 2
+
+
+def test_admin_project_duplicates_endpoint(client, tmp_path: Path):
+    source_path = str(tmp_path.resolve())
+    first = client.post(
+        "/projects",
+        json={"name": "BuildGuard", "metadata": {"source_path": source_path}},
+    )
+    assert first.status_code == 201
+    second = client.post(
+        "/projects",
+        json={"name": "BuildGuard", "metadata": {"source_path": source_path}},
+    )
+    assert second.status_code == 201
+
+    first_id = first.json()["id"]
+    second_id = second.json()["id"]
+
+    client.post("/memory", json={"type": "artifact", "content": "Artifact A", "project_id": first_id})
+    client.post("/memory", json={"type": "artifact", "content": "Artifact B", "project_id": second_id})
+
+    response = client.get("/admin/projects/duplicates", params={"limit": 10})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["duplicate_groups_count"] >= 1
+    assert body["duplicate_projects_count"] >= 2
+    assert any(
+        item["project_name"] == "BuildGuard"
+        and item["duplicate_count"] == 2
+        and item["source_path"] == source_path
+        for item in body["items"]
+    )
 
 
 def test_project_import_scan_endpoint(client):

@@ -5,9 +5,11 @@ from fastapi import HTTPException, status
 
 from app.config import Settings
 from app.models.enums import MemoryType
+from app.models.project import Project
 from app.repositories.link_repository import LinkRepository
 from app.repositories.memory_repository import MemoryRepository
 from app.repositories.metrics_repository import MetricsRepository
+from app.repositories.project_repository import ProjectRepository
 from app.security import AuthPrincipal
 from app.services.compaction_service import CompactionService
 
@@ -18,11 +20,13 @@ class AdminObservabilityService:
         repository: MetricsRepository,
         memory_repository: MemoryRepository,
         link_repository: LinkRepository,
+        project_repository: ProjectRepository,
         settings: Settings,
     ):
         self.repository = repository
         self.memory_repository = memory_repository
         self.compaction_service = CompactionService(memory_repository, link_repository)
+        self.project_repository = project_repository
         self.settings = settings
 
     def get_summary(self, *, principal: AuthPrincipal | None = None) -> dict:
@@ -66,6 +70,51 @@ class AdminObservabilityService:
     def get_import_summaries(self, *, limit: int = 20, principal: AuthPrincipal | None = None) -> dict:
         tenant_ids = principal.tenant_ids if principal else None
         return {"items": self.memory_repository.list_import_project_summaries(limit=limit, tenant_ids=tenant_ids)}
+
+    def get_project_duplicates(self, *, limit: int = 20, principal: AuthPrincipal | None = None) -> dict:
+        rows = self.project_repository.list_with_entry_counts()
+        allowed_tenants = principal.tenant_ids if principal else None
+        project_rows: list[tuple[Project, int]] = []
+        for project, entry_count in rows:
+            if allowed_tenants is not None and project.tenant_id not in allowed_tenants:
+                continue
+            project_rows.append((project, entry_count))
+
+        groups: dict[tuple[str, str | None], list[tuple[Project, int]]] = {}
+        for project, entry_count in project_rows:
+            metadata = project.metadata_ if isinstance(project.metadata_, dict) else {}
+            source_path = str(metadata.get("source_path")) if metadata.get("source_path") else None
+            key = (project.name, source_path)
+            groups.setdefault(key, []).append((project, entry_count))
+
+        items: list[dict] = []
+        duplicate_projects_count = 0
+        for (project_name, source_path), grouped_projects in groups.items():
+            if len(grouped_projects) < 2:
+                continue
+            duplicate_projects_count += len(grouped_projects)
+            sorted_group = sorted(
+                grouped_projects,
+                key=lambda item: ((item[0].updated_at or item[0].created_at), item[1]),
+                reverse=True,
+            )
+            items.append(
+                {
+                    "project_name": project_name,
+                    "source_path": source_path,
+                    "project_ids": [item[0].id for item in sorted_group],
+                    "duplicate_count": len(sorted_group),
+                    "total_entries": sum(item[1] for item in sorted_group),
+                    "latest_updated_at": sorted_group[0][0].updated_at or sorted_group[0][0].created_at,
+                }
+            )
+
+        items.sort(key=lambda item: (item["duplicate_count"], item["latest_updated_at"]), reverse=True)
+        return {
+            "duplicate_groups_count": len(items),
+            "duplicate_projects_count": duplicate_projects_count,
+            "items": items[:limit],
+        }
 
     def get_review_queues_summary(
         self,

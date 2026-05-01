@@ -135,6 +135,21 @@ class ImportProjectSummaryListResponse(BaseModel):
     items: list[ImportProjectSummaryItemResponse]
 
 
+class ProjectDuplicateGroupItemResponse(BaseModel):
+    project_name: str
+    source_path: str | None
+    project_ids: list[uuid.UUID]
+    duplicate_count: int
+    total_entries: int
+    latest_updated_at: datetime
+
+
+class ProjectDuplicateSummaryResponse(BaseModel):
+    duplicate_groups_count: int
+    duplicate_projects_count: int
+    items: list[ProjectDuplicateGroupItemResponse]
+
+
 class RuntimeSelfCheckResponse(BaseModel):
     status: str
     environment: str
