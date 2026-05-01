@@ -1461,6 +1461,65 @@ def test_reimport_project_scan_endpoint(client, tmp_path: Path):
     assert len(listed.json()["items"]) >= 1
 
 
+def test_import_project_scan_reuses_existing_project_by_source_path(client, tmp_path: Path):
+    source_path = str(tmp_path.resolve())
+    first = client.post(
+        "/imports/project-scan",
+        json={
+            "project": {
+                "name": "BuildGuard",
+                "description": "Initial import",
+                "metadata": {"source_path": source_path},
+            },
+            "import_event": {
+                "title": "Initial import",
+                "content": "Imported initial BuildGuard handoff materials.",
+            },
+            "entries": [
+                {
+                    "ref": "artifact-readme",
+                    "type": "artifact",
+                    "title": "README.md",
+                    "content": "Initial project artifact.",
+                }
+            ],
+            "links": [],
+            "existing_entry_mode": "update",
+        },
+    )
+    assert first.status_code == 201
+    first_project_id = first.json()["project"]["id"]
+
+    second = client.post(
+        "/imports/project-scan",
+        json={
+            "project": {
+                "name": "BuildGuard",
+                "description": "Updated import",
+                "metadata": {"source_path": source_path},
+            },
+            "import_event": {
+                "title": "Second import",
+                "content": "Imported richer BuildGuard context.",
+            },
+            "entries": [
+                {
+                    "ref": "artifact-readme",
+                    "type": "artifact",
+                    "title": "README.md",
+                    "content": "Updated project artifact.",
+                }
+            ],
+            "links": [],
+            "existing_entry_mode": "update",
+        },
+    )
+    assert second.status_code == 201
+    body = second.json()
+    assert body["project"]["id"] == first_project_id
+    assert body["entries_updated"] >= 1
+
+
 def test_auth_protects_write_endpoints_when_enabled(client, monkeypatch):
     monkeypatch.setenv("AUTH_ENABLED", "true")
     monkeypatch.setenv("AUTH_API_KEYS", "writer-key:write|import,reader-key:read,admin-key:write|import|admin")

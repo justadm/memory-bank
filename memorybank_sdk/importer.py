@@ -22,6 +22,8 @@ IMPORTANT_FILENAMES = [
     ".env.example",
 ]
 
+IMPORTANT_DOC_DIRS = ("docs", "mvp-handoff")
+
 TEXT_FILE_SUFFIXES = {
     ".py",
     ".md",
@@ -73,6 +75,7 @@ def build_project_import_payload(
     entries.extend(_derive_risks(files))
     entries.extend(_derive_notes(files, root))
     entries.extend(_derive_tasks(root))
+    entries.extend(_derive_doc_backlog_tasks(files))
 
     refs = {item["ref"] for item in entries}
     if "artifact-docker-compose-yml" in refs and "decision-postgresql-primary" in refs:
@@ -167,6 +170,16 @@ def _read_important_files(root: Path) -> dict[str, str]:
     if tests_dir.exists():
         files["tests/"] = _summarize_tests_dir(tests_dir)
 
+    for directory in IMPORTANT_DOC_DIRS:
+        doc_dir = root / directory
+        if not doc_dir.exists() or not doc_dir.is_dir():
+            continue
+        for path in sorted(doc_dir.rglob("*.md")):
+            if any(part in EXCLUDED_DIRS for part in path.parts):
+                continue
+            relative = str(path.relative_to(root))
+            files[relative] = _read_text(path)
+
     return files
 
 
@@ -179,6 +192,9 @@ def _looks_like_project(path: Path) -> bool:
             return True
     if (path / "tests").exists():
         return True
+    for directory in IMPORTANT_DOC_DIRS:
+        if any((path / directory).rglob("*.md")):
+            return True
     return False
 
 
@@ -254,6 +270,72 @@ def _derive_decisions(files: dict[str, str]) -> list[dict[str, Any]]:
                 "metadata": {"evidence": _evidence(files, ["go.mod"]), "confidence": 0.88},
             }
         )
+    if "pre-build decision engine" in combined or "not an ai pm" in combined:
+        decisions.append(
+            {
+                "ref": "decision-prebuild-decision-engine",
+                "type": "decision",
+                "title": "Position BuildGuard as a pre-build decision engine",
+                "content": "Project docs position the product as a pre-build decision engine that stress-tests ideas before generating implementation artifacts, explicitly not as an AI PM or generic PRD generator.",
+                "importance": 5,
+                "metadata": {"evidence": _evidence_prefix(files, ["docs/decision-log.md", "docs/v1-technical-blueprint.md", "mvp-handoff/03-mvp-development-spec.md"]), "confidence": 0.95},
+            }
+        )
+    if "stress_test -> questions -> refine -> prd -> tasks -> markdown" in combined:
+        decisions.append(
+            {
+                "ref": "decision-staged-llm-pipeline",
+                "type": "decision",
+                "title": "Use a staged LLM pipeline",
+                "content": "Project docs define a staged pipeline `stress_test -> questions -> refine -> prd -> tasks -> markdown` instead of one large generation call.",
+                "importance": 5,
+                "metadata": {"evidence": _evidence_prefix(files, ["docs/decision-log.md", "docs/v1-technical-blueprint.md"]), "confidence": 0.94},
+            }
+        )
+    if "structured output is mandatory" in combined or ("zod" in combined and "schema" in combined):
+        decisions.append(
+            {
+                "ref": "decision-schema-first-runtime",
+                "type": "decision",
+                "title": "Use a schema-first runtime",
+                "content": "Every LLM stage is expected to parse against dedicated schemas with structured output treated as mandatory rather than best-effort.",
+                "importance": 5,
+                "metadata": {"evidence": _evidence_prefix(files, ["docs/decision-log.md", "docs/v1-technical-blueprint.md"]), "confidence": 0.93},
+            }
+        )
+    if "single guided flow" in combined or "one main screen" in combined:
+        decisions.append(
+            {
+                "ref": "decision-single-screen-guided-ux",
+                "type": "decision",
+                "title": "Prefer a single-screen guided UX",
+                "content": "The docs recommend one guided flow with progressive steps instead of splitting the product into multiple disconnected pages.",
+                "importance": 4,
+                "metadata": {"evidence": _evidence_prefix(files, ["docs/decision-log.md", "docs/v1-technical-blueprint.md", "mvp-handoff/03-mvp-development-spec.md"]), "confidence": 0.9},
+            }
+        )
+    if "use sqlite first" in combined or ("sqlite" in combined and "drizzle" in combined):
+        decisions.append(
+            {
+                "ref": "decision-sqlite-first-mvp",
+                "type": "decision",
+                "title": "Start MVP storage with SQLite",
+                "content": "Current handoff docs prefer SQLite first for the MVP to reduce operational overhead, with Drizzle as the ORM layer.",
+                "importance": 4,
+                "metadata": {"evidence": _evidence_prefix(files, ["docs/decision-log.md", "docs/v1-technical-blueprint.md"]), "confidence": 0.9},
+            }
+        )
+    if "next.js" in combined and "app router" in combined:
+        decisions.append(
+            {
+                "ref": "decision-nextjs-app-router",
+                "type": "decision",
+                "title": "Use Next.js App Router as the application shell",
+                "content": "The recommended V1 architecture is a Next.js App Router application with TypeScript, Tailwind, and route-driven analysis flows.",
+                "importance": 4,
+                "metadata": {"evidence": _evidence_prefix(files, ["docs/v1-technical-blueprint.md", "mvp-handoff/03-mvp-development-spec.md"]), "confidence": 0.9},
+            }
+        )
     return decisions
 
 
@@ -315,6 +397,39 @@ def _derive_constraints(files: dict[str, str]) -> list[dict[str, Any]]:
                 "metadata": {"confidence": 0.85},
             }
         )
+    if "do not add authentication in v1" in combined or "anonymous session persistence" in combined:
+        constraints.append(
+            {
+                "ref": "constraint-anonymous-session-v1",
+                "type": "constraint",
+                "title": "Keep V1 authentication-free",
+                "content": "Current MVP direction favors anonymous session persistence and explicitly avoids full authentication in V1.",
+                "importance": 4,
+                "metadata": {"confidence": 0.92},
+            }
+        )
+    if "buildguard.loc" in combined:
+        constraints.append(
+            {
+                "ref": "constraint-local-loc-domain",
+                "type": "constraint",
+                "title": "Develop behind a local .loc HTTPS domain",
+                "content": "The project is expected to run behind `BuildGuard.loc` using the existing machine-wide `.loc` nginx and dnsmasq setup.",
+                "importance": 3,
+                "metadata": {"confidence": 0.88},
+            }
+        )
+    if "use docker early" in combined or "keep docker early" in combined or "docker compose" in combined:
+        constraints.append(
+            {
+                "ref": "constraint-docker-early",
+                "type": "constraint",
+                "title": "Keep the application container-friendly from the start",
+                "content": "The handoff docs expect Docker and Docker Compose to be introduced early so local and future staging environments stay aligned.",
+                "importance": 3,
+                "metadata": {"confidence": 0.86},
+            }
+        )
     return constraints
 
 
@@ -342,6 +457,28 @@ def _derive_risks(files: dict[str, str]) -> list[dict[str, Any]]:
                 "content": "Project configuration publishes network services and should be reviewed for accidental port exposure or permissive defaults.",
                 "importance": 3,
                 "metadata": {"confidence": 0.82},
+            }
+        )
+    if "unstable json" in combined or "malformed json" in combined or "structured output is mandatory" in combined:
+        risks.append(
+            {
+                "ref": "risk-structured-output-failures",
+                "type": "risk",
+                "title": "Structured LLM output can fail parsing",
+                "content": "The handoff docs explicitly call unstable or malformed JSON the main technical risk, so parse/repair behavior must stay observable and recoverable.",
+                "importance": 5,
+                "metadata": {"confidence": 0.94},
+            }
+        )
+    if "fatal assumptions" in combined or "missing data" in combined or ("raw idea" in combined and "clarification questions" in combined):
+        risks.append(
+            {
+                "ref": "risk-founder-input-ambiguity",
+                "type": "risk",
+                "title": "Raw founder input may be incomplete or misleading",
+                "content": "The product flow depends on surfacing fatal assumptions, missing data, and clarification questions before downstream PRD generation.",
+                "importance": 4,
+                "metadata": {"confidence": 0.88},
             }
         )
     return risks
@@ -413,6 +550,29 @@ def _derive_tasks(root: Path) -> list[dict[str, Any]]:
                 "metadata": {"path": item["path"], "line": item["line"], "confidence": 0.8},
             }
         )
+    return tasks
+
+
+def _derive_doc_backlog_tasks(files: dict[str, str]) -> list[dict[str, Any]]:
+    tasks: list[dict[str, Any]] = []
+    seen_refs: set[str] = set()
+    for path, content in files.items():
+        if not path.endswith(".md"):
+            continue
+        for ref, title, body in _extract_epics_from_markdown(path, content):
+            if ref in seen_refs:
+                continue
+            seen_refs.add(ref)
+            tasks.append(
+                {
+                    "ref": ref,
+                    "type": "task",
+                    "title": title,
+                    "content": body,
+                    "importance": 4,
+                    "metadata": {"path": path, "confidence": 0.88},
+                }
+            )
     return tasks
 
 
@@ -498,6 +658,11 @@ def _evidence(files: dict[str, str], candidates: list[str]) -> list[str]:
     return [name for name in candidates if name in files]
 
 
+def _evidence_prefix(files: dict[str, str], candidates: list[str]) -> list[str]:
+    available = set(files)
+    return [name for name in candidates if name in available]
+
+
 def _ref(prefix: str, name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     return f"{prefix}-{slug}"
@@ -509,6 +674,39 @@ def _compact_text(text: str) -> str:
 
 def _truncate(text: str, limit: int = 500) -> str:
     return text if len(text) <= limit else f"{text[: limit - 3]}..."
+
+
+def _extract_epics_from_markdown(path: str, content: str) -> list[tuple[str, str, str]]:
+    lines = content.splitlines()
+    epics: list[tuple[str, str, str]] = []
+    current_heading: str | None = None
+    buffer: list[str] = []
+
+    def flush() -> None:
+        nonlocal current_heading, buffer
+        if not current_heading:
+            return
+        body_lines = [line.strip() for line in buffer if line.strip()]
+        body = _truncate(" ".join(body_lines), 500)
+        ref = _ref("task", f"{path}-{current_heading}")
+        epics.append((ref, current_heading, body or f"Backlog item imported from {path}."))
+        current_heading = None
+        buffer = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("### EPIC-"):
+            flush()
+            current_heading = stripped.lstrip("#").strip()
+            continue
+        if current_heading:
+            if stripped.startswith("### ") or stripped.startswith("## "):
+                flush()
+                continue
+            buffer.append(stripped)
+
+    flush()
+    return epics
 
 
 def _read_text(path: Path) -> str:

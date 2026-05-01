@@ -15,7 +15,7 @@ from app.security import AuthPrincipal
 from app.schemas.imports import ProjectImportRequest
 from app.schemas.links import LinkCreate
 from app.schemas.memory import MemoryCreate, MemoryUpdate
-from app.schemas.projects import ProjectCreate
+from app.schemas.projects import ProjectCreate, ProjectUpdate
 from app.services.conflict_detector import ConflictDetector
 from app.services.memory_service import MemoryService, ProjectService
 from memorybank_sdk.importer import build_project_import_payload
@@ -231,8 +231,50 @@ class ImportService:
         principal: AuthPrincipal | None = None,
     ) -> Project:
         if project_payload:
+            existing = self._find_existing_project_for_import(project_payload, principal=principal)
+            if existing:
+                desired_metadata = dict(project_payload.metadata)
+                existing_metadata = dict(existing.metadata_ or {})
+                changed = False
+                for key, value in desired_metadata.items():
+                    if existing_metadata.get(key) != value:
+                        existing_metadata[key] = value
+                        changed = True
+                description = project_payload.description
+                if changed or (description and description != existing.description):
+                    return self.project_service.update_project(
+                        existing.id,
+                        ProjectUpdate(description=description or existing.description, metadata=existing_metadata),
+                        principal=principal,
+                    )
+                return existing
             return self.project_service.create_project(project_payload, principal=principal)
         return self.project_service.get_project(project_id, principal=principal)
+
+    def _find_existing_project_for_import(
+        self,
+        project_payload: ProjectCreate,
+        *,
+        principal: AuthPrincipal | None = None,
+    ) -> Project | None:
+        source_path = None
+        if isinstance(project_payload.metadata, dict):
+            raw_source_path = project_payload.metadata.get("source_path")
+            source_path = str(raw_source_path) if raw_source_path else None
+
+        candidates = self.project_service.list_projects(principal=principal)
+
+        if source_path:
+            for project in candidates:
+                metadata = project.metadata_ if isinstance(project.metadata_, dict) else {}
+                if str(metadata.get("source_path") or "") == source_path:
+                    return project
+
+        for project in candidates:
+            if project.name == project_payload.name:
+                return project
+
+        return None
 
     def _mask_text(self, value: str | None) -> str | None:
         if value is None:

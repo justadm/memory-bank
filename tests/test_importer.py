@@ -66,3 +66,54 @@ def test_build_project_import_payload_detects_node_go_and_monorepo_signals(tmp_p
     assert "note-go-module" in refs
     assert "risk-env-secrets" not in refs
     assert "artifact-src-index-ts" in refs
+
+
+def test_build_project_import_payload_extracts_doc_driven_handoff_signals(tmp_path):
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    handoff_dir = tmp_path / "mvp-handoff"
+    handoff_dir.mkdir()
+
+    (docs_dir / "decision-log.md").write_text(
+        "# Decision Log\n\n"
+        "- BuildGuard is a pre-build decision engine, not an AI PM.\n"
+        "- Use a staged pipeline: stress_test -> questions -> refine -> prd -> tasks -> markdown.\n"
+        "- Use SQLite first, not Postgres.\n"
+        "- Do not add authentication in V1.\n",
+        encoding="utf-8",
+    )
+    (docs_dir / "v1-technical-blueprint.md").write_text(
+        "# Blueprint\n\n"
+        "Use Next.js App Router with TypeScript, Tailwind, SQLite, Drizzle, and Zod.\n"
+        "Structured output is mandatory.\n"
+        "Develop behind BuildGuard.loc and keep Docker early.\n",
+        encoding="utf-8",
+    )
+    (handoff_dir / "03-mvp-development-spec.md").write_text(
+        "The user starts from a raw idea and answers clarification questions before PRD generation.\n\n"
+        "### EPIC-001: Project setup\n"
+        "- Initialize Next.js TypeScript app\n"
+        "- Add Tailwind\n\n"
+        "### EPIC-002: Idea intake\n"
+        "- Create homepage input form\n"
+        "- Redirect to analysis page\n",
+        encoding="utf-8",
+    )
+
+    payload = build_project_import_payload(tmp_path, project_name="BuildGuard")
+    refs = {item["ref"] for item in payload["entries"]}
+
+    assert "artifact-docs-decision-log-md" in refs
+    assert "artifact-docs-v1-technical-blueprint-md" in refs
+    assert "artifact-mvp-handoff-03-mvp-development-spec-md" in refs
+    assert "decision-prebuild-decision-engine" in refs
+    assert "decision-staged-llm-pipeline" in refs
+    assert "decision-schema-first-runtime" in refs
+    assert "decision-nextjs-app-router" in refs
+    assert "constraint-anonymous-session-v1" in refs
+    assert "constraint-local-loc-domain" in refs
+    assert "constraint-docker-early" in refs
+    assert "risk-structured-output-failures" in refs
+    assert "risk-founder-input-ambiguity" in refs
+    assert any(item["title"] == "EPIC-001: Project setup" for item in payload["entries"])
+    assert any(item["title"] == "EPIC-002: Idea intake" for item in payload["entries"])

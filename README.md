@@ -107,6 +107,7 @@ PYTHONPATH=$PWD .venv313/bin/python scripts/install_memlayer_project_pack.py \
 
 Installer не затирает пользовательский текст в уже существующих `AGENTS.md`: он только добавляет или обновляет managed-блок между маркерами `MEMLAYER_ROOT_PACK`.
 Если в проекте уже есть `.env.memlayer`, installer его сохраняет и не перезаписывает.
+Importer теперь также умеет поднимать doc-driven handoff проекты: `docs/*.md` и `mvp-handoff/*.md` превращаются в `artifact` entries, backlog `EPIC-*` headings импортируются как `task`, а product/architecture decisions вроде staged LLM pipeline, schema-first runtime и local `.loc` constraints поднимаются в память автоматически.
 
 ## Runtime Smoke
 
