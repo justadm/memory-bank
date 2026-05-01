@@ -8,6 +8,20 @@ from pathlib import Path
 from memorybank_sdk import DEFAULT_MEMORYBANK_URL, MemoryBankClient, build_directory_import_payloads, build_project_import_payload
 
 
+def persist_project_id(project_root: Path, project_id: str) -> None:
+    config_path = project_root / "memlayer.config.json"
+    if not config_path.exists():
+        return
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return
+    if payload.get("project_id") == project_id:
+        return
+    payload["project_id"] = project_id
+    config_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Scan a local project and import it into Memory Bank.")
     parser.add_argument("--project-root", default=".", help="Path to the project that should be scanned.")
@@ -45,6 +59,11 @@ def main() -> None:
             return
         with MemoryBankClient(args.memorybank_url, api_key=api_key) as client:
             results = [client.import_project_scan(**payload) for payload in payloads]
+        for payload, result in zip(payloads, results, strict=False):
+            source_path = payload.get("project", {}).get("metadata", {}).get("source_path")
+            project_id = result.get("project", {}).get("id")
+            if source_path and project_id:
+                persist_project_id(Path(source_path), project_id)
         print(json.dumps(results, indent=2, ensure_ascii=False, default=str))
         return
 
@@ -64,6 +83,7 @@ def main() -> None:
 
     with MemoryBankClient(args.memorybank_url, api_key=api_key) as client:
         result = client.import_project_scan(**payload)
+    persist_project_id(Path(args.project_root), result["project"]["id"])
 
     print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
 

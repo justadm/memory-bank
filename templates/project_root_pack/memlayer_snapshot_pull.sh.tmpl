@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_PATH="${SCRIPT_DIR}/memlayer.config.json"
+ENV_PATH="${SCRIPT_DIR}/.env.memlayer"
+JSON_OUT="${SCRIPT_DIR}/memlayer.snapshot.json"
+MD_OUT="${SCRIPT_DIR}/memlayer.snapshot.md"
+
+if [[ -f "${ENV_PATH}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "${ENV_PATH}"
+  set +a
+fi
+
+QUERY="${1:-${MEMLAYER_SNAPSHOT_QUERY:-}}"
+LIMIT="${MEMLAYER_SNAPSHOT_LIMIT:-12}"
+
+PAYLOAD="$(python3 - "$CONFIG_PATH" "$QUERY" "$LIMIT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+config_path, query_arg, limit_arg = sys.argv[1], sys.argv[2], sys.argv[3]
+data = json.loads(Path(config_path).read_text(encoding="utf-8"))
+project_name = data.get("project_name") or "project"
+project_id = data.get("project_id")
+query = query_arg or f"{project_name} architecture decisions constraints risks tasks"
+payload = {
+    "query": query,
+    "project_id": project_id,
+    "scope": "project" if project_id else "global",
+    "limit": int(limit_arg),
+}
+print(json.dumps(payload, ensure_ascii=False))
+PY
+)"
+
+TMP_JSON="${JSON_OUT}.tmp"
+"${SCRIPT_DIR}/memlayer_api.sh" POST /context/build "${PAYLOAD}" > "${TMP_JSON}"
+mv "${TMP_JSON}" "${JSON_OUT}"
+
+python3 - "${JSON_OUT}" "${MD_OUT}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+json_path, md_path = sys.argv[1], sys.argv[2]
+data = json.loads(Path(json_path).read_text(encoding="utf-8"))
+
+def render_bucket(title: str, items: list[dict]) -> list[str]:
+    lines = [f"## {title}", ""]
+    if not items:
+        lines.append("- none")
+        lines.append("")
+        return lines
+    for item in items[:8]:
+        item_title = item.get("title") or item.get("id") or "untitled"
+        preview = item.get("content_preview") or item.get("content") or ""
+        preview = " ".join(str(preview).split())[:220]
+        lines.append(f"- **{item_title}**")
+        if preview:
+            lines.append(f"  - {preview}")
+    lines.append("")
+    return lines
+
+context = data.get("context", {})
+summary = data.get("summary", {})
+lines = [
+    "# MemLayer Snapshot",
+    "",
+    f"- generated_at: {data.get('generated_at', 'unknown')}",
+    f"- query: {data.get('query', 'unknown')}",
+    f"- project_id: {data.get('project_id', 'none')}",
+    f"- summary: {json.dumps(summary, ensure_ascii=False)}",
+    "",
+]
+lines.extend(render_bucket("Active Decisions", context.get("active_decisions", [])))
+lines.extend(render_bucket("Constraints", context.get("constraints", [])))
+lines.extend(render_bucket("Risks", context.get("risks", [])))
+lines.extend(render_bucket("Artifacts", context.get("artifacts", [])))
+lines.extend(render_bucket("Tasks", context.get("tasks", [])))
+lines.extend(render_bucket("Notes", context.get("notes", [])))
+Path(md_path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
+
+echo "memlayer_snapshot_pull.sh: wrote ${JSON_OUT} and ${MD_OUT}"

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SNAPSHOT_MD="${SCRIPT_DIR}/memlayer.snapshot.md"
+REFRESH_MODE="false"
+
+if [[ "${1:-}" == "--refresh" ]]; then
+  REFRESH_MODE="true"
+  shift
+fi
+
+QUERY="${1:-}"
+
+print_snapshot() {
+  cat "${SNAPSHOT_MD}"
+}
+
+if [[ -f "${SNAPSHOT_MD}" && "${REFRESH_MODE}" != "true" ]]; then
+  print_snapshot
+  exit 0
+fi
+
+if "${SCRIPT_DIR}/memlayer_snapshot_pull.sh" "${QUERY}"; then
+  print_snapshot
+  exit 0
+fi
+
+if [[ -f "${SNAPSHOT_MD}" ]]; then
+  echo "memlayer_context.sh: live MemLayer unavailable, using cached snapshot ${SNAPSHOT_MD}" >&2
+  print_snapshot
+  exit 0
+fi
+
+echo "memlayer_context.sh: neither live MemLayer nor local snapshot is available" >&2
+exit 1

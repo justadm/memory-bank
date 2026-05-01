@@ -17,12 +17,14 @@ This repository is expected to use MemLayer as its shared working memory.
 ## Required Agent Workflow
 
 1. Read `memlayer.config.json`.
-2. Prefer `./memlayer_api.sh` for MemLayer reads and writes instead of raw `curl`, because it retries localhost with a short backoff and then automatically retries through the fallback URL when localhost is temporarily unavailable.
-3. Check auth status with `GET /auth/me` if an API key is configured.
-4. Before coding or debugging, fetch relevant memory for the current task.
-5. Reuse prior decisions, constraints, risks, and artifacts whenever possible.
-6. After meaningful progress, write back new memory entries and important links.
-7. If repository structure or architecture changed, reimport the project into MemLayer.
+2. For pre-task reading, prefer `./memlayer_context.sh` so the agent can always read the local project snapshot before starting work.
+3. Use `./memlayer_context.sh --refresh "your query"` only when you explicitly want to refresh that snapshot from live MemLayer.
+4. Use `./memlayer_api.sh` for direct API reads/writes when you explicitly need raw endpoint access.
+5. Check auth status with `GET /auth/me` if an API key is configured.
+6. Before coding or debugging, fetch relevant memory for the current task.
+7. Reuse prior decisions, constraints, risks, and artifacts whenever possible.
+8. After meaningful progress, write back new memory entries and important links.
+9. If repository structure or architecture changed, reimport the project into MemLayer.
 
 ## Suggested Memory Types
 
@@ -83,6 +85,18 @@ Search memory:
 ./memlayer_api.sh GET "/memory/search?query=architecture&mode=hybrid&limit=8"
 ```
 
+Preferred context read for agents:
+
+```bash
+./memlayer_context.sh
+```
+
+Optional live refresh before reading:
+
+```bash
+./memlayer_context.sh --refresh "current task context"
+```
+
 Runtime self-check:
 
 ```bash
@@ -93,6 +107,12 @@ Watchdog check after sleep, reboot, or flaky localhost behavior:
 
 ```bash
 ./memlayer_watchdog.sh
+```
+
+Pull a local snapshot for sandboxed or offline-friendly reading:
+
+```bash
+./memlayer_snapshot_pull.sh
 ```
 
 If the local runtime is actually down and you want to restart it from the project root:
@@ -107,6 +127,13 @@ Optional auto-recover in watchdog:
 cp .env.memlayer.example .env.memlayer
 # then set MEMLAYER_WATCHDOG_AUTO_RECOVER=true if this machine is allowed to restart dockerized MemLayer
 ```
+
+If both live endpoints are unavailable in the current session:
+
+1. Read `./memlayer_context.sh`
+2. Continue work locally
+3. Record unsynced knowledge in `./memlayer.offline.log.md`
+4. Refresh the snapshot or sync the offline log after MemLayer recovers
 
 Get relevant memory:
 

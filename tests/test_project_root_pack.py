@@ -71,9 +71,20 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
     assert (project_root / "memlayer_api.sh").exists()
     assert (project_root / "memlayer_watchdog.sh").exists()
     assert (project_root / "memlayer_recover.sh").exists()
+    assert (project_root / "memlayer_context.sh").exists()
+    assert (project_root / "memlayer_snapshot_pull.sh").exists()
+    assert (project_root / "memlayer.snapshot.json").exists()
+    assert (project_root / "memlayer.snapshot.md").exists()
+    assert (project_root / "memlayer.offline.log.md").exists()
     assert (project_root / "memlayer_api.sh").stat().st_mode & 0o111
     assert (project_root / "memlayer_watchdog.sh").stat().st_mode & 0o111
     assert (project_root / "memlayer_recover.sh").stat().st_mode & 0o111
+    assert (project_root / "memlayer_context.sh").stat().st_mode & 0o111
+    assert (project_root / "memlayer_snapshot_pull.sh").stat().st_mode & 0o111
+    context_text = (project_root / "memlayer_context.sh").read_text(encoding="utf-8")
+    assert "REFRESH_MODE" in context_text
+    assert 'print_snapshot' in context_text
+    assert 'memlayer_snapshot_pull.sh' in context_text
 
 
 def test_install_for_project_merges_existing_agents_file(tmp_path: Path) -> None:
