@@ -85,6 +85,11 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
     assert "REFRESH_MODE" in context_text
     assert 'print_snapshot' in context_text
     assert 'memlayer_snapshot_pull.sh' in context_text
+    api_text = (project_root / "memlayer_api.sh").read_text(encoding="utf-8")
+    assert "host.docker.internal:18100" in api_text
+    assert 'http://api:8000' in api_text
+    assert 'http://memorybank-api-1:8000' in api_text
+    assert 'doctor' in api_text
 
 
 def test_install_for_project_merges_existing_agents_file(tmp_path: Path) -> None:

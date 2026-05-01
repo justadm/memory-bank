@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-METHOD="${1:-GET}"
+COMMAND="${1:-GET}"
 PATH_PART="${2:-/health}"
 BODY="${3:-}"
 
@@ -35,16 +35,6 @@ print(value if value is not None else "")
 PY
 }
 
-PREFERRED_URL="$(read_config_value preferred_url)"
-FALLBACK_URL="$(read_config_value local_fallback_url)"
-RETRY_ATTEMPTS="${MEMLAYER_RETRY_ATTEMPTS:-2}"
-RETRY_BACKOFF_SECONDS="${MEMLAYER_RETRY_BACKOFF_SECONDS:-0.5}"
-
-if [[ -z "${PREFERRED_URL}" ]]; then
-  echo "memlayer_api.sh: preferred_url is not configured in memlayer.config.json" >&2
-  exit 1
-fi
-
 build_url() {
   local base_url="$1"
   local path_part="$2"
@@ -53,54 +43,181 @@ build_url() {
   printf '%s%s' "${normalized_base}" "${normalized_path}"
 }
 
-run_request() {
+append_unique() {
+  local candidate="$1"
+  if [[ -z "${candidate}" ]]; then
+    return 0
+  fi
+  for existing in "${ENDPOINTS[@]:-}"; do
+    if [[ "${existing}" == "${candidate}" ]]; then
+      return 0
+    fi
+  done
+  ENDPOINTS+=("${candidate}")
+}
+
+append_csv_values() {
+  local csv="$1"
+  if [[ -z "${csv}" ]]; then
+    return 0
+  fi
+  python3 - "$csv" <<'PY' | while IFS= read -r line; do
+import sys
+
+for raw in sys.argv[1].split(","):
+    value = raw.strip()
+    if value:
+        print(value)
+PY
+    append_unique "${line}"
+  done
+}
+
+compute_backoff_seconds() {
+  local attempt="$1"
+  case "${attempt}" in
+    1) printf '0.5' ;;
+    2) printf '1' ;;
+    3) printf '2' ;;
+    4) printf '3' ;;
+    *) printf '5' ;;
+  esac
+}
+
+run_request_once() {
   local base_url="$1"
+  local method="$2"
+  local path_part="$3"
+  local body="$4"
   local url
-  url="$(build_url "${base_url}" "${PATH_PART}")"
+  url="$(build_url "${base_url}" "${path_part}")"
   local -a args
-  args=(-sS --max-time "${MEMLAYER_CURL_TIMEOUT_SECONDS:-8}" -X "${METHOD}" "${url}")
+  args=(-sS --max-time "${MEMLAYER_CURL_TIMEOUT_SECONDS:-8}" -X "${method}" "${url}")
   if [[ -n "${MEMORYBANK_API_KEY:-}" ]]; then
     args+=(-H "Authorization: Bearer ${MEMORYBANK_API_KEY}")
   fi
-  if [[ -n "${BODY}" ]]; then
-    args+=(-H "Content-Type: application/json" --data "${BODY}")
+  if [[ -n "${body}" ]]; then
+    args+=(-H "Content-Type: application/json" --data "${body}")
   fi
   curl "${args[@]}"
 }
 
-run_with_retries() {
+health_check_endpoint() {
   local base_url="$1"
-  local label="$2"
-  local attempt=1
-  local max_attempts
-  if [[ "${RETRY_ATTEMPTS}" =~ ^[0-9]+$ ]] && [[ "${RETRY_ATTEMPTS}" -gt 0 ]]; then
-    max_attempts="${RETRY_ATTEMPTS}"
-  else
-    max_attempts=1
+  run_request_once "${base_url}" "GET" "/health" "" >/dev/null 2>&1
+}
+
+resolve_endpoints() {
+  local preferred_url
+  local fallback_url
+  local host_fallback_url
+  preferred_url="$(read_config_value preferred_url)"
+  fallback_url="$(read_config_value local_fallback_url)"
+  host_fallback_url="$(read_config_value human_preferred_url)"
+
+  ENDPOINTS=()
+  append_unique "${MEMLAYER_API_URL:-}"
+  append_unique "${preferred_url}"
+  append_unique "http://host.docker.internal:18100"
+  append_unique "http://127.0.0.1:18100"
+  append_unique "http://api:8000"
+  append_unique "http://memorybank-api-1:8000"
+  append_unique "${fallback_url}"
+  append_unique "${host_fallback_url}"
+  append_csv_values "${MEMLAYER_EXTRA_URLS:-}"
+}
+
+select_working_endpoint() {
+  local retry_attempts="${MEMLAYER_RETRY_ATTEMPTS:-10}"
+  local endpoint
+  local attempt
+
+  if [[ ! "${retry_attempts}" =~ ^[0-9]+$ ]] || [[ "${retry_attempts}" -lt 1 ]]; then
+    retry_attempts=10
   fi
 
-  while [[ "${attempt}" -le "${max_attempts}" ]]; do
-    if run_request "${base_url}"; then
-      return 0
-    fi
-    if [[ "${attempt}" -lt "${max_attempts}" ]]; then
-      echo "memlayer_api.sh: ${label} attempt ${attempt}/${max_attempts} failed, retrying in ${RETRY_BACKOFF_SECONDS}s" >&2
-      sleep "${RETRY_BACKOFF_SECONDS}"
-    fi
-    attempt=$((attempt + 1))
+  for endpoint in "${ENDPOINTS[@]}"; do
+    for (( attempt=1; attempt<=retry_attempts; attempt++ )); do
+      if health_check_endpoint "${endpoint}"; then
+        printf '%s' "${endpoint}"
+        return 0
+      fi
+      if [[ "${attempt}" -lt "${retry_attempts}" ]]; then
+        local backoff
+        backoff="$(compute_backoff_seconds "${attempt}")"
+        echo "memlayer_api.sh: endpoint ${endpoint} health attempt ${attempt}/${retry_attempts} failed, retrying in ${backoff}s" >&2
+        sleep "${backoff}"
+      fi
+    done
+    echo "memlayer_api.sh: endpoint ${endpoint} is unavailable, trying next candidate" >&2
   done
 
   return 1
 }
 
-if run_with_retries "${PREFERRED_URL}" "preferred endpoint"; then
+dns_report() {
+  local base_url="$1"
+  python3 - "$base_url" <<'PY'
+from urllib.parse import urlparse
+import socket
+import sys
+
+host = urlparse(sys.argv[1]).hostname or ""
+if not host:
+    print("dns: n/a")
+    raise SystemExit(0)
+try:
+    infos = socket.getaddrinfo(host, None)
+except Exception as exc:
+    print(f"dns: fail ({exc})")
+    raise SystemExit(0)
+
+addrs = []
+for info in infos:
+    addr = info[4][0]
+    if addr not in addrs:
+        addrs.append(addr)
+print("dns: ok -> " + ", ".join(addrs))
+PY
+}
+
+doctor() {
+  resolve_endpoints
+  echo "memlayer_api.sh doctor"
+  echo "config_path=${CONFIG_PATH}"
+  echo "env_path=${ENV_PATH}"
+  echo "memlayer_api_url=${MEMLAYER_API_URL:-}"
+  echo "memlayer_extra_urls=${MEMLAYER_EXTRA_URLS:-}"
+  echo "retry_attempts=${MEMLAYER_RETRY_ATTEMPTS:-10}"
+  echo "curl_timeout=${MEMLAYER_CURL_TIMEOUT_SECONDS:-8}"
+  echo "memorybank_api_key_configured=$([[ -n "${MEMORYBANK_API_KEY:-}" ]] && echo yes || echo no)"
+  echo
+  echo "endpoint_candidates:"
+  for endpoint in "${ENDPOINTS[@]}"; do
+    echo "- ${endpoint}"
+    dns_report "${endpoint}" | sed 's/^/  /'
+    if health_check_endpoint "${endpoint}"; then
+      echo "  health: ok"
+    else
+      echo "  health: fail"
+    fi
+  done
+  if command -v "${MEMLAYER_DOCKER_BIN:-/usr/local/bin/docker}" >/dev/null 2>&1; then
+    echo
+    echo "docker_status:"
+    "${MEMLAYER_DOCKER_BIN:-/usr/local/bin/docker}" compose -f /Users/just/apps/memory.bank/docker-compose.yml ps 2>/dev/null || true
+  fi
+}
+
+if [[ "${COMMAND}" == "doctor" ]]; then
+  doctor
   exit 0
 fi
 
-if [[ -n "${FALLBACK_URL}" ]]; then
-  echo "memlayer_api.sh: preferred endpoint failed, retrying via fallback ${FALLBACK_URL}" >&2
-  run_with_retries "${FALLBACK_URL}" "fallback endpoint"
-  exit 0
-fi
+resolve_endpoints
+SELECTED_ENDPOINT="$(select_working_endpoint)" || {
+  echo "memlayer_api.sh: no reachable MemLayer endpoint found" >&2
+  exit 1
+}
 
-exit 1
+run_request_once "${SELECTED_ENDPOINT}" "${COMMAND}" "${PATH_PART}" "${BODY}"

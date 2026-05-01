@@ -26,6 +26,18 @@ This repository is expected to use MemLayer as its shared working memory.
 8. After meaningful progress, write back new memory entries and important links.
 9. If repository structure or architecture changed, reimport the project into MemLayer.
 
+## Connectivity Profiles
+
+Pick the endpoint profile that matches the runtime where the agent actually runs:
+
+- host machine: `MEMLAYER_API_URL=http://127.0.0.1:18100`
+- container reaching host: `MEMLAYER_API_URL=http://host.docker.internal:18100`
+- same docker-compose network: `MEMLAYER_API_URL=http://api:8000`
+- explicit container name: `MEMLAYER_API_URL=http://memorybank-api-1:8000`
+- browser/nginx path: `MEMLAYER_API_URL=https://memlayer.loc/api`
+
+If you do not set `MEMLAYER_API_URL`, `memlayer_api.sh` will auto-try a built-in endpoint ladder in that order.
+
 ## Suggested Memory Types
 
 - `decision` for architecture and implementation choices
@@ -101,6 +113,12 @@ Runtime self-check:
 
 ```bash
 ./memlayer_api.sh GET "/admin/runtime/self-check?search_query=architecture&limit=5"
+```
+
+Connectivity doctor:
+
+```bash
+./memlayer_api.sh doctor
 ```
 
 Watchdog check after sleep, reboot, or flaky localhost behavior:
