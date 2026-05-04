@@ -147,25 +147,80 @@ def chmod_executable(path: Path, dry_run: bool) -> None:
     path.chmod(0o755)
 
 
+def ensure_directory(path: Path, dry_run: bool) -> None:
+    if dry_run:
+        return
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def relocate_legacy_file(project_root: Path, relative_name: str, target_path: Path, dry_run: bool) -> None:
+    legacy_path = project_root / relative_name
+    if legacy_path == target_path or not legacy_path.exists():
+        return
+    if dry_run:
+        return
+    if not target_path.exists():
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        legacy_path.replace(target_path)
+    elif legacy_path.is_file():
+        legacy_path.unlink()
+
+
+def ensure_gitignore_has_memlayer(project_root: Path, dry_run: bool) -> None:
+    gitignore_path = project_root / ".gitignore"
+    ignore_line = ".memlayer/"
+    if gitignore_path.exists():
+        content = gitignore_path.read_text(encoding="utf-8")
+        if ignore_line in {line.strip() for line in content.splitlines()}:
+            return
+        new_content = content.rstrip() + ("\n\n" if content.rstrip() else "") + ignore_line + "\n"
+        write_text(gitignore_path, new_content, dry_run=dry_run)
+        return
+    write_text(gitignore_path, ignore_line + "\n", dry_run=dry_run)
+
+
 def install_for_project(project_root: Path, preferred_url: str, local_url: str, human_url: str, dry_run: bool) -> dict[str, object]:
     project_name = project_root.name
     managed_section = render_template("AGENTS_SECTION.md.tmpl")
+    memlayer_dir = project_root / ".memlayer"
     agents_path = project_root / "AGENTS.md"
-    memlayer_path = project_root / "MEMLAYER.md"
-    env_path = project_root / ".env.memlayer.example"
-    local_env_path = project_root / ".env.memlayer"
-    config_path = project_root / "memlayer.config.json"
-    helper_path = project_root / "memlayer_api.sh"
-    watchdog_path = project_root / "memlayer_watchdog.sh"
-    recover_path = project_root / "memlayer_recover.sh"
-    context_path = project_root / "memlayer_context.sh"
-    write_path = project_root / "memlayer_write.sh"
-    sync_path = project_root / "memlayer_sync.sh"
-    snapshot_pull_path = project_root / "memlayer_snapshot_pull.sh"
-    snapshot_json_path = project_root / "memlayer.snapshot.json"
-    snapshot_md_path = project_root / "memlayer.snapshot.md"
-    offline_log_path = project_root / "memlayer.offline.log.md"
-    offline_queue_path = project_root / "memlayer.offline.queue.jsonl"
+    memlayer_path = memlayer_dir / "MEMLAYER.md"
+    env_path = memlayer_dir / ".env.memlayer.example"
+    local_env_path = memlayer_dir / ".env.memlayer"
+    config_path = memlayer_dir / "memlayer.config.json"
+    helper_path = memlayer_dir / "memlayer_api.sh"
+    watchdog_path = memlayer_dir / "memlayer_watchdog.sh"
+    recover_path = memlayer_dir / "memlayer_recover.sh"
+    context_path = memlayer_dir / "memlayer_context.sh"
+    write_path = memlayer_dir / "memlayer_write.sh"
+    sync_path = memlayer_dir / "memlayer_sync.sh"
+    snapshot_pull_path = memlayer_dir / "memlayer_snapshot_pull.sh"
+    snapshot_json_path = memlayer_dir / "memlayer.snapshot.json"
+    snapshot_md_path = memlayer_dir / "memlayer.snapshot.md"
+    offline_log_path = memlayer_dir / "memlayer.offline.log.md"
+    offline_queue_path = memlayer_dir / "memlayer.offline.queue.jsonl"
+
+    ensure_directory(memlayer_dir, dry_run=dry_run)
+    ensure_gitignore_has_memlayer(project_root, dry_run=dry_run)
+
+    for relative_name, target_path in (
+        ("MEMLAYER.md", memlayer_path),
+        (".env.memlayer.example", env_path),
+        (".env.memlayer", local_env_path),
+        ("memlayer.config.json", config_path),
+        ("memlayer_api.sh", helper_path),
+        ("memlayer_watchdog.sh", watchdog_path),
+        ("memlayer_recover.sh", recover_path),
+        ("memlayer_context.sh", context_path),
+        ("memlayer_write.sh", write_path),
+        ("memlayer_sync.sh", sync_path),
+        ("memlayer_snapshot_pull.sh", snapshot_pull_path),
+        ("memlayer.snapshot.json", snapshot_json_path),
+        ("memlayer.snapshot.md", snapshot_md_path),
+        ("memlayer.offline.log.md", offline_log_path),
+        ("memlayer.offline.queue.jsonl", offline_queue_path),
+    ):
+        relocate_legacy_file(project_root, relative_name, target_path, dry_run=dry_run)
 
     if agents_path.exists():
         agents_text = agents_path.read_text(encoding="utf-8")

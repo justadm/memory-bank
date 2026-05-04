@@ -1,6 +1,6 @@
 # MemLayer Working Memory
 
-Read [MEMLAYER.md](./MEMLAYER.md) before planning or making significant changes.
+Read [MEMLAYER.md](./.memlayer/MEMLAYER.md) before planning or making significant changes.
 
 Minimum workflow for every meaningful task:
 
@@ -16,21 +16,21 @@ Minimum workflow for every meaningful task:
 
 Use this local config first:
 
-- [memlayer.config.json](./memlayer.config.json)
-- [memlayer_api.sh](./memlayer_api.sh)
-- [memlayer_context.sh](./memlayer_context.sh)
-- [memlayer_watchdog.sh](./memlayer_watchdog.sh)
-- [memlayer_recover.sh](./memlayer_recover.sh)
-- [memlayer_write.sh](./memlayer_write.sh)
-- [memlayer_sync.sh](./memlayer_sync.sh)
-- [memlayer_snapshot_pull.sh](./memlayer_snapshot_pull.sh)
-- [memlayer.snapshot.md](./memlayer.snapshot.md)
-- [memlayer.offline.queue.jsonl](./memlayer.offline.queue.jsonl)
-- [memlayer.offline.log.md](./memlayer.offline.log.md)
-- [.env.memlayer](./.env.memlayer)
-- [.env.memlayer.example](./.env.memlayer.example)
+- [.memlayer/memlayer.config.json](./.memlayer/memlayer.config.json)
+- [.memlayer/memlayer_api.sh](./.memlayer/memlayer_api.sh)
+- [.memlayer/memlayer_context.sh](./.memlayer/memlayer_context.sh)
+- [.memlayer/memlayer_watchdog.sh](./.memlayer/memlayer_watchdog.sh)
+- [.memlayer/memlayer_recover.sh](./.memlayer/memlayer_recover.sh)
+- [.memlayer/memlayer_write.sh](./.memlayer/memlayer_write.sh)
+- [.memlayer/memlayer_sync.sh](./.memlayer/memlayer_sync.sh)
+- [.memlayer/memlayer_snapshot_pull.sh](./.memlayer/memlayer_snapshot_pull.sh)
+- [.memlayer/memlayer.snapshot.md](./.memlayer/memlayer.snapshot.md)
+- [.memlayer/memlayer.offline.queue.jsonl](./.memlayer/memlayer.offline.queue.jsonl)
+- [.memlayer/memlayer.offline.log.md](./.memlayer/memlayer.offline.log.md)
+- [.memlayer/.env.memlayer](./.memlayer/.env.memlayer)
+- [.memlayer/.env.memlayer.example](./.memlayer/.env.memlayer.example)
 
-Prefer `./memlayer_api.sh` over raw `curl`: it tries localhost first, retries with a short backoff, and then automatically falls back to `https://memlayer.loc/api` when localhost is temporarily unavailable.
-For pre-task reading, prefer `./memlayer_context.sh`: it reads the local project snapshot first and does not block task startup on a flaky live runtime. If you pass a query in offline mode, it now does a local filtered search over `memlayer.snapshot.json` instead of dumping the whole snapshot unchanged. Use `./memlayer_context.sh --refresh "your query"` only when you explicitly want to refresh the snapshot from live MemLayer.
-If live access behaves strangely in the current runtime, run `./memlayer_api.sh doctor` before assuming MemLayer itself is broken: it shows the current endpoint ladder and which candidates are reachable from this exact environment.
-If both live endpoints are unavailable in the current agent session, queue writes through `./memlayer_write.sh` and later flush them with `./memlayer_sync.sh` when MemLayer is reachable again.
+Prefer `./.memlayer/memlayer_api.sh` over raw `curl`: it tries localhost first, retries with a short backoff, and then automatically falls back to `https://memlayer.loc/api` when localhost is temporarily unavailable.
+For pre-task reading, prefer `./.memlayer/memlayer_context.sh`: it reads the local project snapshot first and does not block task startup on a flaky live runtime. If you pass a query in offline mode, it now does a local filtered search over `memlayer.snapshot.json` instead of dumping the whole snapshot unchanged. Use `./.memlayer/memlayer_context.sh --refresh "your query"` only when you explicitly want to refresh the snapshot from live MemLayer.
+If live access behaves strangely in the current runtime, run `./.memlayer/memlayer_api.sh doctor` before assuming MemLayer itself is broken: it shows the current endpoint ladder and which candidates are reachable from this exact environment.
+If both live endpoints are unavailable in the current agent session, queue writes through `./.memlayer/memlayer_write.sh` and later flush them with `./.memlayer/memlayer_sync.sh` when MemLayer is reachable again.

@@ -16,11 +16,11 @@ This repository is expected to use MemLayer as its shared working memory.
 
 ## Required Agent Workflow
 
-1. Read `memlayer.config.json`.
-2. For pre-task reading, prefer `./memlayer_context.sh` so the agent can always read the local project snapshot before starting work.
-3. Use `./memlayer_context.sh --refresh "your query"` only when you explicitly want to refresh that snapshot from live MemLayer.
-4. Use `./memlayer_api.sh` for direct API reads/writes when you explicitly need raw endpoint access.
-5. If live MemLayer is down in the current runtime, use `./memlayer_write.sh` so new memory is queued locally instead of lost.
+1. Read `.memlayer/memlayer.config.json`.
+2. For pre-task reading, prefer `./.memlayer/memlayer_context.sh` so the agent can always read the local project snapshot before starting work.
+3. Use `./.memlayer/memlayer_context.sh --refresh "your query"` only when you explicitly want to refresh that snapshot from live MemLayer.
+4. Use `./.memlayer/memlayer_api.sh` for direct API reads/writes when you explicitly need raw endpoint access.
+5. If live MemLayer is down in the current runtime, use `./.memlayer/memlayer_write.sh` so new memory is queued locally instead of lost.
 6. Check auth status with `GET /auth/me` if an API key is configured.
 7. Before coding or debugging, fetch relevant memory for the current task.
 8. Reuse prior decisions, constraints, risks, and artifacts whenever possible.
@@ -37,7 +37,7 @@ Pick the endpoint profile that matches the runtime where the agent actually runs
 - explicit container name: `MEMLAYER_API_URL=http://memorybank-api-1:8000`
 - browser/nginx path: `MEMLAYER_API_URL=https://memlayer.loc/api`
 
-If you do not set `MEMLAYER_API_URL`, `memlayer_api.sh` will auto-try a built-in endpoint ladder in that order.
+If you do not set `MEMLAYER_API_URL`, `.memlayer/memlayer_api.sh` will auto-try a built-in endpoint ladder in that order.
 
 ## Suggested Memory Types
 
@@ -83,88 +83,88 @@ Recommended metadata fields:
 Health:
 
 ```bash
-./memlayer_api.sh GET /health
+./.memlayer/memlayer_api.sh GET /health
 ```
 
 Auth status:
 
 ```bash
-./memlayer_api.sh GET /auth/me
+./.memlayer/memlayer_api.sh GET /auth/me
 ```
 
 Search memory:
 
 ```bash
-./memlayer_api.sh GET "/memory/search?query=architecture&mode=hybrid&limit=8"
+./.memlayer/memlayer_api.sh GET "/memory/search?query=architecture&mode=hybrid&limit=8"
 ```
 
 Preferred context read for agents:
 
 ```bash
-./memlayer_context.sh
+./.memlayer/memlayer_context.sh
 ```
 
 Offline filtered query against the local snapshot:
 
 ```bash
-./memlayer_context.sh "current task context"
+./.memlayer/memlayer_context.sh "current task context"
 ```
 
 Optional live refresh before reading:
 
 ```bash
-./memlayer_context.sh --refresh "current task context"
+./.memlayer/memlayer_context.sh --refresh "current task context"
 ```
 
 Runtime self-check:
 
 ```bash
-./memlayer_api.sh GET "/admin/runtime/self-check?search_query=architecture&limit=5"
+./.memlayer/memlayer_api.sh GET "/admin/runtime/self-check?search_query=architecture&limit=5"
 ```
 
 Connectivity doctor:
 
 ```bash
-./memlayer_api.sh doctor
+./.memlayer/memlayer_api.sh doctor
 ```
 
 Watchdog check after sleep, reboot, or flaky localhost behavior:
 
 ```bash
-./memlayer_watchdog.sh
+./.memlayer/memlayer_watchdog.sh
 ```
 
 Pull a local snapshot for sandboxed or offline-friendly reading:
 
 ```bash
-./memlayer_snapshot_pull.sh
+./.memlayer/memlayer_snapshot_pull.sh
 ```
 
 If the local runtime is actually down and you want to restart it from the project root:
 
 ```bash
-./memlayer_recover.sh
+./.memlayer/memlayer_recover.sh
 ```
 
 Optional auto-recover in watchdog:
 
 ```bash
-cp .env.memlayer.example .env.memlayer
+cp .memlayer/.env.memlayer.example .memlayer/.env.memlayer
 # then set MEMLAYER_WATCHDOG_AUTO_RECOVER=true if this machine is allowed to restart dockerized MemLayer
 ```
 
 If both live endpoints are unavailable in the current session:
 
-1. Read `./memlayer_context.sh`
+1. Read `./.memlayer/memlayer_context.sh`
 2. Continue work locally
-3. Queue new writes with `./memlayer_write.sh`
-4. Record supporting notes in `./memlayer.offline.log.md` if needed
-5. Flush the queue with `./memlayer_sync.sh` after MemLayer recovers
+3. Queue new writes with `./.memlayer/memlayer_write.sh`
+4. Record supporting notes in `./.memlayer/memlayer.offline.log.md` if needed
+5. Flush the queue with `./.memlayer/memlayer_sync.sh` after MemLayer recovers
 
 Get relevant memory:
 
 ```bash
-./memlayer_api.sh POST /memory/relevant '{{
+./.memlayer/memlayer_api.sh POST /memory/relevant '{{
     "query": "Current task context for {project_name}",
     "agent_id": "local-agent",
     "types": ["decision", "constraint", "risk", "artifact", "task", "note"],
@@ -176,13 +176,13 @@ Get relevant memory:
 Enable API key and timeout overrides:
 
 ```bash
-cp .env.memlayer.example .env.memlayer
+cp .memlayer/.env.memlayer.example .memlayer/.env.memlayer
 ```
 
 Queue a memory write when live MemLayer is unavailable:
 
 ```bash
-./memlayer_write.sh memory '{{
+./.memlayer/memlayer_write.sh memory '{{
     "type": "decision",
     "title": "Current implementation decision",
     "content": "Summarize the decision and why it was made.",
@@ -195,7 +195,7 @@ Queue a memory write when live MemLayer is unavailable:
 Replay queued writes later:
 
 ```bash
-./memlayer_sync.sh
+./.memlayer/memlayer_sync.sh
 ```
 
 `memlayer_write.sh` intentionally uses a much shorter retry budget than `doctor` or the normal live helper, so agents fall into the offline queue quickly instead of stalling on every write. It does this through an internal override, so a long `.env.memlayer` retry policy no longer slows down offline queueing.

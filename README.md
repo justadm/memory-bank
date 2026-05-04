@@ -78,23 +78,23 @@ docker compose exec api pytest
 
 ## Project Root Pack
 
-Для внешних проектных репозиториев теперь есть готовый MemLayer root-pack, который можно положить в корень каждого проекта, чтобы локальные AI-агенты автоматически видели правила работы с общей памятью.
+Для внешних проектных репозиториев теперь есть готовый MemLayer root-pack, который можно положить в корень каждого проекта, чтобы локальные AI-агенты автоматически видели правила работы с общей памятью. В корне остаётся только `AGENTS.md`, а вся служебная MemLayer-обвязка живёт в `.memlayer/` и автоматически добавляется в `.gitignore`.
 
 Состав pack:
 
 - `AGENTS.md` — создаётся или безопасно дополняется managed-секцией MemLayer
-- `MEMLAYER.md` — подробная инструкция для агента по read/write/import workflow
-- `memlayer_api.sh` — локальный helper для чтения и записи в MemLayer с automatic fallback `localhost -> memlayer.loc`
-- `memlayer_context.sh` — snapshot-first helper для pre-task чтения: сначала локальный snapshot, live MemLayer только по явному refresh
-- `memlayer_watchdog.sh` — быстрый runtime-check для случаев после сна, ребута или flaky localhost-доступа
-- `memlayer_recover.sh` — локальный recovery helper для рестарта dockerized MemLayer API из проектного корня
-- `memlayer_snapshot_pull.sh` — выгружает локальный snapshot контекста из MemLayer в проектный корень
-- `memlayer.snapshot.md` / `memlayer.snapshot.json` — offline-readable snapshot для sandboxed агентов
-- `memlayer_write.sh` / `memlayer_sync.sh` — offline queue для записи и последующего sync, если live MemLayer недоступен
-- `memlayer.offline.log.md` — локальный журнал несинхронизированного прогресса, если live MemLayer временно недоступен
-- `.env.memlayer` — локальный override-файл для `MEMORYBANK_API_KEY` и timeout helper-скрипта
-- `.env.memlayer.example` — переменные окружения для подключения к MemLayer
-- `memlayer.config.json` — машинно-читаемый проектный конфиг для агентов и tool wrappers
+- `.memlayer/MEMLAYER.md` — подробная инструкция для агента по read/write/import workflow
+- `.memlayer/memlayer_api.sh` — локальный helper для чтения и записи в MemLayer с automatic fallback `localhost -> memlayer.loc`
+- `.memlayer/memlayer_context.sh` — snapshot-first helper для pre-task чтения: сначала локальный snapshot, live MemLayer только по явному refresh
+- `.memlayer/memlayer_watchdog.sh` — быстрый runtime-check для случаев после сна, ребута или flaky localhost-доступа
+- `.memlayer/memlayer_recover.sh` — локальный recovery helper для рестарта dockerized MemLayer API из проектного корня
+- `.memlayer/memlayer_snapshot_pull.sh` — выгружает локальный snapshot контекста из MemLayer
+- `.memlayer/memlayer.snapshot.md` / `.memlayer/memlayer.snapshot.json` — offline-readable snapshot для sandboxed агентов
+- `.memlayer/memlayer_write.sh` / `.memlayer/memlayer_sync.sh` — offline queue для записи и последующего sync, если live MemLayer недоступен
+- `.memlayer/memlayer.offline.log.md` — локальный журнал несинхронизированного прогресса, если live MemLayer временно недоступен
+- `.memlayer/.env.memlayer` — локальный override-файл для `MEMORYBANK_API_KEY` и timeout helper-скрипта
+- `.memlayer/.env.memlayer.example` — переменные окружения для подключения к MemLayer
+- `.memlayer/memlayer.config.json` — машинно-читаемый проектный конфиг для агентов и tool wrappers
 
 Installer:
 

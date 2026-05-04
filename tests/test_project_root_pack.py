@@ -55,6 +55,7 @@ def test_build_project_config_contains_expected_defaults(tmp_path: Path) -> None
 def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
     project_root = tmp_path / "SampleProject"
     project_root.mkdir()
+    memlayer_root = project_root / ".memlayer"
 
     result = install_for_project(
         project_root,
@@ -66,35 +67,38 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
 
     assert result["agents"] == "created"
     assert (project_root / "AGENTS.md").exists()
-    assert (project_root / "MEMLAYER.md").exists()
-    assert (project_root / ".env.memlayer.example").exists()
-    assert (project_root / ".env.memlayer").exists()
-    assert (project_root / "memlayer.config.json").exists()
-    assert (project_root / "memlayer_api.sh").exists()
-    assert (project_root / "memlayer_watchdog.sh").exists()
-    assert (project_root / "memlayer_recover.sh").exists()
-    assert (project_root / "memlayer_context.sh").exists()
-    assert (project_root / "memlayer_write.sh").exists()
-    assert (project_root / "memlayer_sync.sh").exists()
-    assert (project_root / "memlayer_snapshot_pull.sh").exists()
-    assert (project_root / "memlayer.snapshot.json").exists()
-    assert (project_root / "memlayer.snapshot.md").exists()
-    assert (project_root / "memlayer.offline.log.md").exists()
-    assert (project_root / "memlayer.offline.queue.jsonl").exists()
-    assert (project_root / "memlayer_api.sh").stat().st_mode & 0o111
-    assert (project_root / "memlayer_watchdog.sh").stat().st_mode & 0o111
-    assert (project_root / "memlayer_recover.sh").stat().st_mode & 0o111
-    assert (project_root / "memlayer_context.sh").stat().st_mode & 0o111
-    assert (project_root / "memlayer_write.sh").stat().st_mode & 0o111
-    assert (project_root / "memlayer_sync.sh").stat().st_mode & 0o111
-    assert (project_root / "memlayer_snapshot_pull.sh").stat().st_mode & 0o111
-    context_text = (project_root / "memlayer_context.sh").read_text(encoding="utf-8")
+    assert (project_root / ".gitignore").exists()
+    assert ".memlayer/" in (project_root / ".gitignore").read_text(encoding="utf-8")
+    assert memlayer_root.exists()
+    assert (memlayer_root / "MEMLAYER.md").exists()
+    assert (memlayer_root / ".env.memlayer.example").exists()
+    assert (memlayer_root / ".env.memlayer").exists()
+    assert (memlayer_root / "memlayer.config.json").exists()
+    assert (memlayer_root / "memlayer_api.sh").exists()
+    assert (memlayer_root / "memlayer_watchdog.sh").exists()
+    assert (memlayer_root / "memlayer_recover.sh").exists()
+    assert (memlayer_root / "memlayer_context.sh").exists()
+    assert (memlayer_root / "memlayer_write.sh").exists()
+    assert (memlayer_root / "memlayer_sync.sh").exists()
+    assert (memlayer_root / "memlayer_snapshot_pull.sh").exists()
+    assert (memlayer_root / "memlayer.snapshot.json").exists()
+    assert (memlayer_root / "memlayer.snapshot.md").exists()
+    assert (memlayer_root / "memlayer.offline.log.md").exists()
+    assert (memlayer_root / "memlayer.offline.queue.jsonl").exists()
+    assert (memlayer_root / "memlayer_api.sh").stat().st_mode & 0o111
+    assert (memlayer_root / "memlayer_watchdog.sh").stat().st_mode & 0o111
+    assert (memlayer_root / "memlayer_recover.sh").stat().st_mode & 0o111
+    assert (memlayer_root / "memlayer_context.sh").stat().st_mode & 0o111
+    assert (memlayer_root / "memlayer_write.sh").stat().st_mode & 0o111
+    assert (memlayer_root / "memlayer_sync.sh").stat().st_mode & 0o111
+    assert (memlayer_root / "memlayer_snapshot_pull.sh").stat().st_mode & 0o111
+    context_text = (memlayer_root / "memlayer_context.sh").read_text(encoding="utf-8")
     assert "REFRESH_MODE" in context_text
     assert 'print_snapshot' in context_text
     assert 'print_local_query_context' in context_text
     assert 'matched_items' in context_text
     assert 'memlayer_snapshot_pull.sh' in context_text
-    api_text = (project_root / "memlayer_api.sh").read_text(encoding="utf-8")
+    api_text = (memlayer_root / "memlayer_api.sh").read_text(encoding="utf-8")
     assert "host.docker.internal:18100" in api_text
     assert 'http://api:8000' in api_text
     assert 'http://memorybank-api-1:8000' in api_text
@@ -126,7 +130,9 @@ def test_install_for_project_merges_existing_agents_file(tmp_path: Path) -> None
 def test_install_for_project_preserves_existing_local_env(tmp_path: Path) -> None:
     project_root = tmp_path / "LocalEnvProject"
     project_root.mkdir()
-    local_env_path = project_root / ".env.memlayer"
+    memlayer_root = project_root / ".memlayer"
+    memlayer_root.mkdir()
+    local_env_path = memlayer_root / ".env.memlayer"
     local_env_path.write_text("MEMORYBANK_API_KEY=secret\n", encoding="utf-8")
 
     install_for_project(
@@ -141,6 +147,26 @@ def test_install_for_project_preserves_existing_local_env(tmp_path: Path) -> Non
     assert "MEMORYBANK_API_KEY=secret" in local_env
     assert "MEMLAYER_API_URL=http://127.0.0.1:18100" in local_env
     assert "MEMLAYER_EXTRA_URLS=http://host.docker.internal:18100,http://api:8000,http://memorybank-api-1:8000,https://memlayer.loc/api" in local_env
+
+
+def test_install_for_project_moves_legacy_root_files_into_memlayer_dir(tmp_path: Path) -> None:
+    project_root = tmp_path / "LegacyProject"
+    project_root.mkdir()
+    (project_root / "memlayer.config.json").write_text('{"project_id":"legacy-id"}\n', encoding="utf-8")
+    (project_root / ".env.memlayer").write_text("MEMORYBANK_API_KEY=legacy\n", encoding="utf-8")
+
+    install_for_project(
+        project_root,
+        preferred_url="http://127.0.0.1:18100",
+        local_url="https://memlayer.loc/api",
+        human_url="https://memlayer.loc/api",
+        dry_run=False,
+    )
+
+    assert not (project_root / "memlayer.config.json").exists()
+    assert not (project_root / ".env.memlayer").exists()
+    assert (project_root / ".memlayer" / "memlayer.config.json").exists()
+    assert (project_root / ".memlayer" / ".env.memlayer").exists()
 
 
 def test_merge_env_text_appends_missing_keys_without_overwriting_existing_values() -> None:
