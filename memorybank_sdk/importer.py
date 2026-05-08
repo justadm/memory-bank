@@ -9,6 +9,7 @@ from typing import Any
 IMPORTANT_FILENAMES = [
     "README.md",
     "README.txt",
+    "COMMITS.md",
     "docker-compose.yml",
     "docker-compose.yaml",
     "Dockerfile",
@@ -20,9 +21,10 @@ IMPORTANT_FILENAMES = [
     "turbo.json",
     "Makefile",
     ".env.example",
+    "openspec/config.yaml",
 ]
 
-IMPORTANT_DOC_DIRS = ("docs", "mvp-handoff")
+IMPORTANT_DOC_DIRS = (".docs", "docs", "mvp-handoff")
 
 TEXT_FILE_SUFFIXES = {
     ".py",
@@ -336,6 +338,28 @@ def _derive_decisions(files: dict[str, str]) -> list[dict[str, Any]]:
                 "metadata": {"evidence": _evidence_prefix(files, ["docs/v1-technical-blueprint.md", "mvp-handoff/03-mvp-development-spec.md"]), "confidence": 0.9},
             }
         )
+    if "в mvp создается обычный список битрикс24" in combined or "обычный список битрикс24" in combined:
+        decisions.append(
+            {
+                "ref": "decision-bitrix-list-mvp",
+                "type": "decision",
+                "title": "Use a standard Bitrix24 list for the MVP",
+                "content": "The current MVP direction explicitly prefers a standard Bitrix24 list over a smart process to reduce delivery risk and avoid extra CRM/SPA dependencies.",
+                "importance": 5,
+                "metadata": {"evidence": _evidence_prefix(files, [".docs/CONTRACTOR_CHECK_TZ.md"]), "confidence": 0.95},
+            }
+        )
+    if "schema: spec-driven" in combined:
+        decisions.append(
+            {
+                "ref": "decision-spec-driven-artifacts",
+                "type": "decision",
+                "title": "Use a spec-driven delivery workflow",
+                "content": "The repository ships with an OpenSpec configuration that declares a spec-driven workflow for creating and evolving project artifacts.",
+                "importance": 4,
+                "metadata": {"evidence": _evidence_prefix(files, ["openspec/config.yaml"]), "confidence": 0.9},
+            }
+        )
     return decisions
 
 
@@ -430,6 +454,39 @@ def _derive_constraints(files: dict[str, str]) -> list[dict[str, Any]]:
                 "metadata": {"confidence": 0.86},
             }
         )
+    if "только административная часть битрикс24" in combined or "без доступа к серверу" in combined:
+        constraints.append(
+            {
+                "ref": "constraint-admin-only-bitrix-access",
+                "type": "constraint",
+                "title": "Operate through Bitrix24 admin access only",
+                "content": "Implementation is constrained to Bitrix24 administrative access without direct server access, so delivery must rely on UI-configurable settings, migrations, and safe admin-side tooling.",
+                "importance": 5,
+                "metadata": {"confidence": 0.94},
+            }
+        )
+    if "через git и миграции" in combined:
+        constraints.append(
+            {
+                "ref": "constraint-git-migrations-delivery",
+                "type": "constraint",
+                "title": "Deliver environment changes through git and migrations",
+                "content": "Changes should be reproducible through versioned code and migrations, with manual admin actions limited to environment-specific settings that cannot be safely automated.",
+                "importance": 4,
+                "metadata": {"confidence": 0.92},
+            }
+        )
+    if "sharepoint" in combined and "историчес" in combined:
+        constraints.append(
+            {
+                "ref": "constraint-sharepoint-history-source",
+                "type": "constraint",
+                "title": "Keep SharePoint as the historical source during MVP",
+                "content": "Historical data and attachments stay anchored in SharePoint until the customer provides a reliable export path, so MVP scope should not assume full archival migration is available.",
+                "importance": 4,
+                "metadata": {"confidence": 0.9},
+            }
+        )
     return constraints
 
 
@@ -479,6 +536,17 @@ def _derive_risks(files: dict[str, str]) -> list[dict[str, Any]]:
                 "content": "The product flow depends on surfacing fatal assumptions, missing data, and clarification questions before downstream PRD generation.",
                 "importance": 4,
                 "metadata": {"confidence": 0.88},
+            }
+        )
+    if "персональные данные" in combined and "вложени" in combined:
+        risks.append(
+            {
+                "ref": "risk-personal-data-attachments",
+                "type": "risk",
+                "title": "Historical attachments may contain personal data",
+                "content": "Attachment migration and storage are constrained by personal-data handling requirements, so bulk import cannot be treated as a guaranteed MVP capability.",
+                "importance": 5,
+                "metadata": {"confidence": 0.94},
             }
         )
     return risks
@@ -534,6 +602,31 @@ def _derive_notes(files: dict[str, str], root: Path) -> list[dict[str, Any]]:
             "metadata": {"confidence": 1.0},
         }
     )
+    openspec_config = files.get("openspec/config.yaml", "")
+    if "schema: spec-driven" in openspec_config.lower():
+        notes.append(
+            {
+                "ref": "note-openspec-schema-driven",
+                "type": "note",
+                "title": "OpenSpec schema mode",
+                "content": "Detected `openspec/config.yaml` with `schema: spec-driven`, indicating a spec-first artifact workflow.",
+                "importance": 3,
+                "metadata": {"path": "openspec/config.yaml", "confidence": 0.9},
+            }
+        )
+    commits_doc = files.get("COMMITS.md", "")
+    lowered_commits = commits_doc.lower()
+    if "conventional commits" in lowered_commits and "task:" in lowered_commits:
+        notes.append(
+            {
+                "ref": "note-commit-convention-task-link",
+                "type": "note",
+                "title": "Commit messages require task-linked conventional format",
+                "content": "Project commit policy uses Russian Conventional Commits and requires a separate `Task: <id>` line for every logical change.",
+                "importance": 3,
+                "metadata": {"path": "COMMITS.md", "confidence": 0.92},
+            }
+        )
     return notes
 
 

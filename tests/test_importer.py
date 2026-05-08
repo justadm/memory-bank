@@ -117,3 +117,48 @@ def test_build_project_import_payload_extracts_doc_driven_handoff_signals(tmp_pa
     assert "risk-founder-input-ambiguity" in refs
     assert any(item["title"] == "EPIC-001: Project setup" for item in payload["entries"])
     assert any(item["title"] == "EPIC-002: Idea intake" for item in payload["entries"])
+
+
+def test_build_project_import_payload_extracts_hidden_docs_and_spec_signals(tmp_path):
+    hidden_docs_dir = tmp_path / ".docs"
+    hidden_docs_dir.mkdir()
+    openspec_dir = tmp_path / "openspec"
+    openspec_dir.mkdir()
+
+    (hidden_docs_dir / "CONTRACTOR_CHECK_TZ.md").write_text(
+        "# ТЗ\n\n"
+        "В MVP создается обычный список Битрикс24.\n"
+        "Смарт-процесс в MVP не используется.\n"
+        "Доступ исполнителя: только административная часть Битрикс24, без доступа к серверу.\n"
+        "Перенос на тестовый контур выполняется через git и миграции.\n"
+        "Текущий SharePoint остается источником исторических данных.\n"
+        "Вложения содержат персональные данные.\n",
+        encoding="utf-8",
+    )
+    (hidden_docs_dir / "WORKLOG.md").write_text(
+        "# Worklog\n\n"
+        "- Project context for lk.loc imported from hidden docs.\n",
+        encoding="utf-8",
+    )
+    (openspec_dir / "config.yaml").write_text("schema: spec-driven\n", encoding="utf-8")
+    (tmp_path / "COMMITS.md").write_text(
+        "Используется формат Conventional Commits.\n"
+        "Обязательная строка: Task: 13244\n",
+        encoding="utf-8",
+    )
+
+    payload = build_project_import_payload(tmp_path, project_name="lk.loc")
+    refs = {item["ref"] for item in payload["entries"]}
+
+    assert "artifact-docs-contractor-check-tz-md" in refs
+    assert "artifact-docs-worklog-md" in refs
+    assert "artifact-openspec-config-yaml" in refs
+    assert "artifact-commits-md" in refs
+    assert "decision-bitrix-list-mvp" in refs
+    assert "decision-spec-driven-artifacts" in refs
+    assert "constraint-admin-only-bitrix-access" in refs
+    assert "constraint-git-migrations-delivery" in refs
+    assert "constraint-sharepoint-history-source" in refs
+    assert "risk-personal-data-attachments" in refs
+    assert "note-openspec-schema-driven" in refs
+    assert "note-commit-convention-task-link" in refs

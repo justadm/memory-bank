@@ -103,6 +103,9 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
     assert 'http://api:8000' in api_text
     assert 'http://memorybank-api-1:8000' in api_text
     assert 'doctor' in api_text
+    snapshot_pull_text = (memlayer_root / "memlayer_snapshot_pull.sh").read_text(encoding="utf-8")
+    assert 'data.setdefault("generated_at"' in snapshot_pull_text
+    assert 'data["project_id"] = project_id' in snapshot_pull_text
 
 
 def test_install_for_project_merges_existing_agents_file(tmp_path: Path) -> None:

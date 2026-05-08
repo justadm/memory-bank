@@ -39,7 +39,31 @@ PY
 
 TMP_JSON="${JSON_OUT}.tmp"
 "${SCRIPT_DIR}/memlayer_api.sh" POST /context/build "${PAYLOAD}" > "${TMP_JSON}"
-mv "${TMP_JSON}" "${JSON_OUT}"
+
+python3 - "${TMP_JSON}" "${JSON_OUT}" "${CONFIG_PATH}" "${QUERY}" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+raw_json_path, output_path, config_path, query_arg = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+data = json.loads(Path(raw_json_path).read_text(encoding="utf-8"))
+config = json.loads(Path(config_path).read_text(encoding="utf-8"))
+
+project_id = config.get("project_id")
+project_name = config.get("project_name")
+query = query_arg or f"{project_name or 'project'} architecture decisions constraints risks tasks"
+
+data.setdefault("generated_at", datetime.now(timezone.utc).isoformat())
+data.setdefault("query", query)
+if project_id and not data.get("project_id"):
+    data["project_id"] = project_id
+if project_name and not data.get("project_name"):
+    data["project_name"] = project_name
+
+Path(output_path).write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+Path(raw_json_path).unlink(missing_ok=True)
+PY
 
 python3 - "${JSON_OUT}" "${MD_OUT}" <<'PY'
 import json

@@ -114,7 +114,8 @@ PYTHONPATH=$PWD .venv313/bin/python scripts/install_memlayer_project_pack.py \
 
 Installer не затирает пользовательский текст в уже существующих `AGENTS.md`: он только добавляет или обновляет managed-блок между маркерами `MEMLAYER_ROOT_PACK`.
 Если в проекте уже есть `.env.memlayer`, installer его сохраняет и не перезаписывает.
-Importer теперь также умеет поднимать doc-driven handoff проекты: `docs/*.md` и `mvp-handoff/*.md` превращаются в `artifact` entries, backlog `EPIC-*` headings импортируются как `task`, а product/architecture decisions вроде staged LLM pipeline, schema-first runtime и local `.loc` constraints поднимаются в память автоматически.
+Importer теперь также умеет поднимать doc-driven handoff проекты: `docs/*.md`, hidden `.docs/*.md` и `mvp-handoff/*.md` превращаются в `artifact` entries, backlog `EPIC-*` headings импортируются как `task`, а product/architecture decisions вроде staged LLM pipeline, schema-first runtime и local `.loc` constraints поднимаются в память автоматически.
+Для более process-heavy внутренних проектов importer теперь также понимает `COMMITS.md` и `openspec/config.yaml`: он может сохранить commit-policy notes, spec-driven workflow signals, Bitrix24 list MVP decisions, admin-only delivery constraints, SharePoint historical-source constraints и personal-data attachment risks.
 `memlayer_api.sh` теперь делает короткие retry/backoff попытки на localhost перед fallback на `memlayer.loc`, а `memlayer_watchdog.sh` даёт готовую быструю проверку `health + runtime self-check`.
 Для runtime-диагностики появился `./memlayer_api.sh doctor`: он показывает endpoint ladder, DNS/host resolution и health-результат для каждого кандидата прямо из текущего agent/runtime-контекста.
 Helper теперь учитывает разницу окружений и может сам искать MemLayer через `MEMLAYER_API_URL`, `host.docker.internal`, `127.0.0.1`, `api:8000`, `memorybank-api-1:8000` и `memlayer.loc`.
