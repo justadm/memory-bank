@@ -8,9 +8,20 @@ from pathlib import Path
 from memorybank_sdk import DEFAULT_MEMORYBANK_URL, MemoryBankClient, build_directory_import_payloads, build_project_import_payload
 
 
+def resolve_memlayer_config_path(project_root: Path) -> Path | None:
+    candidates = [
+        project_root / ".memlayer" / "memlayer.config.json",
+        project_root / "memlayer.config.json",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
+
 def persist_project_id(project_root: Path, project_id: str) -> None:
-    config_path = project_root / "memlayer.config.json"
-    if not config_path.exists():
+    config_path = resolve_memlayer_config_path(project_root)
+    if config_path is None:
         return
     try:
         payload = json.loads(config_path.read_text(encoding="utf-8"))
