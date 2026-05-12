@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_PATH="${SCRIPT_DIR}/.env.memlayer"
+
+if [[ -f "${ENV_PATH}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "${ENV_PATH}"
+  set +a
+fi
+
+RUNTIME_ROOT="${MEMLAYER_RUNTIME_ROOT:-/Users/just/apps/memory.bank}"
+DOCKER_BIN="${MEMLAYER_DOCKER_BIN:-/usr/local/bin/docker}"
+LABEL="${MEMLAYER_LAUNCHD_LABEL:-loc.memlayer.runtime}"
+START_INTERVAL="${MEMLAYER_LAUNCHD_START_INTERVAL_SECONDS:-300}"
+LAUNCH_AGENTS_DIR="${HOME}/Library/LaunchAgents"
+PLIST_PATH="${LAUNCH_AGENTS_DIR}/${LABEL}.plist"
+
+mkdir -p "${LAUNCH_AGENTS_DIR}"
+
+cat > "${PLIST_PATH}" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${LABEL}</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>${START_INTERVAL}</integer>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>cd "${RUNTIME_ROOT}" &amp;&amp; "${DOCKER_BIN}" compose up -d || true</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${RUNTIME_ROOT}</string>
+  <key>StandardOutPath</key>
+  <string>/tmp/${LABEL}.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/${LABEL}.err.log</string>
+</dict>
+</plist>
+PLIST
+
+launchctl unload "${PLIST_PATH}" >/dev/null 2>&1 || true
+launchctl load -w "${PLIST_PATH}"
+
+echo "memlayer_launchd_install.sh: installed ${PLIST_PATH}"
+echo "memlayer_launchd_install.sh: MemLayer will try to run at login and every ${START_INTERVAL}s"

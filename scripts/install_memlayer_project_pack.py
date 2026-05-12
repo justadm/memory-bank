@@ -191,6 +191,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
     helper_path = memlayer_dir / "memlayer_api.sh"
     watchdog_path = memlayer_dir / "memlayer_watchdog.sh"
     recover_path = memlayer_dir / "memlayer_recover.sh"
+    launchd_install_path = memlayer_dir / "memlayer_launchd_install.sh"
     context_path = memlayer_dir / "memlayer_context.sh"
     write_path = memlayer_dir / "memlayer_write.sh"
     sync_path = memlayer_dir / "memlayer_sync.sh"
@@ -211,6 +212,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
         ("memlayer_api.sh", helper_path),
         ("memlayer_watchdog.sh", watchdog_path),
         ("memlayer_recover.sh", recover_path),
+        ("memlayer_launchd_install.sh", launchd_install_path),
         ("memlayer_context.sh", context_path),
         ("memlayer_write.sh", write_path),
         ("memlayer_sync.sh", sync_path),
@@ -254,6 +256,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
     helper_text = load_template("memlayer_api.sh.tmpl")
     watchdog_text = load_template("memlayer_watchdog.sh.tmpl")
     recover_text = load_template("memlayer_recover.sh.tmpl")
+    launchd_install_text = load_template("memlayer_launchd_install.sh.tmpl")
     context_text = load_template("memlayer_context.sh.tmpl")
     write_text_template = load_template("memlayer_write.sh.tmpl")
     sync_text_template = load_template("memlayer_sync.sh.tmpl")
@@ -288,6 +291,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
     write_text(helper_path, helper_text, dry_run=dry_run)
     write_text(watchdog_path, watchdog_text, dry_run=dry_run)
     write_text(recover_path, recover_text, dry_run=dry_run)
+    write_text(launchd_install_path, launchd_install_text, dry_run=dry_run)
     write_text(context_path, context_text, dry_run=dry_run)
     write_text(write_path, write_text_template, dry_run=dry_run)
     write_text(sync_path, sync_text_template, dry_run=dry_run)
@@ -303,6 +307,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
     chmod_executable(helper_path, dry_run=dry_run)
     chmod_executable(watchdog_path, dry_run=dry_run)
     chmod_executable(recover_path, dry_run=dry_run)
+    chmod_executable(launchd_install_path, dry_run=dry_run)
     chmod_executable(context_path, dry_run=dry_run)
     chmod_executable(write_path, dry_run=dry_run)
     chmod_executable(sync_path, dry_run=dry_run)
@@ -321,6 +326,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
             str(helper_path),
             str(watchdog_path),
             str(recover_path),
+            str(launchd_install_path),
             str(context_path),
             str(write_path),
             str(sync_path),

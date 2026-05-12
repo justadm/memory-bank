@@ -77,6 +77,7 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
     assert (memlayer_root / "memlayer_api.sh").exists()
     assert (memlayer_root / "memlayer_watchdog.sh").exists()
     assert (memlayer_root / "memlayer_recover.sh").exists()
+    assert (memlayer_root / "memlayer_launchd_install.sh").exists()
     assert (memlayer_root / "memlayer_context.sh").exists()
     assert (memlayer_root / "memlayer_write.sh").exists()
     assert (memlayer_root / "memlayer_sync.sh").exists()
@@ -88,6 +89,7 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
     assert (memlayer_root / "memlayer_api.sh").stat().st_mode & 0o111
     assert (memlayer_root / "memlayer_watchdog.sh").stat().st_mode & 0o111
     assert (memlayer_root / "memlayer_recover.sh").stat().st_mode & 0o111
+    assert (memlayer_root / "memlayer_launchd_install.sh").stat().st_mode & 0o111
     assert (memlayer_root / "memlayer_context.sh").stat().st_mode & 0o111
     assert (memlayer_root / "memlayer_write.sh").stat().st_mode & 0o111
     assert (memlayer_root / "memlayer_sync.sh").stat().st_mode & 0o111
@@ -103,6 +105,12 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
     assert 'http://api:8000' in api_text
     assert 'http://memorybank-api-1:8000' in api_text
     assert 'doctor' in api_text
+    recover_text = (memlayer_root / "memlayer_recover.sh").read_text(encoding="utf-8")
+    assert 'compose up -d' in recover_text
+    assert 'MEMLAYER_RECOVER_HEALTH_TIMEOUT_SECONDS' in recover_text
+    launchd_text = (memlayer_root / "memlayer_launchd_install.sh").read_text(encoding="utf-8")
+    assert 'Library/LaunchAgents' in launchd_text
+    assert 'launchctl load' in launchd_text
     snapshot_pull_text = (memlayer_root / "memlayer_snapshot_pull.sh").read_text(encoding="utf-8")
     assert 'data.setdefault("generated_at"' in snapshot_pull_text
     assert 'data["project_id"] = project_id' in snapshot_pull_text
@@ -150,6 +158,9 @@ def test_install_for_project_preserves_existing_local_env(tmp_path: Path) -> Non
     assert "MEMORYBANK_API_KEY=secret" in local_env
     assert "MEMLAYER_API_URL=http://127.0.0.1:18100" in local_env
     assert "MEMLAYER_EXTRA_URLS=http://host.docker.internal:18100,http://api:8000,http://memorybank-api-1:8000,https://memlayer.loc/api" in local_env
+    assert "MEMLAYER_RECOVER_MODE=up" in local_env
+    assert "MEMLAYER_RECOVER_HEALTH_TIMEOUT_SECONDS=30" in local_env
+    assert "MEMLAYER_LAUNCHD_LABEL=loc.memlayer.runtime" in local_env
 
 
 def test_install_for_project_moves_legacy_root_files_into_memlayer_dir(tmp_path: Path) -> None:
