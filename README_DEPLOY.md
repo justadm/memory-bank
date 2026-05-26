@@ -28,8 +28,8 @@ Primary design spec:
 
 ```bash
 cd /opt/memlayer
-docker compose -f deploy/msk/docker-compose.yml up -d --build
-docker compose -f deploy/msk/docker-compose.yml exec -T api alembic upgrade head
+docker compose --env-file .env -f deploy/msk/docker-compose.yml up -d --build
+docker compose --env-file .env -f deploy/msk/docker-compose.yml exec -T api alembic upgrade head
 ```
 
 4. Install nginx samples into:

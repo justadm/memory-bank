@@ -175,7 +175,7 @@ Expected: files present; secrets visually confirmed without printing them into l
 Run:
 
 ```bash
-ssh msk "cd /opt/memlayer && docker compose -f deploy/msk/docker-compose.yml up -d --build"
+ssh msk "cd /opt/memlayer && docker compose --env-file .env -f deploy/msk/docker-compose.yml up -d --build"
 ```
 
 Expected: `memlayer-api` and `memlayer-db` start
@@ -185,7 +185,7 @@ Expected: `memlayer-api` and `memlayer-db` start
 Run:
 
 ```bash
-ssh msk "cd /opt/memlayer && docker compose -f deploy/msk/docker-compose.yml exec -T api alembic upgrade head"
+ssh msk "cd /opt/memlayer && docker compose --env-file .env -f deploy/msk/docker-compose.yml exec -T api alembic upgrade head"
 ```
 
 Expected: migration reaches `head`

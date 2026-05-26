@@ -22,10 +22,10 @@ Expected next steps on msk:
 
   4. Start stack:
      cd ${TARGET_DIR}
-     docker compose -f deploy/msk/docker-compose.yml up -d --build
+     docker compose --env-file .env -f deploy/msk/docker-compose.yml up -d --build
 
   5. Run migrations:
-     docker compose -f deploy/msk/docker-compose.yml exec -T api alembic upgrade head
+     docker compose --env-file .env -f deploy/msk/docker-compose.yml exec -T api alembic upgrade head
 
   6. Install nginx samples:
      deploy/msk/nginx/api.memlayer.ru.conf
