@@ -259,9 +259,41 @@ Upstream:
 - Конфиг содержит жёстко прописанные bearer/token headers для OpenClaw
 - по текущему комментарию пользователя этот контур, вероятно, уже исторический и требует валидации на актуальность
 
-## 5. Найденные документы и runbook-источники
+## 5. Домены и upstream-карта
 
-### 5.1. AdCrew
+| Domain / host | Nginx config | Upstream | Container / runtime | Project root | Status |
+| --- | --- | --- | --- | --- | --- |
+| `adcrew.pro` | `/etc/nginx/sites-enabled/adcrew.pro` | `127.0.0.1:18090` | `adcrew-web_public-1` | `/home/opsadmin/adcrew` | `active` |
+| `api.adcrew.pro` | `/etc/nginx/sites-enabled/adcrew.pro` | `127.0.0.1:18181` | `adcrew-api-1` | `/home/opsadmin/adcrew` | `active` |
+| `app.adcrew.pro`, `lk.adcrew.pro` | `/etc/nginx/sites-enabled/adcrew.pro` | `127.0.0.1:18091`, `/bff/ -> 127.0.0.1:18181/api/v1/` | `adcrew-web_app-1`, `adcrew-api-1` | `/home/opsadmin/adcrew` | `active` |
+| `admin.adcrew.pro`, `adm.adcrew.pro` | `/etc/nginx/sites-enabled/adcrew.pro` | `127.0.0.1:18092` | `adcrew-web_admin-1` | `/home/opsadmin/adcrew` | `active` |
+| `jstun.com`, `id.jstun.com`, `lk.jstun.com`, `api.jstun.com`, `admin.jstun.com`, `app.jstun.com` | `/etc/nginx/sites-enabled/jstun.com` | `127.0.0.1:18095` | `jstun-portal-1` | `/opt/jstun` | `active` |
+| `wg.devee.ru` | `/etc/nginx/sites-enabled/wg.devee.ru` | `10.200.0.4:18090` | internal upstream behind local nginx; not local `127.0.0.1` docker publish | `unclear`, operationally tied to Jstun/WG contour | `active` |
+| `market.devee.ru` | `/etc/nginx/sites-enabled/market.devee.ru` | `127.0.0.1:28100`, `/api|/webhooks|/static|/healthz -> 127.0.0.1:28000` | `chatmarketai-frontend`, `chatmarketai-api` | `unclear` | `active` |
+| `jstmarket.ru`, `lk.jstmarket.ru`, `admin.jstmarket.ru` | `/etc/nginx/sites-enabled/jstmarket.ru` | `127.0.0.1:28100`, API/static/health via `127.0.0.1:28000` | `chatmarketai-frontend`, `chatmarketai-api` | `unclear` | `active` |
+| `api.jstmarket.ru`, `auth.jstmarket.ru` | `/etc/nginx/sites-enabled/jstmarket.ru` | same ChatMarketAI contour; exact host behavior should be revalidated against full file/runtime | `chatmarketai-*` | `unclear` | `active / partial-unclear` |
+| `idns.devee.ru` | `/etc/nginx/sites-enabled/idns.devee.ru` | `127.0.0.1:28200`, `/v1|/docs|/openapi.json|/health -> 127.0.0.1:28080` | `domens-frontend-1`, `domens-api-1` | `unclear` | `active` |
+| `bx24.devee.ru` | `/etc/nginx/sites-enabled/bx24.devee.ru` | `127.0.0.1:28310` | `bx24pg-web` | `unclear` | `active` |
+| `glavpro.devee.ru` | `/etc/nginx/sites-enabled/glavpro.devee.ru` | `127.0.0.1:18080` | `glavpro-joomla-1` | `unclear` | `active` |
+| `sms.devee.ru` | `/etc/nginx/sites-enabled/sms.devee.ru` | `127.0.0.1:18096` | `whatsapp-receiver-docker-app-1` | `unclear` | `active` |
+| `gridai.ru`, `www.gridai.ru`, `auth.gridai.ru`, `career.gridai.ru`, `hiring.gridai.ru`, `admin.gridai.ru`, `api.gridai.ru` | `/etc/nginx/sites-enabled/gridai.ru` | `127.0.0.1:13001`, `/legacy/ -> 127.0.0.1:13080` | `gridai-frontend` confirms `13080`; runtime behind `13001` was not matched to a published docker port during inspection | `unclear` | `active / partial-unclear` |
+| `hr.devee.ru` | `/etc/nginx/sites-enabled/hr.devee.ru` | `127.0.0.1:13001`, `/api|/oauth -> 127.0.0.1:13001`, `/legacy/ -> 127.0.0.1:13080` | same contour as `gridai.ru`; `13001` runtime not directly identified in `docker ps` | `unclear` | `active / partial-unclear` |
+| `justgpt.ru`, `www.justgpt.ru` | `/etc/nginx/sites-enabled/justgpt.ru.https` | static `200 OK` response | nginx-only health/landing stub | `unclear` | `active` |
+| `app.justgpt.ru`, `api.justgpt.ru` | `/etc/nginx/sites-enabled/justgpt.ru.https` | `127.0.0.1:19100` | local JustGPT control-plane runtime | `unclear` | `active` |
+| `mcp.justgpt.ru` | `/etc/nginx/sites-enabled/justgpt.ru.https` | `127.0.0.1:19001..19015` depending on `/p/*/mcp` path | local multi-upstream MCP runtime | `unclear` | `active` |
+| `max.devee.ru` | `/etc/nginx/sites-enabled/max.devee.ru` | `127.0.0.1:8000` | no matching published docker port found during inspection | `unclear` | `unclear` |
+| `b24-test.devee.ru` | `/etc/nginx/sites-enabled/b24-test.devee.ru` | `127.0.0.1:3010` | no matching published docker port found during inspection; protected by basic auth | `unclear` | `unclear` |
+| `bot.devee.ru` | `/etc/nginx/sites-enabled/bot.devee.ru` | `/alice/ -> 127.0.0.1:3002`, `/gateway|/ -> 127.0.0.1:8000` | legacy OpenCrew-era endpoints; live runtime not revalidated | `unclear` | `legacy / unclear` |
+
+Примечания к таблице:
+
+- `project root = unclear` означает, что nginx и/или Docker contour удалось подтвердить, но однозначный filesystem root на хосте не был найден за текущий проход.
+- `active / partial-unclear` означает, что домен и nginx-маршруты выглядят рабочими, но часть runtime-сопоставления ещё требует второго прохода.
+- Для `jstun` внешний ingress (`127.0.0.1:18095`) и внутренний control API (`127.0.0.1:18110`) живут в одном `/opt/jstun` контуре, но nginx наружу отдаёт только порталный слой.
+
+## 6. Найденные документы и runbook-источники
+
+### 6.1. AdCrew
 
 Самый оформленный ops-doc:
 
@@ -280,7 +312,7 @@ Upstream:
 
 - Для AdCrew есть нормальный локальный runbook.
 
-### 5.2. APUAI
+### 6.2. APUAI
 
 Найдены:
 
@@ -296,7 +328,7 @@ Upstream:
 
 - Для APUAI есть описание самого продукта/сервиса, но не общая схема всего хоста.
 
-### 5.3. Jstun
+### 6.3. Jstun
 
 Главный найденный источник по эксплуатации:
 
@@ -315,7 +347,7 @@ Upstream:
 
 - Для `jstun` роль runbook сейчас выполняет deploy script, а не отдельный markdown inventory.
 
-## 6. Что выглядит как источник истины сейчас
+## 7. Что выглядит как источник истины сейчас
 
 Если нужен реальный operational source of truth по `msk`, то на текущий момент это:
 
@@ -330,16 +362,14 @@ Upstream:
    - `/home/opsadmin/adcrew/.docs/support-runbook-ru.md`
    - `/home/opsadmin/APUAI/docs/*`
 
-## 7. Пробелы inventory
+## 8. Пробелы inventory
 
 Что не найдено в виде одного готового документа:
 
-- единый inventory всех доменов и upstream-ов на `msk`
-- единая карта соответствия `domain -> nginx file -> upstream port/container -> project root`
 - единый список “какой проект где деплоится и каким способом”
 - единая маркировка исторических/неактуальных контуров вроде `bot.devee.ru`
 
-## 8. Практические выводы
+## 9. Практические выводы
 
 - `msk` — это мультисервисный ingress/runtime host
 - `jstun` живёт отдельно в `/opt/jstun` и выглядит как отдельный основной продуктовый контур
@@ -348,17 +378,15 @@ Upstream:
 - часть маршрутов (`wg.devee.ru`) ведёт не на локальный контейнерный `127.0.0.1`, а на внутренний адрес `10.200.0.4`, что важно для диагностики
 - `bot.devee.ru` требует отдельной валидации на актуальность, потому что конфиг ещё жив, но пользовательский контур, по словам пользователя, уже снят
 
-## 9. Что логично сделать дальше
+## 10. Что логично сделать дальше
 
-1. Собрать вторую таблицу вида:
-   - `домен`
-   - `nginx config`
-   - `upstream`
-   - `container/port`
-   - `project root`
-   - `status: active / legacy / unclear`
-2. Отдельно разобрать `jstun`:
+1. Отдельно разобрать `jstun`:
    - как соотносятся `wg.devee.ru`, `jstun.com`, `127.0.0.1:18095`, `127.0.0.1:18110` и `10.200.0.4:18090`
+2. Досопоставить filesystem roots для контуров с `project root = unclear`:
+   - `ChatMarketAI`
+   - `Domens`
+   - `GridAI / hr.devee.ru`
+   - `JustGPT`
 3. Отдельно почистить legacy-контуры:
    - `bot.devee.ru`
    - возможно старые backup nginx-конфиги, если они уже не нужны как операционный reference
