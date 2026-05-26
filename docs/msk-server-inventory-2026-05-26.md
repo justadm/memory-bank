@@ -4,6 +4,10 @@
 Хост: `msk`  
 Назначение документа: единая сводка по проектам, Docker runtime, nginx routing и найденным источникам описания на сервере.
 
+Remote convenience copy for bots:
+
+- `/home/opsadmin/SERVER_INVENTORY.md`
+
 ## 1. Базовая структура хоста
 
 Пользовательский корень:
