@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MemLayer</title>
     <meta
       name="description"
-      content="MemLayer — общий слой памяти для агентных сценариев: retrieval, quality, imports, review queues и runtime self-check."
+      content="MemLayer — shared memory layer for agent workflows: retrieval, quality, imports, review queues, and runtime self-check."
     />
     <link rel="stylesheet" href="/styles.css" />
     <script defer src="/site.js"></script>
@@ -14,18 +14,18 @@
   <body data-theme="auto">
     <header class="site-header">
       <div class="brand-block">
-        <a class="brand" href="https://memlayer.ru/">MemLayer</a>
-        <p class="brand-subtitle">Общий слой памяти для агентов</p>
+        <a class="brand" href="https://memlayer.ru/en/">MemLayer</a>
+        <p class="brand-subtitle">Shared memory layer for agents</p>
       </div>
       <div class="header-controls">
         <nav class="top-nav">
           <a href="#docs">Docs</a>
-          <a href="https://memlayer.ru/api/">API</a>
+          <a href="https://memlayer.ru/en/api/">API</a>
           <a href="https://github.com/justadm/memory-bank" target="_blank" rel="noreferrer">GitHub</a>
         </nav>
         <div class="lang-switch" aria-label="Language switch">
-          <a class="active" href="https://memlayer.ru/">RU</a>
-          <a href="https://memlayer.ru/en/">EN</a>
+          <a href="https://memlayer.ru/">RU</a>
+          <a class="active" href="https://memlayer.ru/en/">EN</a>
         </div>
         <label class="theme-control" for="theme-toggle">
           <span>Theme</span>
@@ -41,44 +41,44 @@
     <main class="page">
       <section class="hero">
         <p class="eyebrow">Memory system for real agent workflows</p>
-        <h1>MemLayer хранит решения, ограничения, риски, артефакты и reuse-paths в одном operational memory contour.</h1>
+        <h1>MemLayer keeps decisions, constraints, risks, artifacts and reuse paths in one operational memory contour.</h1>
         <p class="hero-copy">
-          Это контур памяти для агентных циклов, которым мало временного prompt buffer: поиск, relevant context,
-          imports, quality gates, review queues, lifecycle cleanup, compaction и operator visibility.
+          It is built for agent loops that need more than a transient prompt buffer: search, relevant context,
+          imports, quality gates, review queues, lifecycle cleanup, compaction and operator visibility.
         </p>
         <div class="hero-actions">
-          <a class="button primary" href="https://memlayer.ru/api/">Открыть API примеры</a>
-          <a class="button secondary" href="https://github.com/justadm/memory-bank" target="_blank" rel="noreferrer">Репозиторий</a>
+          <a class="button primary" href="https://memlayer.ru/en/api/">Open API examples</a>
+          <a class="button secondary" href="https://github.com/justadm/memory-bank" target="_blank" rel="noreferrer">View repository</a>
         </div>
       </section>
 
       <section id="docs" class="content-section">
-        <h2>Что делает MemLayer</h2>
+        <h2>What MemLayer does</h2>
         <div class="card-grid">
           <article class="card">
             <h3>Retrieval</h3>
-            <p>Поиск по проекту, связанным проектам и глобальному контуру с lexical, semantic и hybrid режимами.</p>
+            <p>Project-scoped, related-project and global retrieval with lexical, semantic and hybrid modes.</p>
           </article>
           <article class="card">
             <h3>Quality</h3>
-            <p>Quality scoring, semantic duplicate signals, operator review actions и lifecycle maintenance.</p>
+            <p>Quality scoring, semantic duplicate detection, operator review actions and lifecycle maintenance.</p>
           </article>
           <article class="card">
             <h3>Imports</h3>
-            <p>Структурный import, reimport, conflict detection и doc-aware ingestion для реальных репозиториев.</p>
+            <p>Structured project import, reimport, conflict detection and doc-aware ingestion for real repositories.</p>
           </article>
           <article class="card">
             <h3>Operations</h3>
-            <p>Runtime self-check, metrics, review queues, task logs, compaction и встроенная admin console.</p>
+            <p>Runtime self-checks, metrics, review queues, task logs, compaction and embedded admin console.</p>
           </article>
         </div>
       </section>
 
       <section class="content-section">
-        <h2>Публичные точки входа</h2>
+        <h2>Public entry points</h2>
         <p>
-          Публичный контур намеренно небольшой. Production API живёт на отдельном поддомене. Admin runtime вынесен
-          отдельно и не рекламируется с этой страницы.
+          The public surface is intentionally small. Production API lives on a dedicated subdomain. Admin runtime is
+          kept separate and is not linked from this page.
         </p>
         <div class="code-shell">
           <div class="code-shell-header">
@@ -92,8 +92,8 @@
       <section class="content-section">
         <h2>Runtime self-check</h2>
         <p>
-          Для лёгкой read-only проверки есть отдельный endpoint. Используй собственный API key и не храни его в
-          shell history, если это не нужно.
+          For a lightweight read-only smoke check there is a dedicated endpoint. Use your own API key and keep it out
+          of shell history if needed.
         </p>
         <div class="code-shell">
           <div class="code-shell-header">
@@ -108,23 +108,23 @@
       <section class="content-section">
         <h2>Memory quality layer</h2>
         <p>
-          MemLayer не просто хранит знания. Он проверяет, остаются ли они полезными: placeholder rejection,
-          semantic duplicate signals, review queues, conflict resolution и compaction встроены в runtime.
+          MemLayer does not only store knowledge. It also checks whether the stored knowledge remains useful:
+          placeholder rejection, semantic duplicate signals, review queues, conflict resolution and compaction are part
+          of the runtime.
         </p>
         <ul class="feature-list">
-          <li>Quality checks на write и update flows</li>
-          <li>Semantic duplicate signals внутри проекта</li>
-          <li>Decision authority и operator conflict resolution</li>
-          <li>Lifecycle decay, archive и compaction passes</li>
+          <li>Quality checks on write and update flows</li>
+          <li>Semantic duplicate signals inside a project</li>
+          <li>Decision authority and operator conflict resolution</li>
+          <li>Lifecycle decay, archive and compaction passes</li>
         </ul>
       </section>
 
       <section class="content-section">
-        <h2>Import и reuse</h2>
+        <h2>Import and reuse</h2>
         <p>
-          Project scan умеет поднимать память из реальных репозиториев, включая hidden docs, handoff files и
-          структурированные артефакты. После этого retrieval можно ограничивать проектом, соседними проектами или
-          глобальным контуром.
+          Project scans can bootstrap memory from real repositories, including hidden docs, handoff files and structured
+          artifacts. The system can then retrieve context by project, related projects or globally.
         </p>
         <div class="code-shell">
           <div class="code-shell-header">
