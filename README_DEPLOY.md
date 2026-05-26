@@ -19,6 +19,7 @@ Primary design spec:
   - `deploy/msk/nginx/memlayer.ru.conf`
   - `deploy/msk/nginx/api.memlayer.ru.conf`
   - `deploy/msk/nginx/adm.memlayer.ru.conf`
+  - `deploy/msk/nginx/snippets/adm.memlayer.basic-auth.conf.example`
 - public static site:
   - `deploy/msk/site/index.html`
   - `deploy/msk/site/api/index.html`
@@ -57,4 +58,31 @@ sudo nginx -s reload
 curl -sS http://127.0.0.1:18120/health
 curl -sS https://api.memlayer.ru/health
 curl -sS https://adm.memlayer.ru/api/health
+```
+
+## Optional second auth layer for `adm.memlayer.ru`
+
+If you want an nginx-level barrier in front of the embedded admin console, prepare a Basic Auth file and snippet on `msk`:
+
+```bash
+cd /opt/memlayer
+sudo ./scripts/prepare_msk_admin_basic_auth.sh opsadmin
+```
+
+This writes:
+
+- `/etc/nginx/.htpasswd-memlayer-admin`
+- `/etc/nginx/snippets/memlayer_adm_basic_auth.conf`
+
+Then uncomment this line in `/etc/nginx/sites-available/adm.memlayer.ru`:
+
+```nginx
+include /etc/nginx/snippets/memlayer_adm_basic_auth.conf;
+```
+
+And reload nginx:
+
+```bash
+sudo nginx -t
+sudo nginx -s reload
 ```
