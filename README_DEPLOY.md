@@ -16,8 +16,14 @@ Primary design spec:
 - env template: `deploy/msk/.env.example`
 - compose file: `deploy/msk/docker-compose.yml`
 - nginx sample vhosts:
+  - `deploy/msk/nginx/memlayer.ru.conf`
   - `deploy/msk/nginx/api.memlayer.ru.conf`
   - `deploy/msk/nginx/adm.memlayer.ru.conf`
+- public static site:
+  - `deploy/msk/site/index.html`
+  - `deploy/msk/site/api/index.html`
+  - `deploy/msk/site/styles.css`
+  - `deploy/msk/site/site.js`
 - prep helper: `scripts/deploy_msk_prepare.sh`
 
 ## Expected server flow
@@ -33,6 +39,7 @@ docker compose --env-file .env -f deploy/msk/docker-compose.yml exec -T api alem
 ```
 
 4. Install nginx samples into:
+- `/etc/nginx/sites-available/memlayer.ru`
 - `/etc/nginx/sites-available/api.memlayer.ru`
 - `/etc/nginx/sites-available/adm.memlayer.ru`
 

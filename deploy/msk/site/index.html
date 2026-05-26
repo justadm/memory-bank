@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MemLayer</title>
+    <meta
+      name="description"
+      content="MemLayer — shared memory layer for agents and operator workflows: retrieval, quality, imports, review queues, and runtime self-checks."
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <script defer src="/site.js"></script>
+  </head>
+  <body data-theme="auto">
+    <header class="site-header">
+      <div class="brand-block">
+        <a class="brand" href="https://memlayer.ru/">MemLayer</a>
+        <p class="brand-subtitle">Shared memory layer for agents</p>
+      </div>
+      <nav class="top-nav">
+        <a href="#docs">Docs</a>
+        <a href="https://memlayer.ru/api">API</a>
+        <a href="https://github.com/justadm/memory-bank" target="_blank" rel="noreferrer">GitHub</a>
+      </nav>
+      <label class="theme-control" for="theme-toggle">
+        <span>Theme</span>
+        <select id="theme-toggle" aria-label="Theme mode">
+          <option value="auto">Auto</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
+    </header>
+
+    <main class="page">
+      <section class="hero">
+        <p class="eyebrow">Memory system for real agent workflows</p>
+        <h1>MemLayer keeps decisions, constraints, risks, artifacts and reuse paths in one operational memory contour.</h1>
+        <p class="hero-copy">
+          It is built for agent loops that need more than a transient prompt buffer: search, relevant context,
+          imports, review queues, quality gates, lifecycle cleanup, compaction and operator visibility.
+        </p>
+        <div class="hero-actions">
+          <a class="button primary" href="https://memlayer.ru/api">Open API Examples</a>
+          <a class="button secondary" href="https://github.com/justadm/memory-bank" target="_blank" rel="noreferrer">View Repository</a>
+        </div>
+      </section>
+
+      <section id="docs" class="content-section">
+        <h2>What MemLayer does</h2>
+        <div class="card-grid">
+          <article class="card">
+            <h3>Retrieval</h3>
+            <p>Project-scoped, related-project and global retrieval with lexical, semantic and hybrid modes.</p>
+          </article>
+          <article class="card">
+            <h3>Quality</h3>
+            <p>Quality scoring, semantic duplicate detection, operator review actions and lifecycle maintenance.</p>
+          </article>
+          <article class="card">
+            <h3>Imports</h3>
+            <p>Structured project import, reimport, conflict detection and doc-aware ingestion for real repositories.</p>
+          </article>
+          <article class="card">
+            <h3>Operations</h3>
+            <p>Runtime self-checks, metrics, review queues, task logs, compaction and embedded admin console.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="content-section">
+        <h2>Public entry points</h2>
+        <p>
+          The public surface is intentionally small. Production API lives on a dedicated subdomain. Admin runtime is
+          kept separate and is not linked from this page.
+        </p>
+        <div class="code-shell">
+          <div class="code-shell-header">
+            <span>Health check</span>
+            <button class="copy-button" type="button" data-copy-target="health-check">Copy</button>
+          </div>
+          <pre><code id="health-check">curl -sS 'https://api.memlayer.ru/health'</code></pre>
+        </div>
+      </section>
+
+      <section class="content-section">
+        <h2>Runtime self-check</h2>
+        <p>
+          For a lightweight read-only smoke check there is a dedicated endpoint. Use your own API key and keep it out
+          of shell history if needed.
+        </p>
+        <div class="code-shell">
+          <div class="code-shell-header">
+            <span>Read-only self-check</span>
+            <button class="copy-button" type="button" data-copy-target="runtime-check">Copy</button>
+          </div>
+          <pre><code id="runtime-check">curl -sS 'https://api.memlayer.ru/admin/runtime/self-check?search_query=architecture&amp;limit=5' \
+  -H 'Authorization: Bearer YOUR_API_KEY'</code></pre>
+        </div>
+      </section>
+
+      <section class="content-section">
+        <h2>Memory quality layer</h2>
+        <p>
+          MemLayer does not only store knowledge. It also checks whether the stored knowledge remains useful:
+          placeholder rejection, semantic duplicate signals, review queues, conflict resolution and compaction are part
+          of the runtime.
+        </p>
+        <ul class="feature-list">
+          <li>Quality checks on write and update flows</li>
+          <li>Semantic duplicate signals inside a project</li>
+          <li>Decision authority and operator conflict resolution</li>
+          <li>Lifecycle decay, archive and compaction passes</li>
+        </ul>
+      </section>
+
+      <section class="content-section">
+        <h2>Import and reuse</h2>
+        <p>
+          Project scans can bootstrap memory from real repositories, including hidden docs, handoff files and structured
+          artifacts. The system can then retrieve context by project, related projects or globally.
+        </p>
+        <div class="code-shell">
+          <div class="code-shell-header">
+            <span>Project search</span>
+            <button class="copy-button" type="button" data-copy-target="search-example">Copy</button>
+          </div>
+          <pre><code id="search-example">curl -sS 'https://api.memlayer.ru/memory/search?query=architecture%20decision&amp;mode=hybrid&amp;limit=8' \
+  -H 'Authorization: Bearer YOUR_API_KEY'</code></pre>
+        </div>
+      </section>
+    </main>
+  </body>
+  </html>

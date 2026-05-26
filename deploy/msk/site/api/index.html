@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MemLayer API Examples</title>
+    <meta
+      name="description"
+      content="Static API examples for MemLayer: health, search, relevant context and runtime self-check."
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <script defer src="/site.js"></script>
+  </head>
+  <body data-theme="auto">
+    <header class="site-header">
+      <div class="brand-block">
+        <a class="brand" href="https://memlayer.ru/">MemLayer</a>
+        <p class="brand-subtitle">Static API examples</p>
+      </div>
+      <nav class="top-nav">
+        <a href="https://memlayer.ru/">Docs</a>
+        <a href="https://memlayer.ru/api">API</a>
+        <a href="https://github.com/justadm/memory-bank" target="_blank" rel="noreferrer">GitHub</a>
+      </nav>
+      <label class="theme-control" for="theme-toggle">
+        <span>Theme</span>
+        <select id="theme-toggle" aria-label="Theme mode">
+          <option value="auto">Auto</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
+    </header>
+
+    <main class="page">
+      <section class="hero compact">
+        <p class="eyebrow">Public examples only</p>
+        <h1>Safe request examples for the production MemLayer API.</h1>
+        <p class="hero-copy">
+          This page intentionally shows curated request examples instead of a live schema browser. Replace
+          <code>YOUR_API_KEY</code> with a real key that has the scopes you need.
+        </p>
+      </section>
+
+      <section class="content-section">
+        <h2>Health</h2>
+        <div class="code-shell">
+          <div class="code-shell-header">
+            <span>GET /health</span>
+            <button class="copy-button" type="button" data-copy-target="api-health">Copy</button>
+          </div>
+          <pre><code id="api-health">curl -sS 'https://api.memlayer.ru/health'</code></pre>
+        </div>
+      </section>
+
+      <section class="content-section">
+        <h2>Search</h2>
+        <div class="code-shell">
+          <div class="code-shell-header">
+            <span>GET /memory/search</span>
+            <button class="copy-button" type="button" data-copy-target="api-search">Copy</button>
+          </div>
+          <pre><code id="api-search">curl -sS 'https://api.memlayer.ru/memory/search?query=architecture%20decision&amp;mode=hybrid&amp;limit=8' \
+  -H 'Authorization: Bearer YOUR_API_KEY'</code></pre>
+        </div>
+      </section>
+
+      <section class="content-section">
+        <h2>Relevant context</h2>
+        <div class="code-shell">
+          <div class="code-shell-header">
+            <span>POST /memory/relevant</span>
+            <button class="copy-button" type="button" data-copy-target="api-relevant">Copy</button>
+          </div>
+          <pre><code id="api-relevant">curl -sS 'https://api.memlayer.ru/memory/relevant' \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer YOUR_API_KEY' \
+  -d '{
+    "query": "Current task context",
+    "agent_id": "public-example",
+    "limit": 6,
+    "search_mode": "hybrid"
+  }'</code></pre>
+        </div>
+      </section>
+
+      <section class="content-section">
+        <h2>Runtime self-check</h2>
+        <div class="code-shell">
+          <div class="code-shell-header">
+            <span>GET /admin/runtime/self-check</span>
+            <button class="copy-button" type="button" data-copy-target="api-self-check">Copy</button>
+          </div>
+          <pre><code id="api-self-check">curl -sS 'https://api.memlayer.ru/admin/runtime/self-check?search_query=architecture&amp;limit=5' \
+  -H 'Authorization: Bearer YOUR_API_KEY'</code></pre>
+        </div>
+      </section>
+    </main>
+  </body>
+  </html>
