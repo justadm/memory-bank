@@ -10,6 +10,7 @@ def test_public_site_files_exist():
     assert (SITE_DIR / "en" / "index.html").exists()
     assert (SITE_DIR / "api" / "index.html").exists()
     assert (SITE_DIR / "en" / "api" / "index.html").exists()
+    assert (SITE_DIR / "favicon.svg").exists()
     assert (SITE_DIR / "styles.css").exists()
     assert (SITE_DIR / "site.js").exists()
 
@@ -51,3 +52,15 @@ def test_site_js_supports_copy_and_theme_switcher():
     assert "navigator.clipboard.writeText" in js
     assert "theme-toggle" in js
     assert "prefers-color-scheme" in js
+
+
+def test_all_public_pages_reference_shared_favicon():
+    targets = [
+        SITE_DIR / "index.html",
+        SITE_DIR / "api" / "index.html",
+        SITE_DIR / "en" / "index.html",
+        SITE_DIR / "en" / "api" / "index.html",
+    ]
+    for target in targets:
+        html = target.read_text(encoding="utf-8")
+        assert 'href="/favicon.svg"' in html
