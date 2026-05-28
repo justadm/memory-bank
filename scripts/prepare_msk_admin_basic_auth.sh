@@ -29,6 +29,9 @@ mkdir -p "$(dirname "$htpasswd_path")" "$(dirname "$snippet_path")"
 
 password_hash="$(openssl passwd -apr1 "$password")"
 printf '%s:%s\n' "$username" "$password_hash" > "$htpasswd_path"
+if getent group www-data >/dev/null 2>&1; then
+  chgrp www-data "$htpasswd_path"
+fi
 chmod 640 "$htpasswd_path"
 
 {

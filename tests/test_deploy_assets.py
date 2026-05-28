@@ -14,5 +14,7 @@ def test_basic_auth_deploy_assets_exist():
 def test_basic_auth_helper_has_expected_targets():
     helper = (ROOT / "scripts" / "prepare_msk_admin_basic_auth.sh").read_text(encoding="utf-8")
     assert "openssl passwd -apr1" in helper
+    assert "chgrp www-data" in helper
+    assert "chmod 640" in helper
     assert "/etc/nginx/.htpasswd-memlayer-admin" in helper
     assert "/etc/nginx/snippets/memlayer_adm_basic_auth.conf" in helper
