@@ -62,6 +62,8 @@ curl -sS https://adm.memlayer.ru/api/health
 
 ## Optional second auth layer for `adm.memlayer.ru`
 
+Live `msk` status: enabled. Unauthenticated requests to `https://adm.memlayer.ru/` and `https://adm.memlayer.ru/api/health` should return `401`.
+
 If you want an nginx-level barrier in front of the embedded admin console, prepare a Basic Auth file and snippet on `msk`:
 
 ```bash
@@ -74,10 +76,24 @@ This writes:
 - `/etc/nginx/.htpasswd-memlayer-admin`
 - `/etc/nginx/snippets/memlayer_adm_basic_auth.conf`
 
-Then uncomment this line in `/etc/nginx/sites-available/adm.memlayer.ru`:
+The htpasswd file must be readable by nginx workers. On Ubuntu nginx usually runs as `www-data`, so the expected file mode is:
+
+```bash
+sudo chgrp www-data /etc/nginx/.htpasswd-memlayer-admin
+sudo chmod 640 /etc/nginx/.htpasswd-memlayer-admin
+```
+
+Then enable the auth barrier in `/etc/nginx/sites-available/adm.memlayer.ru`. For configs based on the current repository sample, uncomment this include:
 
 ```nginx
 include /etc/nginx/snippets/memlayer_adm_basic_auth.conf;
+```
+
+For the current live `msk` vhost, the equivalent active lines are:
+
+```nginx
+auth_basic "MemLayer Admin";
+auth_basic_user_file /etc/nginx/.htpasswd-memlayer-admin;
 ```
 
 And reload nginx:
