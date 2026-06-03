@@ -2,10 +2,25 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 MANAGED_START = "<!-- MEMLAYER_ROOT_PACK:START -->"
 MANAGED_END = "<!-- MEMLAYER_ROOT_PACK:END -->"
+PRODUCTION_API_URL = "https://api.memlayer.ru"
+LOCAL_API_URL = "http://127.0.0.1:18100"
+LOCAL_EXTRA_URLS = "http://host.docker.internal:18100,http://127.0.0.1:18100,http://api:8000,http://memorybank-api-1:8000,https://memlayer.loc/api"
+LEGACY_MANAGED_ENV_VALUES = {
+    "MEMLAYER_API_URL": {
+        "http://127.0.0.1:18100",
+    },
+    "MEMLAYER_EXTRA_URLS": {
+        "http://host.docker.internal:18100,http://api:8000,http://memorybank-api-1:8000,https://memlayer.loc/api",
+    },
+    "MEMLAYER_RETRY_ATTEMPTS": {
+        "10",
+    },
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -17,17 +32,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--preferred-url",
-        default="http://127.0.0.1:18100",
+        default=PRODUCTION_API_URL,
         help="Primary MemLayer API URL that local sandboxed agents should prefer.",
     )
     parser.add_argument(
         "--local-url",
-        default="https://memlayer.loc/api",
-        help="Fallback MemLayer API URL when localhost is unavailable.",
+        default=LOCAL_API_URL,
+        help="Fallback MemLayer API URL when production is unavailable.",
     )
     parser.add_argument(
         "--human-url",
-        default="https://memlayer.loc/api",
+        default=PRODUCTION_API_URL,
         help="Human-friendly MemLayer API URL for browsers and non-sandboxed tools.",
     )
     parser.add_argument(
@@ -118,13 +133,32 @@ def write_json(path: Path, payload: dict[str, object], dry_run: bool) -> None:
 def merge_env_text(existing_text: str, template_text: str) -> str:
     existing_lines = existing_text.splitlines()
     existing_keys = set()
-    for line in existing_lines:
+    template_values = {}
+    for line in template_text.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
-        existing_keys.add(stripped.split("=", 1)[0].strip())
+        key, value = stripped.split("=", 1)
+        template_values[key.strip()] = value.strip()
 
-    merged_lines = list(existing_lines)
+    merged_lines = []
+    for line in existing_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            merged_lines.append(line)
+            continue
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        existing_keys.add(key)
+        if key == "MEMORYBANK_API_KEY" and value == "" and template_values.get(key):
+            merged_lines.append(f"{key}={template_values[key]}")
+            continue
+        if key in LEGACY_MANAGED_ENV_VALUES and value in LEGACY_MANAGED_ENV_VALUES[key] and key in template_values:
+            merged_lines.append(f"{key}={template_values[key]}")
+            continue
+        merged_lines.append(line)
+
     if merged_lines and merged_lines[-1].strip():
         merged_lines.append("")
 
@@ -139,6 +173,13 @@ def merge_env_text(existing_text: str, template_text: str) -> str:
         existing_keys.add(key)
 
     return "\n".join(merged_lines).rstrip() + "\n"
+
+
+def apply_env_secret_seed(template_text: str) -> str:
+    api_key = os.environ.get("MEMORYBANK_API_KEY", "")
+    if not api_key:
+        return template_text
+    return template_text.replace("MEMORYBANK_API_KEY=", f"MEMORYBANK_API_KEY={api_key}", 1)
 
 
 def chmod_executable(path: Path, dry_run: bool) -> None:
@@ -252,7 +293,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
         local_url=local_url,
         human_url=human_url,
     )
-    local_env_text = load_template("env.memlayer.tmpl")
+    local_env_text = apply_env_secret_seed(load_template("env.memlayer.tmpl"))
     helper_text = load_template("memlayer_api.sh.tmpl")
     watchdog_text = load_template("memlayer_watchdog.sh.tmpl")
     recover_text = load_template("memlayer_recover.sh.tmpl")

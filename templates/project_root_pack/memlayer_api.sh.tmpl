@@ -153,12 +153,12 @@ resolve_endpoints() {
 }
 
 select_working_endpoint() {
-  local retry_attempts="${MEMLAYER_API_RETRY_ATTEMPTS_OVERRIDE:-${MEMLAYER_RETRY_ATTEMPTS:-10}}"
+  local retry_attempts="${MEMLAYER_API_RETRY_ATTEMPTS_OVERRIDE:-${MEMLAYER_RETRY_ATTEMPTS:-2}}"
   local endpoint
   local attempt
 
   if [[ ! "${retry_attempts}" =~ ^[0-9]+$ ]] || [[ "${retry_attempts}" -lt 1 ]]; then
-    retry_attempts=10
+    retry_attempts=2
   fi
 
   for endpoint in "${ENDPOINTS[@]}"; do
@@ -213,7 +213,7 @@ doctor() {
   echo "env_path=${ENV_PATH}"
   echo "memlayer_api_url=${MEMLAYER_API_URL:-}"
   echo "memlayer_extra_urls=${MEMLAYER_EXTRA_URLS:-}"
-  echo "retry_attempts=${MEMLAYER_RETRY_ATTEMPTS:-10}"
+  echo "retry_attempts=${MEMLAYER_RETRY_ATTEMPTS:-2}"
   echo "curl_timeout=${MEMLAYER_CURL_TIMEOUT_SECONDS:-8}"
   echo "memorybank_api_key_configured=$([[ -n "${MEMORYBANK_API_KEY:-}" ]] && echo yes || echo no)"
   echo

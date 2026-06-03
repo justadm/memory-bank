@@ -5,6 +5,10 @@ from pathlib import Path
 from scripts.install_memlayer_project_pack import (
     MANAGED_END,
     MANAGED_START,
+    LOCAL_API_URL,
+    LOCAL_EXTRA_URLS,
+    PRODUCTION_API_URL,
+    apply_env_secret_seed,
     build_project_config,
     install_for_project,
     merge_project_config,
@@ -39,15 +43,16 @@ def test_build_project_config_contains_expected_defaults(tmp_path: Path) -> None
     project_root = tmp_path / "ExampleProject"
     config = build_project_config(
         project_root,
-        "http://127.0.0.1:18100",
-        "https://memlayer.loc/api",
-        "https://memlayer.loc/api",
+        PRODUCTION_API_URL,
+        LOCAL_API_URL,
+        PRODUCTION_API_URL,
     )
 
     assert config["project_name"] == "ExampleProject"
     assert config["project_root"] == str(project_root)
-    assert config["preferred_url"] == "http://127.0.0.1:18100"
-    assert config["human_preferred_url"] == "https://memlayer.loc/api"
+    assert config["preferred_url"] == PRODUCTION_API_URL
+    assert config["local_fallback_url"] == LOCAL_API_URL
+    assert config["human_preferred_url"] == PRODUCTION_API_URL
     assert config["existing_entry_mode"] == "update"
     assert config["recommended_search_mode"] == "hybrid"
 
@@ -59,9 +64,9 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
 
     result = install_for_project(
         project_root,
-        preferred_url="http://127.0.0.1:18100",
-        local_url="https://memlayer.loc/api",
-        human_url="https://memlayer.loc/api",
+        preferred_url=PRODUCTION_API_URL,
+        local_url=LOCAL_API_URL,
+        human_url=PRODUCTION_API_URL,
         dry_run=False,
     )
 
@@ -101,6 +106,7 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
     assert 'matched_items' in context_text
     assert 'memlayer_snapshot_pull.sh' in context_text
     api_text = (memlayer_root / "memlayer_api.sh").read_text(encoding="utf-8")
+    assert PRODUCTION_API_URL in (memlayer_root / "memlayer.config.json").read_text(encoding="utf-8")
     assert "host.docker.internal:18100" in api_text
     assert 'http://api:8000' in api_text
     assert 'http://memorybank-api-1:8000' in api_text
@@ -124,9 +130,9 @@ def test_install_for_project_merges_existing_agents_file(tmp_path: Path) -> None
 
     result = install_for_project(
         project_root,
-        preferred_url="http://127.0.0.1:18100",
-        local_url="https://memlayer.loc/api",
-        human_url="https://memlayer.loc/api",
+        preferred_url=PRODUCTION_API_URL,
+        local_url=LOCAL_API_URL,
+        human_url=PRODUCTION_API_URL,
         dry_run=False,
     )
 
@@ -148,16 +154,16 @@ def test_install_for_project_preserves_existing_local_env(tmp_path: Path) -> Non
 
     install_for_project(
         project_root,
-        preferred_url="http://127.0.0.1:18100",
-        local_url="https://memlayer.loc/api",
-        human_url="https://memlayer.loc/api",
+        preferred_url=PRODUCTION_API_URL,
+        local_url=LOCAL_API_URL,
+        human_url=PRODUCTION_API_URL,
         dry_run=False,
     )
 
     local_env = local_env_path.read_text(encoding="utf-8")
     assert "MEMORYBANK_API_KEY=secret" in local_env
-    assert "MEMLAYER_API_URL=http://127.0.0.1:18100" in local_env
-    assert "MEMLAYER_EXTRA_URLS=http://host.docker.internal:18100,http://api:8000,http://memorybank-api-1:8000,https://memlayer.loc/api" in local_env
+    assert f"MEMLAYER_API_URL={PRODUCTION_API_URL}" in local_env
+    assert f"MEMLAYER_EXTRA_URLS={LOCAL_EXTRA_URLS}" in local_env
     assert "MEMLAYER_RECOVER_MODE=up" in local_env
     assert "MEMLAYER_RECOVER_HEALTH_TIMEOUT_SECONDS=30" in local_env
     assert "MEMLAYER_LAUNCHD_LABEL=loc.memlayer.runtime" in local_env
@@ -171,9 +177,9 @@ def test_install_for_project_moves_legacy_root_files_into_memlayer_dir(tmp_path:
 
     install_for_project(
         project_root,
-        preferred_url="http://127.0.0.1:18100",
-        local_url="https://memlayer.loc/api",
-        human_url="https://memlayer.loc/api",
+        preferred_url=PRODUCTION_API_URL,
+        local_url=LOCAL_API_URL,
+        human_url=PRODUCTION_API_URL,
         dry_run=False,
     )
 
@@ -185,13 +191,63 @@ def test_install_for_project_moves_legacy_root_files_into_memlayer_dir(tmp_path:
 
 def test_merge_env_text_appends_missing_keys_without_overwriting_existing_values() -> None:
     existing = "MEMORYBANK_API_KEY=secret\nMEMLAYER_API_URL=http://custom:8000\n"
-    template = "MEMORYBANK_API_KEY=\nMEMLAYER_API_URL=http://127.0.0.1:18100\nMEMLAYER_EXTRA_URLS=http://api:8000\n"
+    template = f"MEMORYBANK_API_KEY=\nMEMLAYER_API_URL={PRODUCTION_API_URL}\nMEMLAYER_EXTRA_URLS=http://api:8000\n"
 
     merged = merge_env_text(existing, template)
 
     assert "MEMORYBANK_API_KEY=secret" in merged
     assert "MEMLAYER_API_URL=http://custom:8000" in merged
     assert "MEMLAYER_EXTRA_URLS=http://api:8000" in merged
+
+
+def test_merge_env_text_updates_legacy_managed_endpoint_defaults() -> None:
+    existing = (
+        "MEMORYBANK_API_KEY=secret\n"
+        "MEMLAYER_API_URL=http://127.0.0.1:18100\n"
+        "MEMLAYER_EXTRA_URLS=http://host.docker.internal:18100,http://api:8000,http://memorybank-api-1:8000,https://memlayer.loc/api\n"
+        "MEMLAYER_RETRY_ATTEMPTS=10\n"
+    )
+    template = (
+        f"MEMORYBANK_API_KEY=\n"
+        f"MEMLAYER_API_URL={PRODUCTION_API_URL}\n"
+        f"MEMLAYER_EXTRA_URLS={LOCAL_EXTRA_URLS}\n"
+        f"MEMLAYER_RETRY_ATTEMPTS=2\n"
+    )
+
+    merged = merge_env_text(existing, template)
+
+    assert "MEMORYBANK_API_KEY=secret" in merged
+    assert f"MEMLAYER_API_URL={PRODUCTION_API_URL}" in merged
+    assert f"MEMLAYER_EXTRA_URLS={LOCAL_EXTRA_URLS}" in merged
+    assert "MEMLAYER_RETRY_ATTEMPTS=2" in merged
+
+
+def test_merge_env_text_fills_empty_api_key_from_template() -> None:
+    existing = "MEMORYBANK_API_KEY=\nMEMLAYER_API_URL=http://127.0.0.1:18100\n"
+    template = f"MEMORYBANK_API_KEY=prod-key\nMEMLAYER_API_URL={PRODUCTION_API_URL}\n"
+
+    merged = merge_env_text(existing, template)
+
+    assert "MEMORYBANK_API_KEY=prod-key" in merged
+    assert f"MEMLAYER_API_URL={PRODUCTION_API_URL}" in merged
+
+
+def test_merge_env_text_preserves_existing_non_empty_api_key() -> None:
+    existing = "MEMORYBANK_API_KEY=custom-key\n"
+    template = "MEMORYBANK_API_KEY=prod-key\n"
+
+    merged = merge_env_text(existing, template)
+
+    assert "MEMORYBANK_API_KEY=custom-key" in merged
+    assert "MEMORYBANK_API_KEY=prod-key" not in merged
+
+
+def test_apply_env_secret_seed_uses_memorybank_api_key(monkeypatch) -> None:
+    monkeypatch.setenv("MEMORYBANK_API_KEY", "prod-key")
+
+    seeded = apply_env_secret_seed("MEMORYBANK_API_KEY=\nMEMLAYER_API_URL=https://api.memlayer.ru\n")
+
+    assert "MEMORYBANK_API_KEY=prod-key" in seeded
 
 
 def test_merge_project_config_preserves_existing_project_identity() -> None:
@@ -201,12 +257,12 @@ def test_merge_project_config_preserves_existing_project_identity() -> None:
         "preferred_url": "http://old:18100",
     }
     generated = {
-        "preferred_url": "http://127.0.0.1:18100",
-        "local_fallback_url": "https://memlayer.loc/api",
+        "preferred_url": PRODUCTION_API_URL,
+        "local_fallback_url": LOCAL_API_URL,
     }
 
     merged = merge_project_config(existing, generated)
 
     assert merged["project_id"] == "8bc076cc-300e-481c-9215-f0e24364d81d"
     assert merged["tenant_id"] == "tenant-1"
-    assert merged["preferred_url"] == "http://127.0.0.1:18100"
+    assert merged["preferred_url"] == PRODUCTION_API_URL

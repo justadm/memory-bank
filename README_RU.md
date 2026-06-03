@@ -39,8 +39,8 @@
 
 Для локальных агентов, CLI и automation wrapper-ов теперь рекомендуется:
 
-- sandbox-friendly default: `http://127.0.0.1:18100`
-- escalated or browser-friendly fallback: `https://memlayer.loc/api`
+- primary shared API: `https://api.memlayer.ru`
+- local fallback: `http://127.0.0.1:18100`
 
 Встроенная консоль MemLayer уже умеет:
 - работать с same-origin API по умолчанию
@@ -84,7 +84,7 @@ docker compose exec api pytest
 
 - `AGENTS.md` — создаётся или безопасно дополняется managed-секцией MemLayer
 - `.memlayer/MEMLAYER.md` — подробная инструкция для агента по read/write/import workflow
-- `.memlayer/memlayer_api.sh` — локальный helper для чтения и записи в MemLayer с automatic fallback `localhost -> memlayer.loc`
+- `.memlayer/memlayer_api.sh` — локальный helper для чтения и записи в MemLayer с automatic fallback `api.memlayer.ru -> local endpoints`
 - `.memlayer/memlayer_context.sh` — snapshot-first helper для pre-task чтения: сначала локальный snapshot, live MemLayer только по явному refresh
 - `.memlayer/memlayer_watchdog.sh` — быстрый runtime-check для случаев после сна, ребута или flaky localhost-доступа
 - `.memlayer/memlayer_recover.sh` — локальный recovery helper для рестарта dockerized MemLayer API из проектного корня
@@ -113,13 +113,13 @@ PYTHONPATH=$PWD .venv313/bin/python scripts/install_memlayer_project_pack.py \
 ```
 
 Installer не затирает пользовательский текст в уже существующих `AGENTS.md`: он только добавляет или обновляет managed-блок между маркерами `MEMLAYER_ROOT_PACK`.
-Если в проекте уже есть `.env.memlayer`, installer его сохраняет и не перезаписывает.
+Если в проекте уже есть `.env.memlayer`, installer сохраняет secrets и пользовательские значения. Старые managed defaults подключения (`127.0.0.1:18100` и старый localhost ladder) он обновляет на production-first значения.
 Importer теперь также умеет поднимать doc-driven handoff проекты: `docs/*.md`, hidden `.docs/*.md` и `mvp-handoff/*.md` превращаются в `artifact` entries, backlog `EPIC-*` headings импортируются как `task`, а product/architecture decisions вроде staged LLM pipeline, schema-first runtime и local `.loc` constraints поднимаются в память автоматически.
 Для более process-heavy внутренних проектов importer теперь также понимает `COMMITS.md` и `openspec/config.yaml`: он может сохранить commit-policy notes, spec-driven workflow signals, Bitrix24 list MVP decisions, admin-only delivery constraints, SharePoint historical-source constraints и personal-data attachment risks.
-`memlayer_api.sh` теперь делает короткие retry/backoff попытки на localhost перед fallback на `memlayer.loc`, а `memlayer_watchdog.sh` даёт готовую быструю проверку `health + runtime self-check`.
+`memlayer_api.sh` теперь делает короткие retry/backoff попытки на `api.memlayer.ru`, затем fallback на локальные endpoint'ы, а `memlayer_watchdog.sh` даёт готовую быструю проверку `health + runtime self-check`.
 Для runtime-диагностики появился `./memlayer_api.sh doctor`: он показывает endpoint ladder, DNS/host resolution и health-результат для каждого кандидата прямо из текущего agent/runtime-контекста.
-Helper теперь учитывает разницу окружений и может сам искать MemLayer через `MEMLAYER_API_URL`, `host.docker.internal`, `127.0.0.1`, `api:8000`, `memorybank-api-1:8000` и `memlayer.loc`.
-Installer теперь не только сохраняет существующий `.env.memlayer`, но и мягко дописывает в него недостающие connection defaults вроде `MEMLAYER_API_URL` и `MEMLAYER_EXTRA_URLS`, не перетирая уже заданные ключи и секреты.
+Helper теперь учитывает разницу окружений и может сам искать MemLayer через `MEMLAYER_API_URL`, `api.memlayer.ru`, `host.docker.internal`, `127.0.0.1`, `api:8000`, `memorybank-api-1:8000` и `memlayer.loc`.
+Installer теперь не только сохраняет существующий `.env.memlayer`, но и мягко дописывает или обновляет managed connection defaults вроде `MEMLAYER_API_URL` и `MEMLAYER_EXTRA_URLS`, не перетирая уже заданные ключи, secrets и кастомные URL.
 Installer теперь также сохраняет существующий `project_id` внутри `memlayer.config.json`, чтобы project-scoped snapshot/retrieval не деградировали обратно в global context после обновления root-pack.
 CLI importer теперь тоже понимает новую hidden-layout схему и сохраняет `project_id` в `.memlayer/memlayer.config.json`, а не только в legacy root-path.
 Если сам runtime действительно просел, `memlayer_recover.sh` теперь по умолчанию использует `docker compose up -d`, то есть умеет поднять весь стек после ребута или полного простоя, а не только перезапустить уже живой `api`. Watchdog по-прежнему можно перевести в auto-recover режим через `.env.memlayer`.

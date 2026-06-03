@@ -5,7 +5,7 @@ This repository is expected to use MemLayer as its shared working memory.
 ## Endpoints
 
 - Agent default: `{preferred_url}`
-- Escalated fallback: `{local_url}`
+- Local fallback: `{local_url}`
 - Browser/UI-friendly: `{human_url}`
 
 ## Local Project Identity
@@ -31,7 +31,8 @@ This repository is expected to use MemLayer as its shared working memory.
 
 Pick the endpoint profile that matches the runtime where the agent actually runs:
 
-- host machine: `MEMLAYER_API_URL=http://127.0.0.1:18100`
+- production: `MEMLAYER_API_URL=https://api.memlayer.ru`
+- host machine fallback: `MEMLAYER_API_URL=http://127.0.0.1:18100`
 - container reaching host: `MEMLAYER_API_URL=http://host.docker.internal:18100`
 - same docker-compose network: `MEMLAYER_API_URL=http://api:8000`
 - explicit container name: `MEMLAYER_API_URL=http://memorybank-api-1:8000`
