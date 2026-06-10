@@ -2,6 +2,7 @@ import re
 import uuid
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import HTTPException, status
@@ -58,19 +59,7 @@ class ImportService:
         conflicts_by_ref: dict[str, list[dict]] = {}
         for item in conflicts:
             conflicts_by_ref.setdefault(item["entry_ref"], []).append(item)
-        import_event = self.memory_service.create_memory(
-            MemoryCreate(
-                type="event",
-                title=self._mask_text(payload.import_event.title),
-                content=self._mask_text(payload.import_event.content),
-                source_agent=payload.import_event.source_agent,
-                project_id=project.id,
-                importance=payload.import_event.importance,
-                metadata=self._mask_metadata(payload.import_event.metadata),
-            ),
-            principal=principal,
-            enforce_quality_gate=False,
-        )
+        import_event = self._record_import_event(project=project, payload=payload, principal=principal)
 
         entry_refs: dict[str, uuid.UUID] = {}
         entries_created = 0
@@ -187,6 +176,109 @@ class ImportService:
             "conflicts_detected": len(conflicts),
             "conflicts": conflicts,
         }
+
+    def _record_import_event(
+        self,
+        *,
+        project: Project,
+        payload: ProjectImportRequest,
+        principal: AuthPrincipal | None,
+    ):
+        title = self._mask_text(payload.import_event.title)
+        content = self._mask_text(payload.import_event.content)
+        metadata = self._build_import_event_metadata(payload=payload)
+        existing = None
+        if payload.existing_entry_mode == "update":
+            existing = self._find_active_import_event(
+                project_id=project.id,
+                source_agent=payload.import_event.source_agent,
+                import_type=metadata.get("import_type"),
+            )
+        if existing:
+            metadata = self._build_import_event_metadata(payload=payload, previous_metadata=existing.metadata_)
+            return self.memory_service.update_memory(
+                existing.id,
+                MemoryUpdate(
+                    title=title,
+                    content=content,
+                    source_agent=payload.import_event.source_agent,
+                    project_id=project.id,
+                    importance=payload.import_event.importance,
+                    metadata=metadata,
+                    archived=False,
+                ),
+                principal=principal,
+                enforce_quality_gate=False,
+            )
+
+        return self.memory_service.create_memory(
+            MemoryCreate(
+                type="event",
+                title=title,
+                content=content,
+                source_agent=payload.import_event.source_agent,
+                project_id=project.id,
+                importance=payload.import_event.importance,
+                metadata=metadata,
+            ),
+            principal=principal,
+            enforce_quality_gate=False,
+        )
+
+    def _find_active_import_event(
+        self,
+        *,
+        project_id: uuid.UUID,
+        source_agent: str,
+        import_type: object,
+    ):
+        if not import_type:
+            return None
+        for entry in self.memory_repository.list(project_id=project_id, memory_type=MemoryType.event, archived=False):
+            metadata = entry.metadata_ if isinstance(entry.metadata_, dict) else {}
+            if (
+                entry.source_agent == source_agent
+                and metadata.get("import_type") == import_type
+            ):
+                return entry
+        return None
+
+    def _build_import_event_metadata(
+        self,
+        *,
+        payload: ProjectImportRequest,
+        previous_metadata: dict | None = None,
+    ) -> dict:
+        previous = dict(previous_metadata or {})
+        metadata = {
+            key: value
+            for key, value in previous.items()
+            if key not in {"quality", "quality_review_required", "review_overdue"}
+        }
+        metadata.update(self._mask_metadata(payload.import_event.metadata))
+        now = datetime.now(timezone.utc).isoformat()
+        previous_runs_count = int(previous.get("import_runs_count", 0) or 0)
+        metadata["import_runs_count"] = previous_runs_count + 1
+        metadata["last_imported_at"] = now
+        metadata["evidence"] = {
+            "kind": "project_import_event",
+            "existing_entry_mode": payload.existing_entry_mode,
+            "entries_count": len(payload.entries),
+            "links_count": len(payload.links),
+        }
+        history = previous.get("import_history", [])
+        if not isinstance(history, list):
+            history = []
+        history.append(
+            {
+                "imported_at": now,
+                "existing_entry_mode": payload.existing_entry_mode,
+                "entries_count": len(payload.entries),
+                "links_count": len(payload.links),
+            }
+        )
+        metadata["import_history"] = history[-10:]
+        return metadata
 
     def reimport_project_scan(
         self,

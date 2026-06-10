@@ -1412,6 +1412,68 @@ def test_project_import_detects_conflicting_decisions(client):
     assert imported["metadata"]["import_conflicts"]
 
 
+def test_project_import_update_mode_reuses_import_event(client):
+    project = client.post("/projects", json={"name": "Import Event Idempotency"}).json()
+    payload = {
+        "project_id": project["id"],
+        "existing_entry_mode": "update",
+        "entries": [
+            {
+                "ref": "artifact-readme",
+                "type": "artifact",
+                "title": "README.md",
+                "content": "README summary with enough detail for the imported project documentation entry.",
+                "metadata": {"evidence": ["README.md"]},
+            }
+        ],
+        "links": [],
+    }
+
+    first = client.post("/imports/project-scan", json=payload)
+    second = client.post("/imports/project-scan", json=payload)
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["import_event_id"] == second.json()["import_event_id"]
+
+    listed = client.get("/memory", params={"project_id": project["id"], "archived": False})
+    assert listed.status_code == 200
+    active_import_events = [
+        item
+        for item in listed.json()["items"]
+        if item["type"] == "event" and item["title"] == "Initial project import"
+    ]
+    assert len(active_import_events) == 1
+    event_metadata = active_import_events[0]["metadata"]
+    assert event_metadata["import_runs_count"] == 2
+    assert len(event_metadata["import_history"]) == 2
+    assert event_metadata["last_imported_at"] == event_metadata["import_history"][-1]["imported_at"]
+    assert event_metadata["evidence"]["existing_entry_mode"] == "update"
+    assert event_metadata.get("quality_review_required") is not True
+
+    summary = client.get("/admin/imports/summary", params={"limit": 10})
+    assert summary.status_code == 200
+    project_summary = next(item for item in summary.json()["items"] if item["project_id"] == project["id"])
+    assert project_summary["import_events_count"] == 1
+
+
+def test_project_import_create_mode_keeps_distinct_import_events(client):
+    project = client.post("/projects", json={"name": "Import Event Create Mode"}).json()
+    payload = {
+        "project_id": project["id"],
+        "existing_entry_mode": "create",
+        "entries": [],
+        "links": [],
+    }
+
+    first = client.post("/imports/project-scan", json=payload)
+    second = client.post("/imports/project-scan", json=payload)
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["import_event_id"] != second.json()["import_event_id"]
+
+
 def test_import_low_quality_entries_are_marked_for_review(client):
     project = client.post("/projects", json={"name": "Quality Import"}).json()
     response = client.post(
@@ -1645,6 +1707,12 @@ def test_import_project_scan_reuses_existing_project_by_source_path(client, tmp_
     body = second.json()
     assert body["project"]["id"] == first_project_id
     assert body["entries_updated"] >= 1
+    assert body["import_event_id"] == first.json()["import_event_id"]
+
+    summary = client.get("/admin/imports/summary", params={"limit": 10})
+    assert summary.status_code == 200
+    project_summary = next(item for item in summary.json()["items"] if item["project_id"] == first_project_id)
+    assert project_summary["import_events_count"] == 1
 
 
 def test_auth_protects_write_endpoints_when_enabled(client, monkeypatch):
