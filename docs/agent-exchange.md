@@ -97,3 +97,23 @@ Recommendation:
 Needs user approval:
 
 - Any production reimport or deploy.
+
+### 2026-06-10T23:34:36Z - codex-local - memory.bank - correction
+
+prod_write: no
+
+Facts:
+
+- The preceding `2026-06-10T23:26:53Z` status correction is stale.
+- Local worktree is clean.
+- Import-event idempotency fix is committed as `553c73b Make project import events idempotent`.
+- Follow-up exchange note is committed as `545d126 Update agent exchange after import deploy`.
+- Both commits are pushed to `origin/main`.
+- `/opt/memlayer` on `msk` is at `545d126`.
+- Running `memlayer-api` container contains `ImportService._record_import_event`.
+- No controlled production reimport has been run after this deploy.
+
+Open work:
+
+- Update SolutionArtifact evidence to reference deployed `553c73b`/`545d126`.
+- With explicit user approval, run one controlled production reimport and confirm active `Initial project import` remains `1`.
