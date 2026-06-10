@@ -85,6 +85,26 @@ PYTHONPATH=$PWD .venv313/bin/python scripts/install_memlayer_project_pack.py \
   --projects-root /Users/just/projects
 ```
 
+Full onboarding combines pack install, import/reimport, local `project_id` persistence, snapshot refresh, and optional smoke check:
+
+```bash
+PYTHONPATH=$PWD .venv313/bin/python scripts/onboard_memlayer_project.py \
+  --project-root /Users/just/projects/SolutionArtifact
+```
+
+The command is dry-run by default. Live API actions require `--apply` and `MEMORYBANK_API_KEY` or `MEMLAYER_WRITE_API_KEY`:
+
+```bash
+PYTHONPATH=$PWD .venv313/bin/python scripts/onboard_memlayer_project.py \
+  --projects-root /Users/just/projects \
+  --names SolutionArtifact,mcp-service \
+  --apply \
+  --smoke
+```
+
+For live imports the script also reads a project-local `.memlayer/.env.memlayer` automatically when it contains
+`MEMORYBANK_API_KEY` or `MEMLAYER_WRITE_API_KEY`. Use `--env-file /path/to/env` to point it at a specific env file.
+
 What the pack provides:
 
 - `.memlayer/memlayer_context.sh` — snapshot-first pre-task read path

@@ -103,6 +103,26 @@ PYTHONPATH=$PWD .venv313/bin/python scripts/install_memlayer_project_pack.py \
   --projects-root /Users/just/projects
 ```
 
+Полный onboarding нового проекта в MemLayer теперь делает pack install, import/reimport, сохранение `project_id`, snapshot refresh и опциональный smoke-check:
+
+```bash
+PYTHONPATH=$PWD .venv313/bin/python scripts/onboard_memlayer_project.py \
+  --project-root /Users/just/projects/SolutionArtifact
+```
+
+Команда по умолчанию работает в dry-run режиме. Live API-действия требуют `--apply` и `MEMORYBANK_API_KEY` или `MEMLAYER_WRITE_API_KEY`:
+
+```bash
+PYTHONPATH=$PWD .venv313/bin/python scripts/onboard_memlayer_project.py \
+  --projects-root /Users/just/projects \
+  --names SolutionArtifact,mcp-service \
+  --apply \
+  --smoke
+```
+
+Для live-import скрипт также автоматически читает project-local `.memlayer/.env.memlayer`, если там есть
+`MEMORYBANK_API_KEY` или `MEMLAYER_WRITE_API_KEY`. Для явного файла можно передать `--env-file /path/to/env`.
+
 Полезные режимы:
 
 ```bash
