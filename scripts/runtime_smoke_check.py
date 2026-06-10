@@ -6,7 +6,11 @@ import os
 import sys
 from pathlib import Path
 
-from memorybank_sdk import DEFAULT_MEMORYBANK_URL, MemoryBankClient, build_project_import_payload
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from memorybank_sdk import DEFAULT_MEMORYBANK_URL, MemoryBankClient, MemoryBankError, build_project_import_payload
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -59,11 +63,14 @@ def main() -> None:
                 }
                 summary["project_id"] = import_result["project"]["id"]
 
-            summary["runtime_self_check"] = client.runtime_self_check(
-                project_id=summary["project_id"],
-                search_query=args.query,
-                limit=args.limit,
-            )
+            try:
+                summary["runtime_self_check"] = client.runtime_self_check(
+                    project_id=summary["project_id"],
+                    search_query=args.query,
+                    limit=args.limit,
+                )
+            except MemoryBankError as exc:
+                summary["runtime_self_check"] = {"status": "unavailable", "detail": str(exc)}
             summary["search"] = client.search_memory(
                 args.query,
                 project_id=summary["project_id"],
