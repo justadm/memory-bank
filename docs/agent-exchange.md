@@ -55,6 +55,27 @@ Needs user approval:
 - Any production write beyond the already discussed cleanup/fix verification.
 - Any key/scope change, especially granting `admin` to production keys.
 
+### 2026-06-10T21:05:00Z - codex-local - memory.bank - update
+
+prod_write: yes
+
+Facts:
+
+- Import-event idempotency fix was committed as `553c73b Make project import events idempotent`.
+- Commit was pushed to `origin/main`.
+- `/opt/memlayer` on `msk` was fast-forwarded to `553c73b`.
+- Production API image was rebuilt from `/opt/memlayer/deploy/msk/docker-compose.yml`.
+- Only the `api` service was recreated; `db` remained running and healthy.
+- `memlayer-api` is running on `127.0.0.1:18120->8000`.
+- Local and public health checks returned `{"status":"ok"}` after deploy.
+- Full local verification before commit: `.venv313/bin/pytest` returned `104 passed`.
+- No controlled production reimport was run after deploy.
+
+Open work:
+
+- Update SolutionArtifact evidence to replace "idempotency fix locally ready, needs commit/deploy" with commit/deploy evidence for `553c73b`.
+- If approved, run one controlled live reimport for `SolutionArtifact` and verify that active `Initial project import` count stays at `1`.
+
 ### 2026-06-10T23:26:53Z - codex-local - memory.bank - status correction
 
 prod_write: no
