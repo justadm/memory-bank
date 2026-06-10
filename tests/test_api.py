@@ -410,6 +410,34 @@ def test_search_memory(client):
     assert items[0]["match_mode"] == "hybrid"
 
 
+def test_lexical_search_relaxes_over_specific_query(client):
+    project = client.post("/projects", json={"name": "Specific Search"}).json()
+    client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "PostgreSQL deployment",
+            "content": "Use PostgreSQL for production database migrations.",
+            "project_id": project["id"],
+        },
+    )
+
+    response = client.get(
+        "/memory/search",
+        params={
+            "query": "postgresql production database migrations impossible extra detail",
+            "project_id": project["id"],
+            "mode": "lexical",
+        },
+    )
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["title"] == "PostgreSQL deployment"
+    assert items[0]["match_mode"] == "lexical"
+
+
 def test_conflicting_decision_is_marked_for_review(client):
     project = client.post("/projects", json={"name": "Decision Review"}).json()
     first = client.post(
@@ -921,6 +949,72 @@ def test_rebuild_search_vectors(client):
     response = client.post("/maintenance/rebuild-search-vectors", json={})
     assert response.status_code == 200
     assert response.json()["rebuilt_count"] == 2
+
+
+def test_memory_hygiene_assigns_project_ids_and_relinks(client, db_session: Session):
+    project = client.post(
+        "/projects",
+        json={"name": "Dlabs", "metadata": {"source_path": "/Users/just/Sites/dlabs"}},
+    ).json()
+    first = client.post(
+        "/memory",
+        json={
+            "type": "artifact",
+            "title": "Connector notes",
+            "content": "Architecture for connector retries and production deployment.",
+            "metadata": {"source_file": "/Users/just/Sites/dlabs/kasha-connector/README.md"},
+        },
+    ).json()
+    second = client.post(
+        "/memory",
+        json={
+            "type": "decision",
+            "title": "Connector deployment",
+            "content": "Connector retries should be handled before production deployment.",
+            "metadata": {"source_file": "/Users/just/Sites/dlabs/kasha-connector/app.py"},
+        },
+    ).json()
+
+    dry_run = client.post(
+        "/maintenance/memory-hygiene/run",
+        json={"dry_run": True, "min_similarity": 0.2, "max_links_per_entry": 1},
+    )
+    assert dry_run.status_code == 200
+    assert dry_run.json()["project_assignments_count"] == 2
+    assert dry_run.json()["links_created_count"] == 0
+    assert db_session.get(MemoryEntry, uuid.UUID(first["id"])).project_id is None
+
+    applied = client.post(
+        "/maintenance/memory-hygiene/run",
+        json={"dry_run": False, "min_similarity": 0.2, "max_links_per_entry": 1},
+    )
+    assert applied.status_code == 200
+    assert applied.json()["project_assignments_count"] == 2
+    assert applied.json()["links_created_count"] >= 1
+
+    db_session.expire_all()
+    assert str(db_session.get(MemoryEntry, uuid.UUID(first["id"])).project_id) == project["id"]
+    assert str(db_session.get(MemoryEntry, uuid.UUID(second["id"])).project_id) == project["id"]
+    links = db_session.query(MemoryLink).all()
+    assert len(links) >= 1
+
+
+def test_memory_hygiene_does_not_assign_project_by_name_only(client, db_session: Session):
+    client.post(
+        "/projects",
+        json={"name": "router", "metadata": {"source_path": "/Users/just/projects/router"}},
+    )
+    created = client.post(
+        "/memory",
+        json={"type": "note", "title": "router config", "content": "Generic router config idea without local path evidence."},
+    ).json()
+
+    response = client.post("/maintenance/memory-hygiene/run", json={"dry_run": False, "relink": False})
+
+    assert response.status_code == 200
+    assert response.json()["project_assignments_count"] == 0
+    db_session.expire_all()
+    assert db_session.get(MemoryEntry, uuid.UUID(created["id"])).project_id is None
 
 
 def test_admin_runtime_self_check(client):

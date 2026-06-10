@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -228,22 +229,93 @@ class MemoryRepository:
         if dialect == "postgresql":
             ts_query = func.plainto_tsquery("english", query)
             rank = func.ts_rank(MemoryEntry.search_vector, ts_query)
-            stmt = (
+            strict_stmt = (
                 stmt.add_columns(rank.label("score"))
                 .where(MemoryEntry.search_vector.is_not(None), MemoryEntry.search_vector.op("@@")(ts_query))
                 .order_by(rank.desc(), MemoryEntry.created_at.desc())
                 .limit(limit)
             )
-            return [(entry, float(score or 0.0)) for entry, score in self.db.execute(stmt).all()]
+            rows = [(entry, float(score or 0.0)) for entry, score in self.db.execute(strict_stmt).all()]
+            if rows:
+                return rows
+            return self._relaxed_text_search(
+                query=query,
+                project_id=project_id,
+                project_ids=project_ids,
+                limit=limit,
+                types=types,
+                include_archived=include_archived,
+            )
 
         pattern = f"%{query.strip()}%"
-        stmt = (
+        strict_stmt = (
             stmt.where(or_(MemoryEntry.title.ilike(pattern), MemoryEntry.content.ilike(pattern)))
             .order_by(MemoryEntry.importance.desc(), MemoryEntry.created_at.desc())
             .limit(limit)
         )
-        items = list(self.db.scalars(stmt))
+        items = list(self.db.scalars(strict_stmt))
+        if not items:
+            return self._relaxed_text_search(
+                query=query,
+                project_id=project_id,
+                project_ids=project_ids,
+                limit=limit,
+                types=types,
+                include_archived=include_archived,
+            )
         return [(entry, self._fallback_score(entry, query)) for entry in items]
+
+    def _relaxed_text_search(
+        self,
+        *,
+        query: str,
+        project_id: uuid.UUID | None = None,
+        project_ids: list[uuid.UUID] | None = None,
+        limit: int = 10,
+        types: list[MemoryType] | None = None,
+        include_archived: bool = False,
+    ) -> list[tuple[MemoryEntry, float]]:
+        tokens = self._search_tokens(query)
+        if not tokens:
+            return []
+
+        stmt = select(MemoryEntry)
+        if not include_archived:
+            stmt = stmt.where(MemoryEntry.archived.is_(False))
+        if project_ids:
+            stmt = stmt.where(MemoryEntry.project_id.in_(project_ids))
+        elif project_id:
+            stmt = stmt.where(MemoryEntry.project_id == project_id)
+        if types:
+            stmt = stmt.where(MemoryEntry.type.in_(types))
+
+        conditions = []
+        for token in tokens:
+            pattern = f"%{token}%"
+            conditions.append(or_(MemoryEntry.title.ilike(pattern), MemoryEntry.content.ilike(pattern)))
+        items = list(
+            self.db.scalars(
+                stmt.where(or_(*conditions))
+                .order_by(MemoryEntry.importance.desc(), MemoryEntry.created_at.desc())
+                .limit(max(limit * 3, limit))
+            )
+        )
+        scored = [(entry, self._fallback_score(entry, query)) for entry in items]
+        scored.sort(key=lambda item: item[1], reverse=True)
+        return scored[:limit]
+
+    @staticmethod
+    def _search_tokens(query: str) -> list[str]:
+        tokens: list[str] = []
+        seen: set[str] = set()
+        for token in re.findall(r"[a-zA-Zа-яА-Я0-9_+-]{3,}", query.lower()):
+            if token in seen:
+                continue
+            seen.add(token)
+            tokens.append(token)
+            if len(tokens) >= 12:
+                break
+        return tokens
 
     def _fallback_score(self, entry: MemoryEntry, query: str) -> float:
         haystack = f"{entry.title or ''} {entry.content}".lower()
