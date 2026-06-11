@@ -117,3 +117,76 @@ Open work:
 
 - Update SolutionArtifact evidence to reference deployed `553c73b`/`545d126`.
 - With explicit user approval, run one controlled production reimport and confirm active `Initial project import` remains `1`.
+
+### 2026-06-11T09:58:21Z - codex-local - memory.bank/SolutionArtifact - controlled reimport result
+
+prod_write: yes
+
+Facts:
+
+- User approved continuing with the controlled production reimport gate.
+- Ran `scripts/onboard_memlayer_project.py` for `/Users/just/projects/SolutionArtifact` with `--apply --skip-pack --skip-snapshot --smoke`.
+- Import used existing project id `be947ae2-c1e3-4cff-be50-65cccb2092e7` and `existing_entry_mode=update`.
+- Import result: `entries_created=1`, `entries_updated=11`, `conflicts_detected=0`, `quality_review_required_count=8`.
+- Smoke result: status ok, `search_results_count=5`, `relevant_results_count=5`.
+- Post-reimport read-only verification found exactly one active canonical `Initial project import` event with `import_runs_count=2`.
+- Therefore the deployed import-event idempotency fix passed the main production check.
+- Post-reimport read-only verification also found active quality-review flags on imported docs/event entries and one additional active memory entry.
+
+Recommendation:
+
+- Do not run another routine live reimport until the import-quality side effect is fixed or explicitly accepted.
+- Treat the quality-review tail as a separate MemoryBank import/update behavior issue, not as an import-event idempotency failure.
+
+Needs user approval:
+
+- Any cleanup of the quality-review tail.
+- Any further production reimport.
+
+### 2026-06-11T10:02:46Z - codex-local - memory.bank - local import-quality fix
+
+prod_write: no
+
+Facts:
+
+- Local worktree now contains an uncommitted import-quality side-effect fix.
+- `memorybank_sdk/importer.py` now adds source-path `evidence` to artifact entries.
+- `memorybank_sdk/importer.py` no longer derives `constraint-fastapi-stack` from docs-only FastAPI mentions; it requires runtime evidence from known config/source files.
+- `app/services/memory_quality_service.py` now ignores archived entries in duplicate quality checks.
+- Regression coverage added in `tests/test_importer.py` and `tests/test_api.py`.
+- Targeted importer/import tests passed: `8 passed`.
+- Full local suite passed: `108 passed`.
+- Fix is not committed, pushed, deployed, or production-verified.
+- Production still has the quality-review tail created by the pre-fix controlled reimport.
+
+Recommendation:
+
+- Review and commit this local fix before any new routine production reimport.
+- After deploy, run one more controlled reimport to verify quality-review flags no longer regrow.
+- Cleanup of the existing production quality-review tail still needs explicit approval.
+
+Needs user approval:
+
+- Commit/push/deploy.
+- Any production cleanup.
+- Any further production reimport.
+
+### 2026-06-11T10:25:00Z - codex-local - memory.bank - import-quality review
+
+prod_write: no
+
+Facts:
+
+- Reviewed the local import-quality fix left by the paused agent.
+- Expanded it so all importer-generated quality-gated entry types (`artifact`, `decision`, `constraint`, `risk`) carry non-empty `metadata.evidence`.
+- Added a regression invariant in `tests/test_importer.py` for generated quality-gated entries.
+- Kept the archived-entry duplicate fix in `MemoryQualityService`.
+- Read-only payload generation for `/Users/just/projects/SolutionArtifact` returned `entries=11` and `missing_evidence=[]`.
+- Targeted importer/import tests passed: `12 passed`.
+- Full local suite passed: `109 passed`.
+- No production deploy, cleanup, or reimport was run.
+
+Open work:
+
+- Deploy and run another controlled production verification only after explicit user approval.
+- Cleanup of the existing production quality-review tail still needs explicit approval.

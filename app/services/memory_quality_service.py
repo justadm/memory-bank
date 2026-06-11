@@ -145,7 +145,7 @@ class MemoryQualityService:
     ) -> bool:
         if project_id is None:
             return False
-        for entry in self.memory_repository.list(project_id=project_id, archived=None):
+        for entry in self.memory_repository.list(project_id=project_id, archived=False):
             if existing_entry_id and entry.id == existing_entry_id:
                 continue
             entry_title = self._normalize(entry.title or "")

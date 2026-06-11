@@ -228,7 +228,7 @@ def _artifact_entry_for_file(name: str, content: str) -> dict[str, Any] | None:
         "title": title,
         "content": _truncate(f"{name} summary:\n{_compact_text(content)}"),
         "importance": 4 if artifact_type in {"infrastructure", "source"} else 3,
-        "metadata": {"path": name, "artifact_type": artifact_type, "confidence": 0.9},
+        "metadata": {"path": name, "artifact_type": artifact_type, "evidence": [name], "confidence": 0.9},
     }
 
 
@@ -366,7 +366,8 @@ def _derive_decisions(files: dict[str, str]) -> list[dict[str, Any]]:
 def _derive_constraints(files: dict[str, str]) -> list[dict[str, Any]]:
     combined = _compact_text("\n".join(files.values())).lower()
     constraints: list[dict[str, Any]] = []
-    if "fastapi" in combined:
+    fastapi_evidence = _runtime_evidence(files, "fastapi", ["requirements.txt", "pyproject.toml", "app/main.py", "src/main.py"])
+    if fastapi_evidence:
         constraints.append(
             {
                 "ref": "constraint-fastapi-stack",
@@ -374,7 +375,7 @@ def _derive_constraints(files: dict[str, str]) -> list[dict[str, Any]]:
                 "title": "FastAPI service stack",
                 "content": "Project currently depends on FastAPI-based HTTP endpoints and should preserve that runtime shape.",
                 "importance": 4,
-                "metadata": {"confidence": 0.9},
+                "metadata": {"evidence": fastapi_evidence, "confidence": 0.9},
             }
         )
     if "docker compose" in combined or "docker-compose" in combined:
@@ -385,7 +386,7 @@ def _derive_constraints(files: dict[str, str]) -> list[dict[str, Any]]:
                 "title": "Docker Compose runtime",
                 "content": "Project startup and local verification depend on Docker Compose orchestration.",
                 "importance": 3,
-                "metadata": {"confidence": 0.85},
+                "metadata": {"evidence": _evidence(files, ["docker-compose.yml", "docker-compose.yaml"]), "confidence": 0.85},
             }
         )
     if "package.json" in files:
@@ -396,7 +397,7 @@ def _derive_constraints(files: dict[str, str]) -> list[dict[str, Any]]:
                 "title": "Node.js package-managed runtime",
                 "content": "Project runtime and scripts depend on package.json-managed JavaScript or TypeScript tooling.",
                 "importance": 4,
-                "metadata": {"confidence": 0.88},
+                "metadata": {"evidence": _evidence(files, ["package.json"]), "confidence": 0.88},
             }
         )
     if "go.mod" in files:
@@ -407,7 +408,7 @@ def _derive_constraints(files: dict[str, str]) -> list[dict[str, Any]]:
                 "title": "Go module runtime",
                 "content": "Project build and execution depend on Go module tooling.",
                 "importance": 4,
-                "metadata": {"confidence": 0.88},
+                "metadata": {"evidence": _evidence(files, ["go.mod"]), "confidence": 0.88},
             }
         )
     if "pnpm-workspace.yaml" in files or "turbo.json" in files:
@@ -418,7 +419,7 @@ def _derive_constraints(files: dict[str, str]) -> list[dict[str, Any]]:
                 "title": "Monorepo workspace layout",
                 "content": "Project structure appears to be multi-package and should be handled as a monorepo during tooling and imports.",
                 "importance": 4,
-                "metadata": {"confidence": 0.85},
+                "metadata": {"evidence": _evidence(files, ["pnpm-workspace.yaml", "turbo.json"]), "confidence": 0.85},
             }
         )
     if "do not add authentication in v1" in combined or "anonymous session persistence" in combined:
@@ -429,7 +430,10 @@ def _derive_constraints(files: dict[str, str]) -> list[dict[str, Any]]:
                 "title": "Keep V1 authentication-free",
                 "content": "Current MVP direction favors anonymous session persistence and explicitly avoids full authentication in V1.",
                 "importance": 4,
-                "metadata": {"confidence": 0.92},
+                "metadata": {
+                    "evidence": _evidence_prefix(files, ["docs/decision-log.md", "docs/v1-technical-blueprint.md"]),
+                    "confidence": 0.92,
+                },
             }
         )
     if "buildguard.loc" in combined:
@@ -440,7 +444,7 @@ def _derive_constraints(files: dict[str, str]) -> list[dict[str, Any]]:
                 "title": "Develop behind a local .loc HTTPS domain",
                 "content": "The project is expected to run behind `BuildGuard.loc` using the existing machine-wide `.loc` nginx and dnsmasq setup.",
                 "importance": 3,
-                "metadata": {"confidence": 0.88},
+                "metadata": {"evidence": _evidence_prefix(files, ["docs/v1-technical-blueprint.md"]), "confidence": 0.88},
             }
         )
     if "use docker early" in combined or "keep docker early" in combined or "docker compose" in combined:
@@ -451,7 +455,10 @@ def _derive_constraints(files: dict[str, str]) -> list[dict[str, Any]]:
                 "title": "Keep the application container-friendly from the start",
                 "content": "The handoff docs expect Docker and Docker Compose to be introduced early so local and future staging environments stay aligned.",
                 "importance": 3,
-                "metadata": {"confidence": 0.86},
+                "metadata": {
+                    "evidence": _evidence_prefix(files, ["docker-compose.yml", "docker-compose.yaml", "docs/v1-technical-blueprint.md"]),
+                    "confidence": 0.86,
+                },
             }
         )
     if "только административная часть битрикс24" in combined or "без доступа к серверу" in combined:
@@ -462,7 +469,7 @@ def _derive_constraints(files: dict[str, str]) -> list[dict[str, Any]]:
                 "title": "Operate through Bitrix24 admin access only",
                 "content": "Implementation is constrained to Bitrix24 administrative access without direct server access, so delivery must rely on UI-configurable settings, migrations, and safe admin-side tooling.",
                 "importance": 5,
-                "metadata": {"confidence": 0.94},
+                "metadata": {"evidence": _evidence_prefix(files, [".docs/CONTRACTOR_CHECK_TZ.md"]), "confidence": 0.94},
             }
         )
     if "через git и миграции" in combined:
@@ -473,7 +480,7 @@ def _derive_constraints(files: dict[str, str]) -> list[dict[str, Any]]:
                 "title": "Deliver environment changes through git and migrations",
                 "content": "Changes should be reproducible through versioned code and migrations, with manual admin actions limited to environment-specific settings that cannot be safely automated.",
                 "importance": 4,
-                "metadata": {"confidence": 0.92},
+                "metadata": {"evidence": _evidence_prefix(files, [".docs/CONTRACTOR_CHECK_TZ.md"]), "confidence": 0.92},
             }
         )
     if "sharepoint" in combined and "историчес" in combined:
@@ -484,7 +491,7 @@ def _derive_constraints(files: dict[str, str]) -> list[dict[str, Any]]:
                 "title": "Keep SharePoint as the historical source during MVP",
                 "content": "Historical data and attachments stay anchored in SharePoint until the customer provides a reliable export path, so MVP scope should not assume full archival migration is available.",
                 "importance": 4,
-                "metadata": {"confidence": 0.9},
+                "metadata": {"evidence": _evidence_prefix(files, [".docs/CONTRACTOR_CHECK_TZ.md"]), "confidence": 0.9},
             }
         )
     return constraints
@@ -513,7 +520,10 @@ def _derive_risks(files: dict[str, str]) -> list[dict[str, Any]]:
                 "title": "Published runtime surface",
                 "content": "Project configuration publishes network services and should be reviewed for accidental port exposure or permissive defaults.",
                 "importance": 3,
-                "metadata": {"confidence": 0.82},
+                "metadata": {
+                    "evidence": _evidence_prefix(files, ["docker-compose.yml", "docker-compose.yaml", "Dockerfile", "README.md"]),
+                    "confidence": 0.82,
+                },
             }
         )
     if "unstable json" in combined or "malformed json" in combined or "structured output is mandatory" in combined:
@@ -524,7 +534,10 @@ def _derive_risks(files: dict[str, str]) -> list[dict[str, Any]]:
                 "title": "Structured LLM output can fail parsing",
                 "content": "The handoff docs explicitly call unstable or malformed JSON the main technical risk, so parse/repair behavior must stay observable and recoverable.",
                 "importance": 5,
-                "metadata": {"confidence": 0.94},
+                "metadata": {
+                    "evidence": _evidence_prefix(files, ["docs/decision-log.md", "docs/v1-technical-blueprint.md"]),
+                    "confidence": 0.94,
+                },
             }
         )
     if "fatal assumptions" in combined or "missing data" in combined or ("raw idea" in combined and "clarification questions" in combined):
@@ -535,7 +548,10 @@ def _derive_risks(files: dict[str, str]) -> list[dict[str, Any]]:
                 "title": "Raw founder input may be incomplete or misleading",
                 "content": "The product flow depends on surfacing fatal assumptions, missing data, and clarification questions before downstream PRD generation.",
                 "importance": 4,
-                "metadata": {"confidence": 0.88},
+                "metadata": {
+                    "evidence": _evidence_prefix(files, ["docs/decision-log.md", "mvp-handoff/03-mvp-development-spec.md"]),
+                    "confidence": 0.88,
+                },
             }
         )
     if "персональные данные" in combined and "вложени" in combined:
@@ -546,7 +562,7 @@ def _derive_risks(files: dict[str, str]) -> list[dict[str, Any]]:
                 "title": "Historical attachments may contain personal data",
                 "content": "Attachment migration and storage are constrained by personal-data handling requirements, so bulk import cannot be treated as a guaranteed MVP capability.",
                 "importance": 5,
-                "metadata": {"confidence": 0.94},
+                "metadata": {"evidence": _evidence_prefix(files, [".docs/CONTRACTOR_CHECK_TZ.md"]), "confidence": 0.94},
             }
         )
     return risks
@@ -749,6 +765,11 @@ def _summarize_tests_dir(tests_dir: Path) -> str:
 
 def _evidence(files: dict[str, str], candidates: list[str]) -> list[str]:
     return [name for name in candidates if name in files]
+
+
+def _runtime_evidence(files: dict[str, str], token: str, candidates: list[str]) -> list[str]:
+    needle = token.lower()
+    return [name for name in candidates if needle in files.get(name, "").lower()]
 
 
 def _evidence_prefix(files: dict[str, str], candidates: list[str]) -> list[str]:

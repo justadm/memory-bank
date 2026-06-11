@@ -162,3 +162,85 @@ def test_build_project_import_payload_extracts_hidden_docs_and_spec_signals(tmp_
     assert "risk-personal-data-attachments" in refs
     assert "note-openspec-schema-driven" in refs
     assert "note-commit-convention-task-link" in refs
+
+
+def test_artifact_entries_include_source_path_evidence(tmp_path):
+    readme = tmp_path / "README.md"
+    readme.write_text("# Project\n\nUseful project documentation.\n", encoding="utf-8")
+
+    payload = build_project_import_payload(tmp_path, project_name="Evidence Project")
+
+    readme_entry = next(item for item in payload["entries"] if item["ref"] == "artifact-readme-md")
+    assert readme_entry["metadata"]["path"] == "README.md"
+    assert readme_entry["metadata"]["evidence"] == ["README.md"]
+
+
+def test_fastapi_constraint_requires_runtime_signal_not_doc_mention(tmp_path):
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        "# Project\n\nThis document mentions FastAPI only as an example from a product idea log.\n",
+        encoding="utf-8",
+    )
+
+    payload = build_project_import_payload(tmp_path, project_name="Docs Only Project")
+
+    refs = {item["ref"] for item in payload["entries"]}
+    assert "constraint-fastapi-stack" not in refs
+
+
+def test_fastapi_constraint_uses_source_evidence_when_runtime_is_present(tmp_path):
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    main = app_dir / "main.py"
+    main.write_text("from fastapi import FastAPI\n\napp = FastAPI()\n", encoding="utf-8")
+
+    payload = build_project_import_payload(tmp_path, project_name="FastAPI Project")
+
+    constraint = next(item for item in payload["entries"] if item["ref"] == "constraint-fastapi-stack")
+    assert constraint["metadata"]["evidence"] == ["app/main.py"]
+
+
+def test_importer_quality_gated_entries_include_evidence(tmp_path):
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    handoff_dir = tmp_path / "mvp-handoff"
+    handoff_dir.mkdir()
+    hidden_docs_dir = tmp_path / ".docs"
+    hidden_docs_dir.mkdir()
+
+    (tmp_path / "README.md").write_text(
+        "# Project\n\nFastAPI service with PostgreSQL, ports: 8000, Docker Compose, and malformed JSON handling.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "docker-compose.yml").write_text("services:\n  app:\n    ports:\n      - '8000:8000'\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("fastapi\npsycopg[binary]\n", encoding="utf-8")
+    (tmp_path / "package.json").write_text('{"scripts":{"dev":"next dev"}}', encoding="utf-8")
+    (tmp_path / "pnpm-workspace.yaml").write_text("packages:\n  - apps/*\n", encoding="utf-8")
+    (tmp_path / "go.mod").write_text("module example.com/app\n", encoding="utf-8")
+    (docs_dir / "decision-log.md").write_text(
+        "Use a staged pipeline: stress_test -> questions -> refine -> prd -> tasks -> markdown.\n"
+        "Do not add authentication in V1. Fatal assumptions and missing data must be surfaced.\n",
+        encoding="utf-8",
+    )
+    (docs_dir / "v1-technical-blueprint.md").write_text(
+        "Use Next.js App Router. Structured output is mandatory. Develop behind BuildGuard.loc and keep Docker early.\n",
+        encoding="utf-8",
+    )
+    (handoff_dir / "03-mvp-development-spec.md").write_text("Raw idea intake starts with clarification questions.\n", encoding="utf-8")
+    (hidden_docs_dir / "CONTRACTOR_CHECK_TZ.md").write_text(
+        "Доступ исполнителя: только административная часть Битрикс24, без доступа к серверу.\n"
+        "Перенос на тестовый контур выполняется через git и миграции.\n"
+        "Текущий SharePoint остается источником исторических данных.\n"
+        "Вложения содержат персональные данные.\n",
+        encoding="utf-8",
+    )
+
+    payload = build_project_import_payload(tmp_path, project_name="Quality Evidence Project")
+
+    quality_gated_types = {"artifact", "decision", "constraint", "risk"}
+    missing_evidence = [
+        item["ref"]
+        for item in payload["entries"]
+        if item["type"] in quality_gated_types and not item["metadata"].get("evidence")
+    ]
+    assert missing_evidence == []

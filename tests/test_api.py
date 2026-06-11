@@ -1457,6 +1457,37 @@ def test_project_import_update_mode_reuses_import_event(client):
     assert project_summary["import_events_count"] == 1
 
 
+def test_project_import_update_mode_ignores_archived_import_event_duplicates(client):
+    project = client.post("/projects", json={"name": "Archived Import Event Duplicate"}).json()
+    payload = {
+        "project_id": project["id"],
+        "existing_entry_mode": "update",
+        "entries": [],
+        "links": [],
+    }
+
+    first = client.post("/imports/project-scan", json=payload)
+    assert first.status_code == 201
+
+    duplicate = client.post("/imports/project-scan", json={**payload, "existing_entry_mode": "create"})
+    assert duplicate.status_code == 201
+    assert duplicate.json()["import_event_id"] != first.json()["import_event_id"]
+    archive_response = client.post(f"/memory/{duplicate.json()['import_event_id']}/archive")
+    assert archive_response.status_code == 200
+
+    second = client.post("/imports/project-scan", json=payload)
+    assert second.status_code == 201
+    assert first.json()["import_event_id"] == second.json()["import_event_id"]
+
+    event = client.get(f"/memory/{first.json()['import_event_id']}")
+    assert event.status_code == 200
+    metadata = event.json()["metadata"]
+    assert metadata["import_runs_count"] == 2
+    assert metadata.get("quality_review_required") is not True
+    assert metadata["quality"]["duplicate_risk"] is False
+    assert metadata["quality"]["semantic_duplicate_risk"] is False
+
+
 def test_project_import_create_mode_keeps_distinct_import_events(client):
     project = client.post("/projects", json={"name": "Import Event Create Mode"}).json()
     payload = {
