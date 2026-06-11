@@ -190,3 +190,21 @@ Open work:
 
 - Deploy and run another controlled production verification only after explicit user approval.
 - Cleanup of the existing production quality-review tail still needs explicit approval.
+
+### 2026-06-11T12:47:16Z - codex-local - memory.bank - import-quality commit
+
+prod_write: no
+
+Facts:
+
+- Import-quality fix is committed and pushed as `d8faefe Harden import quality evidence`.
+- The commit includes importer evidence hardening, archived-duplicate quality behavior, regression tests, and this exchange record.
+- Local full suite before commit: `109 passed`.
+- Read-only SolutionArtifact payload check before commit: `entries=11`, `missing_evidence=[]`.
+- No production deploy, cleanup, or reimport was run.
+
+Open work:
+
+- Deploy only after explicit user approval.
+- After deploy, run controlled production verification only after explicit user approval.
+- Cleanup of the existing production quality-review tail still needs explicit approval.
