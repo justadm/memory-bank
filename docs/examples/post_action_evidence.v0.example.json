@@ -1,0 +1,71 @@
+{
+  "schema_version": "post_action_evidence.v0",
+  "action_type": "reimport",
+  "approved_by": "operator",
+  "approved_in_current_thread": true,
+  "acted_at": "2026-06-11T10:20:00Z",
+  "target": {
+    "system": "MemLayer",
+    "project": "SolutionArtifact",
+    "environment": "production",
+    "runtime_path": "/opt/memlayer"
+  },
+  "source_version": {
+    "before": "example-production-head",
+    "after": "example-production-head"
+  },
+  "changes": [
+    "Ran one controlled project reimport in update mode.",
+    "No deployment, cleanup, key rotation, or scope change was performed."
+  ],
+  "commands": [
+    {
+      "label": "runtime health",
+      "status": "passed",
+      "redacted": true,
+      "summary": "GET /health returned ok."
+    },
+    {
+      "label": "project reimport",
+      "status": "passed",
+      "redacted": true,
+      "summary": "Reimport completed with zero conflicts."
+    }
+  ],
+  "health_smoke": [
+    {
+      "check": "search/relevant smoke",
+      "status": "passed",
+      "evidence": "Relevant endpoint returned project-scoped results."
+    }
+  ],
+  "read_back": [
+    {
+      "claim": "Import event count did not grow unexpectedly.",
+      "evidence": "Admin import summary read after action."
+    },
+    {
+      "claim": "Quality review queue remained bounded.",
+      "evidence": "Quality-review count checked after action."
+    }
+  ],
+  "not_changed": [
+    "No tenant key was printed or stored.",
+    "No archived entries were restored.",
+    "No unrelated project was reimported."
+  ],
+  "residual_risks": [
+    "Admin review_history may still require a separate privileged pass if direct cleanup was used earlier."
+  ],
+  "evidence_written_to": [
+    "MemLayer memory entry",
+    "docs/agent-exchange.md"
+  ],
+  "privacy_check": {
+    "secrets_exposed": false,
+    "customer_data_exposed": false,
+    "raw_payloads_included": false,
+    "redaction_applied": true,
+    "notes": "Evidence contains summaries and counts, not raw payloads."
+  }
+}

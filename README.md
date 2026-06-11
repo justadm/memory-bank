@@ -115,6 +115,13 @@ What the pack provides:
 - `.memlayer/memlayer_watchdog.sh` — health and self-check probe
 - `.memlayer/memlayer_recover.sh` — local recovery helper
 
+## Agent revision evidence templates
+
+Machine-readable contracts for risky agent work live in [docs/revision-evidence-templates.md](/Users/just/apps/memory.bank/docs/revision-evidence-templates.md):
+
+- `revision_pass.v0` — pre-action gate before deploys, reimports, cleanup, data writes, and key/scope changes
+- `post_action_evidence.v0` — read-back record after an action, including what changed, what did not change, verification, and privacy checks
+
 ## Verification
 
 Run the test suite:

@@ -1,0 +1,79 @@
+{
+  "schema_version": "revision_pass.v0",
+  "artifact": "local.agent.revision_pass_before_production_write.v0",
+  "mode": "standard",
+  "task": {
+    "summary": "Review MemLayer import idempotency before a controlled production reimport.",
+    "project": "memory.bank",
+    "environment": "production",
+    "risk_level": "high"
+  },
+  "started_at": "2026-06-11T10:00:00Z",
+  "state_sync": {
+    "git_status_checked": true,
+    "local_head": "example-local-head",
+    "runtime_source_version": "example-production-head",
+    "runtime_import_path": "/opt/memlayer",
+    "latest_handoff_checked": true,
+    "feature_flags_checked": true,
+    "health_checked": true,
+    "health_summary": "GET /health returned ok."
+  },
+  "roles_required": [
+    "historian",
+    "diff_reviewer",
+    "runtime_verifier",
+    "risk_owner"
+  ],
+  "roles_completed": [
+    "historian",
+    "diff_reviewer",
+    "runtime_verifier",
+    "risk_owner"
+  ],
+  "findings": [
+    {
+      "finding_id": "RP-001",
+      "severity": "P1",
+      "claim": "Production write requires explicit current-thread approval.",
+      "evidence": [
+        "Runbook production-write rule checked.",
+        "Current user approval text captured before action."
+      ],
+      "confidence": "high",
+      "unknowns": [],
+      "blocks_go": false
+    }
+  ],
+  "go_no_go": {
+    "decision": "GO",
+    "decided_by": "operator",
+    "proven_facts": [
+      "Local worktree is clean.",
+      "Runtime health check passed."
+    ],
+    "unknowns": [],
+    "allowed_changes": [
+      "One controlled reimport in update mode."
+    ],
+    "forbidden_changes": [
+      "No cleanup.",
+      "No key or scope changes.",
+      "No unrelated deploy."
+    ],
+    "required_verification": [
+      "Read back import summary.",
+      "Confirm review queue count does not grow.",
+      "Record post_action_evidence.v0."
+    ],
+    "rollback": "Stop after first failed check; do not retry writes automatically.",
+    "evidence_log_target": "MemLayer project memory.bank and docs/agent-exchange.md"
+  },
+  "privacy": {
+    "contains_secrets": false,
+    "contains_customer_data": false,
+    "redaction_applied": true,
+    "raw_payloads_included": false,
+    "notes": "Command labels and summaries only; no credentials or raw customer payloads."
+  }
+}
