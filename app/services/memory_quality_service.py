@@ -63,6 +63,19 @@ class MemoryQualityService:
         existing_entry_id: uuid.UUID | None = None,
     ) -> MemoryQualityAssessment:
         metadata = metadata or {}
+        if metadata.get("read_receipt") is True or metadata.get("receipt_type") == "memlayer_read":
+            return MemoryQualityAssessment(
+                score=1.0,
+                confidence=1.0,
+                duplicate_risk=False,
+                semantic_duplicate_risk=False,
+                semantic_similarity_max=None,
+                semantic_duplicate_candidates=[],
+                evidence_present=True,
+                review_required=False,
+                reject=False,
+                flags=[],
+            )
         normalized_title = self._normalize(title or "")
         normalized_content = self._normalize(content)
         flags: list[str] = []

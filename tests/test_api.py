@@ -134,6 +134,38 @@ def test_semantic_duplicate_memory_is_marked_for_review(client):
     assert body["metadata"]["quality_review_required"] is True
 
 
+def test_read_receipts_skip_quality_review(client):
+    project = client.post("/projects", json={"name": "Read Receipts"}).json()
+    payload = {
+        "type": "event",
+        "title": "MemLayer context read: snapshot",
+        "content": "codex read MemLayer context for project; source=snapshot; query=deploy; matched_items=3.",
+        "project_id": project["id"],
+        "source_agent": "codex",
+        "metadata": {
+            "agent_id": "codex",
+            "receipt_type": "memlayer_read",
+            "read_receipt": True,
+            "read_source": "snapshot",
+            "query": "deploy",
+            "matched_items": 3,
+        },
+    }
+
+    first = client.post("/memory", json=payload)
+    second = client.post("/memory", json=payload)
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    for response in (first, second):
+        metadata = response.json()["metadata"]
+        assert metadata.get("quality_review_required") is not True
+        assert metadata["quality"]["flags"] == []
+        assert metadata["quality"]["duplicate_risk"] is False
+        assert metadata["quality"]["semantic_duplicate_risk"] is False
+        assert metadata["quality"]["evidence_present"] is True
+
+
 def test_extreme_semantic_duplicate_is_rejected(client):
     project = client.post("/projects", json={"name": "Semantic Hard Gate"}).json()
     first = client.post(
