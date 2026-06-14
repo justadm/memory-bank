@@ -219,6 +219,32 @@ def test_installed_payload_helper_adds_source_agent_and_project_id(tmp_path: Pat
     assert payload["metadata"]["project_name"] == "PayloadProject"
     assert payload["metadata"]["memlayer_pack"] == "project_root_pack"
 
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(project_root / ".memlayer" / "memlayer_payload.py"),
+            "read-receipt",
+            str(config_path),
+            "context query",
+            "snapshot",
+            "3",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    receipt = json.loads(completed.stdout)
+    assert receipt["type"] == "event"
+    assert receipt["source_agent"] == "agent-under-test"
+    assert receipt["project_id"] == "project-123"
+    assert receipt["metadata"]["agent_id"] == "agent-under-test"
+    assert receipt["metadata"]["receipt_type"] == "memlayer_read"
+    assert receipt["metadata"]["read_receipt"] is True
+    assert receipt["metadata"]["read_source"] == "snapshot"
+    assert receipt["metadata"]["query"] == "context query"
+    assert receipt["metadata"]["matched_items"] == 3
+
 
 def test_install_for_project_moves_legacy_root_files_into_memlayer_dir(tmp_path: Path) -> None:
     project_root = tmp_path / "LegacyProject"

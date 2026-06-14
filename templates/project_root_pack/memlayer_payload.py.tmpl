@@ -78,6 +78,8 @@ def read_receipt_payload(config_path: Path, query: str, source: str, matched_ite
     agent = default_agent(config)
     metadata = {
         "project_name": project_name,
+        "agent_id": agent,
+        "receipt_type": "memlayer_read",
         "read_receipt": True,
         "read_source": source,
         "query": query,

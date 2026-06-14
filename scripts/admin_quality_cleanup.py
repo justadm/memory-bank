@@ -144,7 +144,7 @@ def collect_stats(base_url: str, api_key: str, limit: int) -> dict[str, Any]:
         memory_by_project[str(item.get("project_id") or "(no project)")] += 1
         if metadata.get("quality_review_required") is True:
             quality_by_agent[agent] += 1
-        if metadata.get("receipt_type") == "memlayer_read":
+        if metadata.get("receipt_type") == "memlayer_read" or metadata.get("read_receipt") is True:
             read_receipts_by_agent[agent] += 1
 
     task_by_agent: collections.Counter[str] = collections.Counter()
