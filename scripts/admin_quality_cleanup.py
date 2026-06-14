@@ -82,6 +82,11 @@ def is_safe_import_agent_missing_evidence(entry: dict[str, Any]) -> bool:
     )
 
 
+def is_operational_read_receipt(entry: dict[str, Any]) -> bool:
+    metadata = entry.get("metadata") or {}
+    return metadata.get("read_receipt") is True or metadata.get("receipt_type") == "memlayer_read"
+
+
 def cleanup_import_agent_missing_evidence(base_url: str, api_key: str, dry_run: bool, limit: int) -> dict[str, Any]:
     items = list_quality_review_entries(base_url, api_key, limit=limit)
     candidates = [entry for entry in items if is_safe_import_agent_missing_evidence(entry)]
@@ -111,6 +116,45 @@ def cleanup_import_agent_missing_evidence(base_url: str, api_key: str, dry_run: 
             except Exception as exc:  # pragma: no cover - operational safety output
                 failed.append({"id": str(entry.get("id")), "error": str(exc)[:300]})
 
+    return {
+        "total_scanned": len(items),
+        "candidate_count": len(candidates),
+        "dry_run": dry_run,
+        "resolved_count": len(resolved),
+        "failed_count": len(failed),
+        "sample_candidate_id": candidates[0]["id"] if candidates else None,
+        "sample_resolved_id": resolved[0] if resolved else None,
+        "failures": failed[:3],
+    }
+
+
+def cleanup_read_receipts(base_url: str, api_key: str, dry_run: bool, limit: int) -> dict[str, Any]:
+    items = list_quality_review_entries(base_url, api_key, limit=limit)
+    candidates = [entry for entry in items if is_operational_read_receipt(entry)]
+    resolution = (
+        "Automated cleanup 2026-06-14: operational MemLayer read receipt approved. "
+        "Read receipts are usage telemetry, not knowledge artifacts, and backend quality review now skips them."
+    )
+    resolved: list[str] = []
+    failed: list[dict[str, str]] = []
+    if not dry_run:
+        for entry in candidates:
+            try:
+                request_json(
+                    base_url,
+                    api_key,
+                    "POST",
+                    "/admin/quality-review/resolve",
+                    {
+                        "entry_id": entry["id"],
+                        "action": "approve",
+                        "resolution": resolution,
+                        "resolved_by": "codex-admin-cleanup",
+                    },
+                )
+                resolved.append(entry["id"])
+            except Exception as exc:  # pragma: no cover - operational safety output
+                failed.append({"id": str(entry.get("id")), "error": str(exc)[:300]})
     return {
         "total_scanned": len(items),
         "candidate_count": len(candidates),
@@ -191,11 +235,14 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=1000)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--stats", action="store_true")
+    parser.add_argument("--cleanup-read-receipts", action="store_true")
     args = parser.parse_args()
 
     api_key = load_admin_key(Path(args.env_path))
     if args.stats:
         result = collect_stats(args.base_url, api_key, limit=args.limit)
+    elif args.cleanup_read_receipts:
+        result = cleanup_read_receipts(args.base_url, api_key, dry_run=not args.apply, limit=args.limit)
     else:
         result = cleanup_import_agent_missing_evidence(args.base_url, api_key, dry_run=not args.apply, limit=args.limit)
     print(json.dumps(result, ensure_ascii=False, indent=2))
