@@ -167,37 +167,63 @@ def cleanup_read_receipts(base_url: str, api_key: str, dry_run: bool, limit: int
     }
 
 
-def collect_stats(base_url: str, api_key: str, limit: int) -> dict[str, Any]:
+def collect_stats(base_url: str, api_key: str, limit: int, include_entry_scan: bool = False) -> dict[str, Any]:
     metrics = request_json(base_url, api_key, "GET", "/metrics/overview")
     task_summary = request_json(base_url, api_key, "GET", "/task-logs/summary")
     observability = request_json(base_url, api_key, "GET", "/admin/observability/summary")
     review = request_json(base_url, api_key, "GET", f"/admin/review-queues/summary?limit={limit}")
-    memory_items = request_json(base_url, api_key, "GET", "/memory").get("items") or []
-    task_items = request_json(base_url, api_key, "GET", "/task-logs").get("items") or []
+    memory_usage: dict[str, Any] = {
+        "entry_scan_skipped": True,
+        "reason": "Safe stats mode does not call /memory because full entry payloads can be large.",
+    }
+    task_usage: dict[str, Any] = {
+        "entry_scan_skipped": True,
+        "reason": "Safe stats mode does not call /task-logs list; use aggregate task summaries instead.",
+    }
 
-    memory_by_agent: collections.Counter[str] = collections.Counter()
-    memory_by_type: collections.Counter[str] = collections.Counter()
-    memory_by_project: collections.Counter[str] = collections.Counter()
-    quality_by_agent: collections.Counter[str] = collections.Counter()
-    read_receipts_by_agent: collections.Counter[str] = collections.Counter()
-    for item in memory_items:
-        agent = item.get("source_agent") or "(missing)"
-        metadata = item.get("metadata") or {}
-        memory_by_agent[agent] += 1
-        memory_by_type[item.get("type") or "(missing)"] += 1
-        memory_by_project[str(item.get("project_id") or "(no project)")] += 1
-        if metadata.get("quality_review_required") is True:
-            quality_by_agent[agent] += 1
-        if metadata.get("receipt_type") == "memlayer_read" or metadata.get("read_receipt") is True:
-            read_receipts_by_agent[agent] += 1
+    if include_entry_scan:
+        memory_items = request_json(base_url, api_key, "GET", "/memory").get("items") or []
+        task_items = request_json(base_url, api_key, "GET", "/task-logs").get("items") or []
 
-    task_by_agent: collections.Counter[str] = collections.Counter()
-    task_used_memory_by_agent: collections.Counter[str] = collections.Counter()
-    for item in task_items:
-        agent = item.get("agent_id") or "(missing)"
-        task_by_agent[agent] += 1
-        if item.get("used_memory") is True:
-            task_used_memory_by_agent[agent] += 1
+        memory_by_agent: collections.Counter[str] = collections.Counter()
+        memory_by_type: collections.Counter[str] = collections.Counter()
+        memory_by_project: collections.Counter[str] = collections.Counter()
+        quality_by_agent: collections.Counter[str] = collections.Counter()
+        read_receipts_by_agent: collections.Counter[str] = collections.Counter()
+        for item in memory_items:
+            agent = item.get("source_agent") or "(missing)"
+            metadata = item.get("metadata") or {}
+            memory_by_agent[agent] += 1
+            memory_by_type[item.get("type") or "(missing)"] += 1
+            memory_by_project[str(item.get("project_id") or "(no project)")] += 1
+            if metadata.get("quality_review_required") is True:
+                quality_by_agent[agent] += 1
+            if metadata.get("receipt_type") == "memlayer_read" or metadata.get("read_receipt") is True:
+                read_receipts_by_agent[agent] += 1
+
+        task_by_agent: collections.Counter[str] = collections.Counter()
+        task_used_memory_by_agent: collections.Counter[str] = collections.Counter()
+        for item in task_items:
+            agent = item.get("agent_id") or "(missing)"
+            task_by_agent[agent] += 1
+            if item.get("used_memory") is True:
+                task_used_memory_by_agent[agent] += 1
+
+        memory_usage = {
+            "entry_scan_skipped": False,
+            "listed_entries_count": len(memory_items),
+            "by_source_agent": memory_by_agent.most_common(20),
+            "by_type": memory_by_type.most_common(20),
+            "by_project": memory_by_project.most_common(20),
+            "quality_review_required_by_source_agent": quality_by_agent.most_common(20),
+            "read_receipts_by_source_agent": read_receipts_by_agent.most_common(20),
+        }
+        task_usage = {
+            "entry_scan_skipped": False,
+            "listed_tasks_count": len(task_items),
+            "by_agent": task_by_agent.most_common(20),
+            "used_memory_by_agent": task_used_memory_by_agent.most_common(20),
+        }
 
     return {
         "metrics_overview": metrics,
@@ -205,19 +231,8 @@ def collect_stats(base_url: str, api_key: str, limit: int) -> dict[str, Any]:
         "top_agents": (observability.get("top_agents") or [])[:10],
         "top_experiments": (observability.get("top_experiments") or [])[:10],
         "recent_activity": observability.get("recent_activity"),
-        "memory_usage": {
-            "listed_entries_count": len(memory_items),
-            "by_source_agent": memory_by_agent.most_common(20),
-            "by_type": memory_by_type.most_common(20),
-            "by_project": memory_by_project.most_common(20),
-            "quality_review_required_by_source_agent": quality_by_agent.most_common(20),
-            "read_receipts_by_source_agent": read_receipts_by_agent.most_common(20),
-        },
-        "task_usage": {
-            "listed_tasks_count": len(task_items),
-            "by_agent": task_by_agent.most_common(20),
-            "used_memory_by_agent": task_used_memory_by_agent.most_common(20),
-        },
+        "memory_usage": memory_usage,
+        "task_usage": task_usage,
         "review_queues": {
             "quality_review_required_count": review.get("quality_review_required_count"),
             "review_overdue_count": review.get("review_overdue_count"),
@@ -235,12 +250,17 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=1000)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--stats", action="store_true")
+    parser.add_argument(
+        "--include-entry-scan",
+        action="store_true",
+        help="Dangerous on production: fetches full /memory and /task-logs payloads for detailed local aggregation.",
+    )
     parser.add_argument("--cleanup-read-receipts", action="store_true")
     args = parser.parse_args()
 
     api_key = load_admin_key(Path(args.env_path))
     if args.stats:
-        result = collect_stats(args.base_url, api_key, limit=args.limit)
+        result = collect_stats(args.base_url, api_key, limit=args.limit, include_entry_scan=args.include_entry_scan)
     elif args.cleanup_read_receipts:
         result = cleanup_read_receipts(args.base_url, api_key, dry_run=not args.apply, limit=args.limit)
     else:
