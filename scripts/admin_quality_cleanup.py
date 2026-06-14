@@ -21,6 +21,23 @@ DEFAULT_BASE_URL = "http://127.0.0.1:18120"
 DEFAULT_ENV_PATH = "/opt/memlayer/.env"
 
 
+def load_env_value(env_path: Path, name: str) -> str | None:
+    if not env_path.exists():
+        return os.environ.get(name)
+    for line in env_path.read_text().splitlines():
+        if not line or line.lstrip().startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key.strip() == name:
+            return value.strip().strip('"').strip("'")
+    return os.environ.get(name)
+
+
+def is_production_env(env_path: Path) -> bool:
+    value = (load_env_value(env_path, "APP_ENV") or load_env_value(env_path, "ENVIRONMENT") or "").lower()
+    return value in {"prod", "production"}
+
+
 def load_admin_key(env_path: Path) -> str:
     raw = None
     for line in env_path.read_text().splitlines():
@@ -255,10 +272,22 @@ def main() -> int:
         action="store_true",
         help="Dangerous on production: fetches full /memory and /task-logs payloads for detailed local aggregation.",
     )
+    parser.add_argument(
+        "--i-accept-production-full-scan",
+        action="store_true",
+        help="Required with --include-entry-scan when APP_ENV/ENVIRONMENT is production.",
+    )
     parser.add_argument("--cleanup-read-receipts", action="store_true")
     args = parser.parse_args()
 
-    api_key = load_admin_key(Path(args.env_path))
+    env_path = Path(args.env_path)
+    if args.include_entry_scan and is_production_env(env_path) and not args.i_accept_production_full_scan:
+        raise SystemExit(
+            "--include-entry-scan is blocked in production. "
+            "Use --i-accept-production-full-scan only after confirming host memory headroom."
+        )
+
+    api_key = load_admin_key(env_path)
     if args.stats:
         result = collect_stats(args.base_url, api_key, limit=args.limit, include_entry_scan=args.include_entry_scan)
     elif args.cleanup_read_receipts:
