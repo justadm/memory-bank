@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 from pathlib import Path
 
 from scripts.install_memlayer_project_pack import (
@@ -87,6 +90,7 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
     assert (memlayer_root / "memlayer_write.sh").exists()
     assert (memlayer_root / "memlayer_sync.sh").exists()
     assert (memlayer_root / "memlayer_snapshot_pull.sh").exists()
+    assert (memlayer_root / "memlayer_payload.py").exists()
     assert (memlayer_root / "memlayer.snapshot.json").exists()
     assert (memlayer_root / "memlayer.snapshot.md").exists()
     assert (memlayer_root / "memlayer.offline.log.md").exists()
@@ -99,13 +103,21 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
     assert (memlayer_root / "memlayer_write.sh").stat().st_mode & 0o111
     assert (memlayer_root / "memlayer_sync.sh").stat().st_mode & 0o111
     assert (memlayer_root / "memlayer_snapshot_pull.sh").stat().st_mode & 0o111
+    assert (memlayer_root / "memlayer_payload.py").stat().st_mode & 0o111
     context_text = (memlayer_root / "memlayer_context.sh").read_text(encoding="utf-8")
     assert "REFRESH_MODE" in context_text
     assert 'print_snapshot' in context_text
     assert 'print_local_query_context' in context_text
     assert 'matched_items' in context_text
     assert 'memlayer_snapshot_pull.sh' in context_text
+    assert 'write_read_receipt' in context_text
     api_text = (memlayer_root / "memlayer_api.sh").read_text(encoding="utf-8")
+    write_text = (memlayer_root / "memlayer_write.sh").read_text(encoding="utf-8")
+    payload_helper_text = (memlayer_root / "memlayer_payload.py").read_text(encoding="utf-8")
+    assert "ensure-memory" in write_text
+    assert "ensure-task-log" in write_text
+    assert "source_agent" in payload_helper_text
+    assert "project_id" in payload_helper_text
     assert PRODUCTION_API_URL in (memlayer_root / "memlayer.config.json").read_text(encoding="utf-8")
     assert "host.docker.internal:18100" in api_text
     assert 'http://api:8000' in api_text
@@ -120,6 +132,7 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
     snapshot_pull_text = (memlayer_root / "memlayer_snapshot_pull.sh").read_text(encoding="utf-8")
     assert 'data.setdefault("generated_at"' in snapshot_pull_text
     assert 'data["project_id"] = project_id' in snapshot_pull_text
+    assert 'read-receipt' in snapshot_pull_text
 
 
 def test_install_for_project_merges_existing_agents_file(tmp_path: Path) -> None:
@@ -167,6 +180,44 @@ def test_install_for_project_preserves_existing_local_env(tmp_path: Path) -> Non
     assert "MEMLAYER_RECOVER_MODE=up" in local_env
     assert "MEMLAYER_RECOVER_HEALTH_TIMEOUT_SECONDS=30" in local_env
     assert "MEMLAYER_LAUNCHD_LABEL=loc.memlayer.runtime" in local_env
+    assert "MEMLAYER_SOURCE_AGENT=codex" in local_env
+    assert "MEMLAYER_READ_RECEIPT_ENABLED=true" in local_env
+
+
+def test_installed_payload_helper_adds_source_agent_and_project_id(tmp_path: Path, monkeypatch) -> None:
+    project_root = tmp_path / "PayloadProject"
+    project_root.mkdir()
+    install_for_project(
+        project_root,
+        preferred_url=PRODUCTION_API_URL,
+        local_url=LOCAL_API_URL,
+        human_url=PRODUCTION_API_URL,
+        dry_run=False,
+    )
+    config_path = project_root / ".memlayer" / "memlayer.config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["project_id"] = "project-123"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    monkeypatch.setenv("MEMLAYER_SOURCE_AGENT", "agent-under-test")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(project_root / ".memlayer" / "memlayer_payload.py"),
+            "ensure-memory",
+            str(config_path),
+            json.dumps({"type": "note", "content": "hello"}),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["source_agent"] == "agent-under-test"
+    assert payload["project_id"] == "project-123"
+    assert payload["metadata"]["project_name"] == "PayloadProject"
+    assert payload["metadata"]["memlayer_pack"] == "project_root_pack"
 
 
 def test_install_for_project_moves_legacy_root_files_into_memlayer_dir(tmp_path: Path) -> None:

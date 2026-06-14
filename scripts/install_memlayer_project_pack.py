@@ -237,6 +237,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
     write_path = memlayer_dir / "memlayer_write.sh"
     sync_path = memlayer_dir / "memlayer_sync.sh"
     snapshot_pull_path = memlayer_dir / "memlayer_snapshot_pull.sh"
+    payload_helper_path = memlayer_dir / "memlayer_payload.py"
     snapshot_json_path = memlayer_dir / "memlayer.snapshot.json"
     snapshot_md_path = memlayer_dir / "memlayer.snapshot.md"
     offline_log_path = memlayer_dir / "memlayer.offline.log.md"
@@ -258,6 +259,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
         ("memlayer_write.sh", write_path),
         ("memlayer_sync.sh", sync_path),
         ("memlayer_snapshot_pull.sh", snapshot_pull_path),
+        ("memlayer_payload.py", payload_helper_path),
         ("memlayer.snapshot.json", snapshot_json_path),
         ("memlayer.snapshot.md", snapshot_md_path),
         ("memlayer.offline.log.md", offline_log_path),
@@ -302,6 +304,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
     write_text_template = load_template("memlayer_write.sh.tmpl")
     sync_text_template = load_template("memlayer_sync.sh.tmpl")
     snapshot_pull_text = load_template("memlayer_snapshot_pull.sh.tmpl")
+    payload_helper_text = load_template("memlayer_payload.py.tmpl")
     snapshot_json_text = load_template("memlayer.snapshot.json.tmpl")
     snapshot_md_text = load_template("memlayer.snapshot.md.tmpl")
     offline_log_text = load_template("memlayer.offline.log.md.tmpl")
@@ -337,6 +340,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
     write_text(write_path, write_text_template, dry_run=dry_run)
     write_text(sync_path, sync_text_template, dry_run=dry_run)
     write_text(snapshot_pull_path, snapshot_pull_text, dry_run=dry_run)
+    write_text(payload_helper_path, payload_helper_text, dry_run=dry_run)
     if not snapshot_json_path.exists():
         write_text(snapshot_json_path, snapshot_json_text, dry_run=dry_run)
     if not snapshot_md_path.exists():
@@ -353,6 +357,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
     chmod_executable(write_path, dry_run=dry_run)
     chmod_executable(sync_path, dry_run=dry_run)
     chmod_executable(snapshot_pull_path, dry_run=dry_run)
+    chmod_executable(payload_helper_path, dry_run=dry_run)
 
     return {
         "project": project_name,
@@ -372,6 +377,7 @@ def install_for_project(project_root: Path, preferred_url: str, local_url: str, 
             str(write_path),
             str(sync_path),
             str(snapshot_pull_path),
+            str(payload_helper_path),
             str(snapshot_json_path),
             str(snapshot_md_path),
             str(offline_log_path),

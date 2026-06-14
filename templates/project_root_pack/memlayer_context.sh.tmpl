@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SNAPSHOT_MD="${SCRIPT_DIR}/memlayer.snapshot.md"
 SNAPSHOT_JSON="${SCRIPT_DIR}/memlayer.snapshot.json"
+CONFIG_PATH="${SCRIPT_DIR}/memlayer.config.json"
 REFRESH_MODE="false"
 
 if [[ "${1:-}" == "--refresh" ]]; then
@@ -12,6 +13,20 @@ if [[ "${1:-}" == "--refresh" ]]; then
 fi
 
 QUERY="${1:-}"
+
+write_read_receipt() {
+  local source="${1}"
+  local matched_items="${2:-0}"
+  if [[ "${MEMLAYER_READ_RECEIPT_ENABLED:-true}" == "false" ]]; then
+    return 0
+  fi
+  local receipt_payload
+  if ! receipt_payload="$(python3 "${SCRIPT_DIR}/memlayer_payload.py" read-receipt "${CONFIG_PATH}" "${QUERY}" "${source}" "${matched_items}")"; then
+    return 0
+  fi
+  MEMLAYER_WRITE_RETRY_ATTEMPTS="${MEMLAYER_READ_RECEIPT_RETRY_ATTEMPTS:-1}" \
+    "${SCRIPT_DIR}/memlayer_write.sh" memory "${receipt_payload}" >/dev/null 2>&1 || true
+}
 
 print_snapshot() {
   cat "${SNAPSHOT_MD}"
@@ -105,9 +120,11 @@ PY
 if [[ -f "${SNAPSHOT_MD}" && "${REFRESH_MODE}" != "true" ]]; then
   if [[ -n "${QUERY}" && -f "${SNAPSHOT_JSON}" ]]; then
     if print_local_query_context; then
+      write_read_receipt "snapshot" "0"
       exit 0
     fi
   fi
+  write_read_receipt "snapshot" "0"
   print_snapshot
   exit 0
 fi
@@ -121,9 +138,11 @@ if [[ -f "${SNAPSHOT_MD}" ]]; then
   echo "memlayer_context.sh: live MemLayer unavailable, using cached snapshot ${SNAPSHOT_MD}" >&2
   if [[ -n "${QUERY}" && -f "${SNAPSHOT_JSON}" ]]; then
     if print_local_query_context; then
+      write_read_receipt "snapshot_fallback" "0"
       exit 0
     fi
   fi
+  write_read_receipt "snapshot_fallback" "0"
   print_snapshot
   exit 0
 fi

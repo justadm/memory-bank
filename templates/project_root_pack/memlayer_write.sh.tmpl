@@ -5,6 +5,7 @@ KIND="${1:-memory}"
 PAYLOAD="${2:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_PATH="${SCRIPT_DIR}/memlayer.config.json"
 QUEUE_PATH="${SCRIPT_DIR}/memlayer.offline.queue.jsonl"
 LOG_PATH="${SCRIPT_DIR}/memlayer.offline.log.md"
 
@@ -20,6 +21,11 @@ case "${KIND}" in
     echo "memlayer_write.sh: unsupported kind ${KIND}" >&2
     exit 1
     ;;
+esac
+
+case "${KIND}" in
+  memory) PAYLOAD="$(python3 "${SCRIPT_DIR}/memlayer_payload.py" ensure-memory "${CONFIG_PATH}" "${PAYLOAD}")" ;;
+  task-log) PAYLOAD="$(python3 "${SCRIPT_DIR}/memlayer_payload.py" ensure-task-log "${CONFIG_PATH}" "${PAYLOAD}")" ;;
 esac
 
 if MEMLAYER_API_RETRY_ATTEMPTS_OVERRIDE="${MEMLAYER_WRITE_RETRY_ATTEMPTS:-1}" "${SCRIPT_DIR}/memlayer_api.sh" POST "${ENDPOINT}" "${PAYLOAD}"; then

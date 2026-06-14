@@ -109,4 +109,20 @@ lines.extend(render_bucket("Notes", context.get("notes", [])))
 Path(md_path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 PY
 
+if [[ "${MEMLAYER_READ_RECEIPT_ENABLED:-true}" != "false" ]]; then
+  MATCHED_ITEMS="$(python3 - "${JSON_OUT}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+context = data.get("context", {})
+print(sum(len(items) for items in context.values() if isinstance(items, list)))
+PY
+)"
+  RECEIPT_PAYLOAD="$(python3 "${SCRIPT_DIR}/memlayer_payload.py" read-receipt "${CONFIG_PATH}" "${QUERY}" "live_snapshot_pull" "${MATCHED_ITEMS}")"
+  MEMLAYER_WRITE_RETRY_ATTEMPTS="${MEMLAYER_READ_RECEIPT_RETRY_ATTEMPTS:-1}" \
+    "${SCRIPT_DIR}/memlayer_write.sh" memory "${RECEIPT_PAYLOAD}" >/dev/null 2>&1 || true
+fi
+
 echo "memlayer_snapshot_pull.sh: wrote ${JSON_OUT} and ${MD_OUT}"

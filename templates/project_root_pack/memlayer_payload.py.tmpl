@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+import sys
+from datetime import UTC, datetime
+from pathlib import Path
+
+
+def load_json(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def default_agent(config: dict) -> str:
+    return (
+        os.getenv("MEMLAYER_SOURCE_AGENT")
+        or os.getenv("MEMLAYER_AGENT_ID")
+        or os.getenv("CODEX_AGENT_ID")
+        or config.get("default_source_agent")
+        or "codex"
+    )
+
+
+def ensure_memory_payload(config_path: Path, payload_text: str) -> dict:
+    config = load_json(config_path)
+    payload = json.loads(payload_text)
+    if not isinstance(payload, dict):
+        raise SystemExit("payload must be a JSON object")
+
+    project_id = config.get("project_id")
+    if not payload.get("source_agent"):
+        payload["source_agent"] = default_agent(config)
+    if project_id and not payload.get("project_id"):
+        payload["project_id"] = project_id
+
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    if config.get("project_name"):
+        metadata.setdefault("project_name", config.get("project_name"))
+    metadata.setdefault("memlayer_pack", "project_root_pack")
+    payload["metadata"] = metadata
+    return payload
+
+
+def ensure_task_log_payload(config_path: Path, payload_text: str) -> dict:
+    config = load_json(config_path)
+    payload = json.loads(payload_text)
+    if not isinstance(payload, dict):
+        raise SystemExit("payload must be a JSON object")
+
+    if not payload.get("agent_id"):
+        payload["agent_id"] = default_agent(config)
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    if config.get("project_id"):
+        metadata.setdefault("project_id", config.get("project_id"))
+    if config.get("project_name"):
+        metadata.setdefault("project_name", config.get("project_name"))
+    metadata.setdefault("memlayer_pack", "project_root_pack")
+    payload["metadata"] = metadata
+    return payload
+
+
+def read_receipt_payload(config_path: Path, query: str, source: str, matched_items: str = "") -> dict:
+    config = load_json(config_path)
+    now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    project_name = config.get("project_name") or "project"
+    project_id = config.get("project_id")
+    agent = default_agent(config)
+    metadata = {
+        "project_name": project_name,
+        "read_receipt": True,
+        "read_source": source,
+        "query": query,
+        "matched_items": int(matched_items or 0),
+        "memlayer_pack": "project_root_pack",
+    }
+    payload = {
+        "type": "event",
+        "title": f"MemLayer context read: {source}",
+        "content": (
+            f"{now} {agent} read MemLayer context for {project_name}; "
+            f"source={source}; query={query or '(snapshot)'}; matched_items={metadata['matched_items']}."
+        ),
+        "source_agent": agent,
+        "importance": 1,
+        "metadata": metadata,
+    }
+    if project_id:
+        payload["project_id"] = project_id
+    return payload
+
+
+def main() -> int:
+    if len(sys.argv) < 3:
+        print("usage: memlayer_payload.py <ensure-memory|ensure-task-log|read-receipt> <config> ...", file=sys.stderr)
+        return 2
+    command = sys.argv[1]
+    config_path = Path(sys.argv[2])
+
+    if command == "ensure-memory":
+        print(json.dumps(ensure_memory_payload(config_path, sys.argv[3]), ensure_ascii=False))
+        return 0
+    if command == "ensure-task-log":
+        print(json.dumps(ensure_task_log_payload(config_path, sys.argv[3]), ensure_ascii=False))
+        return 0
+    if command == "read-receipt":
+        query = sys.argv[3] if len(sys.argv) > 3 else ""
+        source = sys.argv[4] if len(sys.argv) > 4 else "snapshot"
+        matched_items = sys.argv[5] if len(sys.argv) > 5 else "0"
+        print(json.dumps(read_receipt_payload(config_path, query, source, matched_items), ensure_ascii=False))
+        return 0
+
+    print(f"unsupported command: {command}", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
