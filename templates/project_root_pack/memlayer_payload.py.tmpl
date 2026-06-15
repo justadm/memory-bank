@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -72,7 +72,7 @@ def ensure_task_log_payload(config_path: Path, payload_text: str) -> dict:
 
 def read_receipt_payload(config_path: Path, query: str, source: str, matched_items: str = "") -> dict:
     config = load_json(config_path)
-    now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     project_name = config.get("project_name") or "project"
     project_id = config.get("project_id")
     agent = default_agent(config)

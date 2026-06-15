@@ -246,6 +246,55 @@ def test_installed_payload_helper_adds_source_agent_and_project_id(tmp_path: Pat
     assert receipt["metadata"]["matched_items"] == 3
 
 
+def test_installed_payload_helper_runs_with_apple_python39(tmp_path: Path, monkeypatch) -> None:
+    apple_python = Path("/usr/bin/python3")
+    if not apple_python.exists():
+        return
+
+    completed_version = subprocess.run(
+        [str(apple_python), "--version"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    if "Python 3.9" not in completed_version.stdout + completed_version.stderr:
+        return
+
+    project_root = tmp_path / "ApplePythonProject"
+    project_root.mkdir()
+    install_for_project(
+        project_root,
+        preferred_url=PRODUCTION_API_URL,
+        local_url=LOCAL_API_URL,
+        human_url=PRODUCTION_API_URL,
+        dry_run=False,
+    )
+    config_path = project_root / ".memlayer" / "memlayer.config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["project_id"] = "project-apple-python"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    monkeypatch.setenv("MEMLAYER_SOURCE_AGENT", "agent-under-test")
+
+    completed = subprocess.run(
+        [
+            str(apple_python),
+            str(project_root / ".memlayer" / "memlayer_payload.py"),
+            "read-receipt",
+            str(config_path),
+            "context query",
+            "snapshot",
+            "1",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    receipt = json.loads(completed.stdout)
+    assert receipt["metadata"]["receipt_type"] == "memlayer_read"
+    assert receipt["metadata"]["matched_items"] == 1
+
+
 def test_install_for_project_moves_legacy_root_files_into_memlayer_dir(tmp_path: Path) -> None:
     project_root = tmp_path / "LegacyProject"
     project_root.mkdir()
