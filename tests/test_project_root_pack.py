@@ -135,6 +135,52 @@ def test_install_for_project_creates_pack_files(tmp_path: Path) -> None:
     assert 'read-receipt' in snapshot_pull_text
 
 
+def test_context_helper_reads_top_level_snapshot_project_id(tmp_path: Path) -> None:
+    project_root = tmp_path / "SnapshotProject"
+    project_root.mkdir()
+
+    install_for_project(
+        project_root,
+        preferred_url=PRODUCTION_API_URL,
+        local_url=LOCAL_API_URL,
+        human_url=PRODUCTION_API_URL,
+        dry_run=False,
+    )
+
+    memlayer_root = project_root / ".memlayer"
+    (memlayer_root / "memlayer.snapshot.json").write_text(
+        json.dumps(
+            {
+                "project_id": "project-from-snapshot",
+                "summary": {},
+                "context": {
+                    "active_decisions": [
+                        {
+                            "type": "decision",
+                            "title": "Architecture source",
+                            "content": "Architecture context is available.",
+                            "importance": 3,
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [str(memlayer_root / "memlayer_context.sh"), "architecture"],
+        cwd=project_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "project_id: project-from-snapshot" in result.stdout
+    assert "Architecture source" in result.stdout
+
+
 def test_install_for_project_merges_existing_agents_file(tmp_path: Path) -> None:
     project_root = tmp_path / "ExistingProject"
     project_root.mkdir()
