@@ -7,6 +7,21 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+ALLOWED_MEMORY_TYPES = {
+    "decision",
+    "constraint",
+    "risk",
+    "artifact",
+    "task",
+    "note",
+    "event",
+}
+MEMORY_TYPE_ALIASES = {
+    "task_outcome": "task",
+    "outcome": "task",
+    "log": "task",
+}
+
 
 def load_json(path: Path) -> dict:
     if not path.exists():
@@ -33,6 +48,14 @@ def ensure_memory_payload(config_path: Path, payload_text: str) -> dict:
     payload = json.loads(payload_text)
     if not isinstance(payload, dict):
         raise SystemExit("payload must be a JSON object")
+
+    memory_type = payload.get("type")
+    if isinstance(memory_type, str):
+        memory_type = MEMORY_TYPE_ALIASES.get(memory_type, memory_type)
+        payload["type"] = memory_type
+    if memory_type not in ALLOWED_MEMORY_TYPES:
+        allowed = ", ".join(sorted(ALLOWED_MEMORY_TYPES | set(MEMORY_TYPE_ALIASES)))
+        raise SystemExit(f"unsupported memory type: {memory_type!r}; allowed types: {allowed}")
 
     project_id = config.get("project_id")
     if not payload.get("source_agent"):

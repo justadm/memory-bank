@@ -199,6 +199,18 @@ Queue a memory write when live MemLayer is unavailable:
   }}'
 ```
 
+For task outcomes, the shorter flag-style form is also supported:
+
+```bash
+./.memlayer/memlayer_write.sh \
+  --type task_outcome \
+  --title "Local source inventory completed" \
+  --content "source_inventory_ready; runtime evidence not_started" \
+  --importance 4
+```
+
+`task_outcome`, `outcome`, and `log` are normalized to the supported memory type `task`. If a type is unsupported, the helper prints allowed types instead of relying on an API error.
+
 Replay queued writes later:
 
 ```bash

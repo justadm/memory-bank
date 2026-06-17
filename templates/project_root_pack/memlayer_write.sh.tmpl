@@ -1,16 +1,112 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KIND="${1:-memory}"
-PAYLOAD="${2:-}"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_PATH="${SCRIPT_DIR}/memlayer.config.json"
 QUEUE_PATH="${SCRIPT_DIR}/memlayer.offline.queue.jsonl"
 LOG_PATH="${SCRIPT_DIR}/memlayer.offline.log.md"
 
+usage() {
+  cat >&2 <<'USAGE'
+usage:
+  ./memlayer_write.sh <memory|task-log> '<json-payload>'
+  ./memlayer_write.sh --type <decision|constraint|risk|artifact|task|note|event|task_outcome|outcome|log> --title <title> --content <content> [--importance N] [--metadata JSON]
+
+examples:
+  ./memlayer_write.sh memory '{"type":"task","title":"Done","content":"Outcome"}'
+  ./memlayer_write.sh --type task_outcome --title "Inventory done" --content "source inventory ready"
+USAGE
+}
+
+KIND="memory"
+PAYLOAD=""
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ "${1:-}" == --* ]]; then
+  MEMORY_TYPE=""
+  TITLE=""
+  CONTENT=""
+  IMPORTANCE="3"
+  METADATA="{}"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --kind)
+        KIND="${2:-}"
+        shift 2
+        ;;
+      --type)
+        MEMORY_TYPE="${2:-}"
+        shift 2
+        ;;
+      --title)
+        TITLE="${2:-}"
+        shift 2
+        ;;
+      --content|--body)
+        CONTENT="${2:-}"
+        shift 2
+        ;;
+      --importance)
+        IMPORTANCE="${2:-}"
+        shift 2
+        ;;
+      --metadata)
+        METADATA="${2:-}"
+        shift 2
+        ;;
+      *)
+        echo "memlayer_write.sh: unsupported option $1" >&2
+        usage
+        exit 2
+        ;;
+    esac
+  done
+
+  if [[ -z "${MEMORY_TYPE}" || -z "${TITLE}" || -z "${CONTENT}" ]]; then
+    echo "memlayer_write.sh: --type, --title, and --content are required for flag-style writes" >&2
+    usage
+    exit 2
+  fi
+
+  PAYLOAD="$(python3 - "$MEMORY_TYPE" "$TITLE" "$CONTENT" "$IMPORTANCE" "$METADATA" <<'PY'
+import json
+import sys
+
+memory_type, title, content, importance_text, metadata_text = sys.argv[1:6]
+try:
+    importance = int(importance_text)
+except ValueError as exc:
+    raise SystemExit("--importance must be an integer") from exc
+try:
+    metadata = json.loads(metadata_text)
+except json.JSONDecodeError as exc:
+    raise SystemExit(f"--metadata must be a JSON object: {exc}") from exc
+if not isinstance(metadata, dict):
+    raise SystemExit("--metadata must be a JSON object")
+print(json.dumps(
+    {
+        "type": memory_type,
+        "title": title,
+        "content": content,
+        "importance": importance,
+        "metadata": metadata,
+    },
+    ensure_ascii=False,
+))
+PY
+)"
+else
+  KIND="${1:-memory}"
+  PAYLOAD="${2:-}"
+fi
+
 if [[ -z "${PAYLOAD}" ]]; then
-  echo "usage: ./memlayer_write.sh <memory|task-log> '<json-payload>'" >&2
+  usage
   exit 1
 fi
 
@@ -18,7 +114,8 @@ case "${KIND}" in
   memory) ENDPOINT="/memory" ;;
   task-log) ENDPOINT="/task-logs" ;;
   *)
-    echo "memlayer_write.sh: unsupported kind ${KIND}" >&2
+    echo "memlayer_write.sh: unsupported kind ${KIND}; allowed kinds: memory, task-log" >&2
+    usage
     exit 1
     ;;
 esac

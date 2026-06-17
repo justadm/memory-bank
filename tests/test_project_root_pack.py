@@ -265,6 +265,88 @@ def test_installed_api_helper_accepts_memlayer_write_api_key_alias(tmp_path: Pat
     assert "memorybank_api_key_configured=yes" in completed.stdout
 
 
+def test_installed_write_helper_accepts_flag_style_task_outcome_alias(tmp_path: Path) -> None:
+    project_root = tmp_path / "WriteCliProject"
+    project_root.mkdir()
+    install_for_project(
+        project_root,
+        preferred_url=PRODUCTION_API_URL,
+        local_url=LOCAL_API_URL,
+        human_url=PRODUCTION_API_URL,
+        dry_run=False,
+    )
+    config_path = project_root / ".memlayer" / "memlayer.config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["project_id"] = "project-123"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    api_path = project_root / ".memlayer" / "memlayer_api.sh"
+    api_path.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+    api_path.chmod(0o755)
+
+    completed = subprocess.run(
+        [
+            str(project_root / ".memlayer" / "memlayer_write.sh"),
+            "--type",
+            "task_outcome",
+            "--title",
+            "Inventory done",
+            "--content",
+            "source inventory ready",
+            "--importance",
+            "4",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": f"{Path(sys.executable).parent}:/usr/bin:/bin:/usr/sbin:/sbin",
+            "MEMLAYER_SOURCE_AGENT": "agent-under-test",
+        },
+    )
+
+    assert completed.returncode == 0
+    assert "queued memory write" in completed.stderr
+    queue_path = project_root / ".memlayer" / "memlayer.offline.queue.jsonl"
+    queued = [json.loads(line) for line in queue_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(queued) == 1
+    payload = queued[0]["payload"]
+    assert payload["type"] == "task"
+    assert payload["title"] == "Inventory done"
+    assert payload["content"] == "source inventory ready"
+    assert payload["importance"] == 4
+    assert payload["source_agent"] == "agent-under-test"
+    assert payload["project_id"] == "project-123"
+
+
+def test_installed_payload_helper_normalizes_task_outcome_alias(tmp_path: Path) -> None:
+    project_root = tmp_path / "PayloadAliasProject"
+    project_root.mkdir()
+    install_for_project(
+        project_root,
+        preferred_url=PRODUCTION_API_URL,
+        local_url=LOCAL_API_URL,
+        human_url=PRODUCTION_API_URL,
+        dry_run=False,
+    )
+    config_path = project_root / ".memlayer" / "memlayer.config.json"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(project_root / ".memlayer" / "memlayer_payload.py"),
+            "ensure-memory",
+            str(config_path),
+            json.dumps({"type": "task_outcome", "title": "Done", "content": "Outcome"}),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["type"] == "task"
+
+
 def test_installed_payload_helper_adds_source_agent_and_project_id(tmp_path: Path, monkeypatch) -> None:
     project_root = tmp_path / "PayloadProject"
     project_root.mkdir()
