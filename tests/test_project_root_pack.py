@@ -230,6 +230,41 @@ def test_install_for_project_preserves_existing_local_env(tmp_path: Path) -> Non
     assert "MEMLAYER_READ_RECEIPT_ENABLED=true" in local_env
 
 
+def test_installed_api_helper_accepts_memlayer_write_api_key_alias(tmp_path: Path) -> None:
+    project_root = tmp_path / "AliasKeyProject"
+    project_root.mkdir()
+    install_for_project(
+        project_root,
+        preferred_url=PRODUCTION_API_URL,
+        local_url=LOCAL_API_URL,
+        human_url=PRODUCTION_API_URL,
+        dry_run=False,
+    )
+    env_path = project_root / ".memlayer" / ".env.memlayer"
+    env_text = env_path.read_text(encoding="utf-8")
+    env_text += "\nMEMLAYER_WRITE_API_KEY=write-key\n"
+    env_path.write_text(env_text, encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            str(project_root / ".memlayer" / "memlayer_api.sh"),
+            "doctor",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "MEMLAYER_API_URL": "http://127.0.0.1:1",
+            "MEMLAYER_EXTRA_URLS": "",
+            "MEMLAYER_RETRY_ATTEMPTS": "1",
+            "MEMLAYER_CURL_TIMEOUT_SECONDS": "1",
+        },
+    )
+
+    assert "memorybank_api_key_configured=yes" in completed.stdout
+
+
 def test_installed_payload_helper_adds_source_agent_and_project_id(tmp_path: Path, monkeypatch) -> None:
     project_root = tmp_path / "PayloadProject"
     project_root.mkdir()
