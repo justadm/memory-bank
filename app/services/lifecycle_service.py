@@ -43,7 +43,7 @@ class LifecycleService:
         review_cutoff = now - timedelta(days=review_overdue_days)
         weak_link_cutoff = now - timedelta(days=weak_link_days)
 
-        entries = self.memory_repository.list(archived=None)
+        entries = self.memory_repository.list(archived=None, current_only=False)
         quality_decay_candidates: list[MemoryEntry] = []
         review_overdue_candidates: list[MemoryEntry] = []
         archive_candidates: list[MemoryEntry] = []

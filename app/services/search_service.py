@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from dataclasses import dataclass
 from typing import Literal
 
@@ -32,6 +33,7 @@ class SearchService:
         types: list[MemoryType] | None = None,
         include_archived: bool = False,
         mode: Literal["lexical", "semantic", "hybrid"] = "hybrid",
+        as_of: datetime | None = None,
     ) -> list[SearchMatch]:
         lexical_matches = self.memory_repository.search(
             query=query,
@@ -40,6 +42,7 @@ class SearchService:
             limit=max(limit * 3, 20),
             types=types,
             include_archived=include_archived,
+            as_of=as_of,
         )
         if mode == "lexical":
             return [
@@ -57,7 +60,8 @@ class SearchService:
             project_id=project_id,
             project_ids=project_ids,
             memory_type=types[0] if types and len(types) == 1 else None,
-            archived=False if not include_archived else None,
+            archived=None if as_of is not None else (False if not include_archived else None),
+            as_of=as_of,
         )
         if types and len(types) > 1:
             candidates = [item for item in candidates if item.type in types]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
@@ -18,6 +19,11 @@ class AuthPrincipal:
     @property
     def is_tenant_restricted(self) -> bool:
         return self.tenant_ids is not None
+
+
+def safe_actor_id(principal: AuthPrincipal) -> str:
+    value = re.sub(r"[^A-Za-z0-9._:-]", "-", principal.name or "principal")[:100]
+    return value or "principal"
 
 
 def get_current_principal(
@@ -89,6 +95,12 @@ def require_admin_access(
     principal: Annotated[AuthPrincipal, Depends(get_current_principal)],
 ) -> AuthPrincipal:
     return _require_scopes({"admin"}, principal)
+
+
+def require_validate_access(
+    principal: Annotated[AuthPrincipal, Depends(get_current_principal)],
+) -> AuthPrincipal:
+    return _require_scopes({"validate", "admin"}, principal)
 
 
 def _require_scopes(required: set[str], principal: AuthPrincipal | None = None) -> AuthPrincipal:

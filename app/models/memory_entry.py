@@ -1,13 +1,13 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.sql.sqltypes import Text as SqlText
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.models.enums import MemoryType
+from app.models.enums import MemoryProvenance, MemoryType
 
 
 class MemoryEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -24,10 +24,36 @@ class MemoryEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     usage_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    provenance: Mapped[MemoryProvenance] = mapped_column(
+        Enum(MemoryProvenance, native_enum=False), default=MemoryProvenance.unspecified, nullable=False
+    )
+    confidence: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )
+    valid_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("memory_entries.id", ondelete="RESTRICT"), nullable=True
+    )
     metadata_: Mapped[dict] = mapped_column(
         "metadata", JSON().with_variant(JSONB, "postgresql"), default=dict, nullable=False
     )
     search_vector: Mapped[str | None] = mapped_column(SqlText().with_variant(TSVECTOR, "postgresql"), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)", name="ck_memory_confidence"),
+        CheckConstraint("valid_to IS NULL OR valid_to > valid_from", name="ck_memory_valid_interval"),
+        CheckConstraint("supersedes_id IS NULL OR supersedes_id <> id", name="ck_memory_no_self_successor"),
+        Index(
+            "uq_memory_single_successor",
+            "supersedes_id",
+            unique=True,
+            sqlite_where=text("supersedes_id IS NOT NULL"),
+            postgresql_where=text("supersedes_id IS NOT NULL"),
+        ),
+    )
 
     project = relationship("Project", back_populates="memory_entries")
     outgoing_links = relationship(

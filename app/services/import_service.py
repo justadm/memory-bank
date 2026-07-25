@@ -111,6 +111,7 @@ class ImportService:
                         archived=False,
                     ),
                     principal=principal,
+                    operation_source="import",
                     enforce_quality_gate=False,
                 )
                 entry_refs[item.ref] = updated.id
@@ -130,6 +131,7 @@ class ImportService:
                     metadata=metadata,
                 ),
                 principal=principal,
+                operation_source="import",
                 enforce_quality_gate=False,
             )
             entry_refs[item.ref] = created.id
@@ -208,6 +210,7 @@ class ImportService:
                     archived=False,
                 ),
                 principal=principal,
+                operation_source="import",
                 enforce_quality_gate=False,
             )
 
@@ -222,6 +225,7 @@ class ImportService:
                 metadata=metadata,
             ),
             principal=principal,
+            operation_source="import",
             enforce_quality_gate=False,
         )
 

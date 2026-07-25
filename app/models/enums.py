@@ -19,3 +19,20 @@ class MemoryLinkType(str, Enum):
     derived_from = "derived_from"
     blocks = "blocks"
     resolves = "resolves"
+
+
+class MemoryProvenance(str, Enum):
+    unspecified = "unspecified"
+    explicit_statement = "explicit_statement"
+    observed = "observed"
+    inferred = "inferred"
+    corrected = "corrected"
+    validated = "validated"
+    imported = "imported"
+
+
+class MemoryChangeEventKind(str, Enum):
+    created = "created"
+    revised = "revised"
+    archived = "archived"
+    restored = "restored"

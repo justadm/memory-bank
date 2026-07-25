@@ -154,6 +154,44 @@ class MemoryBankClient:
     def get_memory(self, memory_id: str) -> dict[str, Any]:
         return self._request("GET", f"/memory/{memory_id}")
 
+    def revise_memory(
+        self,
+        memory_id: str,
+        *,
+        changes: dict[str, Any],
+        reason: str,
+        metadata_patch: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/memory/{memory_id}/revise",
+            json={"changes": changes, "metadata_patch": metadata_patch or {}, "reason": reason},
+        )
+
+    def memory_history(self, memory_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/memory/{memory_id}/history")
+
+    def restore_memory(self, memory_id: str, *, source_entry_id: str | None = None, reason: str = "restored historical memory") -> dict[str, Any]:
+        payload: dict[str, Any] = {"reason": reason}
+        if source_entry_id is not None:
+            payload["source_entry_id"] = source_entry_id
+        return self._request("POST", f"/memory/{memory_id}/restore", json=payload)
+
+    def memory_changes(
+        self,
+        *,
+        project_id: str,
+        cursor: str | None = None,
+        after_sequence: int | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"project_id": project_id, "limit": limit}
+        if cursor is not None:
+            params["cursor"] = cursor
+        if after_sequence is not None:
+            params["after_sequence"] = after_sequence
+        return self._request("GET", "/memory/changes", params=params)
+
     def list_memory(
         self,
         *,

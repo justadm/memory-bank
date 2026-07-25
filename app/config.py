@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     auto_link_min_similarity: float = 0.35
     auto_link_search_limit: int = 20
     auto_link_max_links: int = 5
+    cursor_secret: str = "memory-bank-local-cursor-secret"
 
     model_config = SettingsConfigDict(
         env_file=".env",

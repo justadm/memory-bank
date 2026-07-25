@@ -4,9 +4,26 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import MemoryType
+from app.models.enums import MemoryProvenance, MemoryType
 
 SearchScope = Literal["project", "related", "global"]
+
+
+class ValidationEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal[
+        "source_inspection",
+        "test_run",
+        "runtime_health",
+        "read_back",
+        "external_api_read",
+        "human_approval",
+    ]
+    summary: str = Field(min_length=1, max_length=500)
+    captured_at: datetime
+    redacted: Literal[True]
+    contains_sensitive_data: Literal[False]
 
 
 class MemoryCreate(BaseModel):
@@ -17,6 +34,9 @@ class MemoryCreate(BaseModel):
     project_id: uuid.UUID | None = None
     importance: int = Field(default=3, ge=1, le=5)
     metadata: dict = Field(default_factory=dict)
+    provenance: MemoryProvenance = MemoryProvenance.unspecified
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    valid_from: datetime | None = None
 
 
 class MemoryUpdate(BaseModel):
@@ -27,6 +47,8 @@ class MemoryUpdate(BaseModel):
     importance: int | None = Field(default=None, ge=1, le=5)
     archived: bool | None = None
     metadata: dict | None = None
+    provenance: MemoryProvenance | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class MemoryResponse(BaseModel):
@@ -42,6 +64,13 @@ class MemoryResponse(BaseModel):
     usage_count: int
     last_used_at: datetime | None
     archived: bool
+    provenance: MemoryProvenance
+    confidence: float | None
+    valid_from: datetime
+    valid_to: datetime | None
+    supersedes_id: uuid.UUID | None
+    is_current: bool | None = None
+    successor_id: uuid.UUID | None = None
     metadata: dict = Field(validation_alias="metadata_", serialization_alias="metadata")
     created_at: datetime
     updated_at: datetime
@@ -52,8 +81,54 @@ class MemoryArchiveResponse(BaseModel):
     archived: bool
 
 
+class MemoryReviseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    changes: dict = Field(default_factory=dict)
+    metadata_patch: dict = Field(default_factory=dict)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class MemoryRevisionResponse(BaseModel):
+    entry: MemoryResponse
+    superseded_id: uuid.UUID
+    actor: str
+    reason: str
+    revised_at: datetime
+
+
+class MemoryRestoreRequest(BaseModel):
+    source_entry_id: uuid.UUID | None = None
+    reason: str = Field(default="restored historical memory", min_length=1, max_length=500)
+
+
+class MemoryHistoryResponse(BaseModel):
+    items: list[MemoryResponse]
+
+
 class MemoryListResponse(BaseModel):
     items: list[MemoryResponse]
+
+
+class MemoryChangeEventResponse(BaseModel):
+    project_id: uuid.UUID
+    sequence: int
+    feed_epoch: uuid.UUID
+    event_kind: str
+    occurred_at: datetime
+    entry_id: uuid.UUID
+    previous_entry_id: uuid.UUID | None
+    actor: str
+    reason: str | None
+
+
+class MemoryChangesResponse(BaseModel):
+    items: list[MemoryChangeEventResponse]
+    has_more: bool
+    next_cursor: str
+    committed_high_watermark: int
+    feed_epoch: uuid.UUID
+    feed_started_at: datetime
 
 
 class MemorySearchItem(BaseModel):
@@ -84,6 +159,7 @@ class MemoryRelevantRequest(BaseModel):
     search_mode: Literal["lexical", "semantic", "hybrid"] = "hybrid"
     limit: int = Field(default=8, ge=1, le=50)
     metadata: dict = Field(default_factory=dict)
+    as_of: datetime | None = None
 
 
 class MemoryRelevantItem(BaseModel):

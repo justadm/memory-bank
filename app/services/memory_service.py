@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import HTTPException, status
@@ -7,6 +8,8 @@ from app.config import get_settings
 from app.models.access_log import MemoryAccessLog
 from app.models.memory_entry import MemoryEntry
 from app.models.memory_link import MemoryLink
+from app.models.enums import MemoryProvenance
+from app.models.enums import MemoryChangeEventKind
 from app.models.project import Project
 from app.repositories.link_repository import LinkRepository
 from app.repositories.memory_repository import MemoryRepository
@@ -19,6 +22,8 @@ from app.services.auto_link_service import AutoLinkService
 from app.services.decision_authority_service import DecisionAuthorityService
 from app.services.graph_service import GraphService
 from app.services.memory_quality_service import MemoryQualityService
+from app.services.memory_evidence_service import MemoryEvidenceService
+from app.services.memory_change_service import MemoryChangeService
 from app.services.search_service import SearchService
 
 
@@ -124,8 +129,19 @@ class MemoryService:
         *,
         principal: AuthPrincipal | None = None,
         enforce_quality_gate: bool = True,
+        operation_source: str = "api",
     ) -> MemoryEntry:
         self._validate_project(payload.project_id, principal=principal, require_for_restricted=principal is not None)
+        effective_principal = principal or AuthPrincipal(name="anonymous", scopes={"read", "write", "import", "admin"}, api_key="")
+        metadata_input = dict(payload.metadata)
+        MemoryEvidenceService.validate_provenance(
+            payload.provenance,
+            principal=effective_principal,
+            metadata=metadata_input,
+            operation_source=operation_source,
+        )
+        if payload.valid_from is not None and not ({"import", "admin"} & effective_principal.scopes):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="valid_from requires import or admin scope")
         quality = self.quality_service.assess(
             memory_type=payload.type,
             title=payload.title,
@@ -158,11 +174,23 @@ class MemoryService:
             project_id=payload.project_id,
             importance=payload.importance,
             metadata_=metadata,
+            provenance=MemoryProvenance.imported if operation_source == "import" else payload.provenance,
+            confidence=payload.confidence,
+            valid_from=payload.valid_from,
             search_vector=None if self.memory_repository.is_postgresql() else self._build_search_payload(payload.title, payload.content),
         )
         created = self.memory_repository.create(entry)
         self.memory_repository.sync_search_vector(created, self._build_search_payload(created.title, created.content))
         self.auto_link_service.link_entry(created)
+        if created.project_id:
+            project = self.project_repository.get(created.project_id)
+            if project:
+                MemoryChangeService(self.memory_repository.db).emit(
+                    project=project,
+                    entry_id=created.id,
+                    event_kind=MemoryChangeEventKind.created,
+                    principal=principal,
+                )
         return created
 
     def get_memory(self, entry_id: uuid.UUID, *, principal: AuthPrincipal | None = None) -> MemoryEntry:
@@ -178,11 +206,12 @@ class MemoryService:
         project_id: uuid.UUID | None = None,
         memory_type=None,
         archived: bool | None = None,
+        as_of=None,
         principal: AuthPrincipal | None = None,
     ) -> list[MemoryEntry]:
         if project_id:
             self._validate_project(project_id, principal=principal, require_for_restricted=False)
-        items = self.memory_repository.list(project_id=project_id, memory_type=memory_type, archived=archived)
+        items = self.memory_repository.list(project_id=project_id, memory_type=memory_type, archived=archived, as_of=as_of)
         return [item for item in items if self._can_access_entry(item, principal)]
 
     def update_memory(
@@ -192,9 +221,19 @@ class MemoryService:
         *,
         principal: AuthPrincipal | None = None,
         enforce_quality_gate: bool = True,
+        operation_source: str = "api",
     ) -> MemoryEntry:
         entry = self.get_memory(entry_id, principal=principal)
         data = payload.model_dump(exclude_unset=True)
+        effective_principal = principal or AuthPrincipal(name="anonymous", scopes={"read", "write", "import", "admin"}, api_key="")
+        metadata_input = dict(data.get("metadata") or {}) if "metadata" in data else {}
+        provenance = data.get("provenance", entry.provenance)
+        MemoryEvidenceService.validate_provenance(
+            provenance,
+            principal=effective_principal,
+            metadata=metadata_input,
+            operation_source=operation_source,
+        )
         if "project_id" in data:
             self._validate_project(data["project_id"], principal=principal, require_for_restricted=principal is not None)
         for field, value in data.items():
@@ -241,9 +280,20 @@ class MemoryService:
     def archive_memory(self, entry_id: uuid.UUID, *, principal: AuthPrincipal | None = None) -> MemoryEntry:
         entry = self.get_memory(entry_id, principal=principal)
         entry.archived = True
+        if entry.valid_to is None:
+            entry.valid_to = datetime.now(timezone.utc)
         self.memory_repository.db.add(entry)
         self.memory_repository.db.flush()
         self.memory_repository.db.refresh(entry)
+        if entry.project_id:
+            project = self.project_repository.get(entry.project_id)
+            if project:
+                MemoryChangeService(self.memory_repository.db).emit(
+                    project=project,
+                    entry_id=entry.id,
+                    event_kind=MemoryChangeEventKind.archived,
+                    principal=principal,
+                )
         return entry
 
     def search_memory(
@@ -255,6 +305,7 @@ class MemoryService:
         limit: int = 10,
         mode: str = "hybrid",
         principal: AuthPrincipal | None = None,
+        as_of=None,
     ):
         project_ids = self._resolve_scope_project_ids(project_id, scope=scope, principal=principal)
         results = self.search_service.search(
@@ -263,6 +314,7 @@ class MemoryService:
             project_ids=project_ids,
             limit=limit,
             mode=mode,
+            as_of=as_of,
         )
         return [match for match in results if self._can_access_entry(match.entry, principal)]
 
@@ -275,18 +327,20 @@ class MemoryService:
             limit=payload.limit,
             types=payload.types,
             mode=payload.search_mode,
+            as_of=payload.as_of,
         )
         filtered_results = [match for match in results if self._can_access_entry(match.entry, principal)]
-        for match in filtered_results:
-            self.memory_repository.increment_usage(match.entry)
-            self.memory_repository.add_access_log(
-                MemoryAccessLog(
-                    entry_id=match.entry.id,
-                    agent_id=payload.agent_id,
-                    task_context=payload.query,
-                    metadata_=payload.metadata,
+        if payload.as_of is None:
+            for match in filtered_results:
+                self.memory_repository.increment_usage(match.entry)
+                self.memory_repository.add_access_log(
+                    MemoryAccessLog(
+                        entry_id=match.entry.id,
+                        agent_id=payload.agent_id,
+                        task_context=payload.query,
+                        metadata_=payload.metadata,
+                    )
                 )
-            )
         return [(match.entry, match.score) for match in filtered_results]
 
     def create_link(self, payload: LinkCreate, *, principal: AuthPrincipal | None = None) -> MemoryLink:

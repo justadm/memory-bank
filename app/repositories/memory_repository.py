@@ -5,7 +5,7 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.access_log import MemoryAccessLog
@@ -30,6 +30,30 @@ class MemoryRepository:
     def get(self, entry_id: uuid.UUID) -> MemoryEntry | None:
         return self.db.get(MemoryEntry, entry_id)
 
+    @staticmethod
+    def _normalize_at(at: datetime | None) -> datetime:
+        value = at or datetime.now(timezone.utc)
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    @staticmethod
+    def current_predicate(at: datetime | None = None):
+        moment = MemoryRepository._normalize_at(at)
+        return and_(
+            MemoryEntry.valid_from <= moment,
+            or_(MemoryEntry.valid_to.is_(None), MemoryEntry.valid_to > moment),
+            MemoryEntry.archived.is_(False),
+        )
+
+    @staticmethod
+    def historical_predicate(at: datetime):
+        moment = MemoryRepository._normalize_at(at)
+        return and_(
+            MemoryEntry.valid_from <= moment,
+            or_(MemoryEntry.valid_to.is_(None), MemoryEntry.valid_to > moment),
+        )
+
     def list(
         self,
         *,
@@ -37,6 +61,8 @@ class MemoryRepository:
         project_ids: list[uuid.UUID] | None = None,
         memory_type: MemoryType | None = None,
         archived: bool | None = None,
+        as_of: datetime | None = None,
+        current_only: bool = True,
     ) -> list[MemoryEntry]:
         stmt = select(MemoryEntry).order_by(MemoryEntry.created_at.desc())
         if project_ids:
@@ -45,6 +71,10 @@ class MemoryRepository:
             stmt = stmt.where(MemoryEntry.project_id == project_id)
         if memory_type:
             stmt = stmt.where(MemoryEntry.type == memory_type)
+        if as_of is not None:
+            stmt = stmt.where(self.historical_predicate(as_of))
+        elif current_only and archived is not True:
+            stmt = stmt.where(self.current_predicate())
         if archived is not None:
             stmt = stmt.where(MemoryEntry.archived == archived)
         return list(self.db.scalars(stmt))
@@ -61,6 +91,7 @@ class MemoryRepository:
             MemoryEntry.project_id == project_id,
             MemoryEntry.type == memory_type,
             MemoryEntry.source_agent == "memorybank-import-agent",
+            self.current_predicate(),
         )
         if title:
             stmt = stmt.where(MemoryEntry.title == title)
@@ -76,7 +107,7 @@ class MemoryRepository:
         limit: int = 20,
         tenant_ids: set[str] | None = None,
     ) -> list[MemoryEntry]:
-        stmt = select(MemoryEntry).order_by(MemoryEntry.created_at.desc())
+        stmt = select(MemoryEntry).where(self.current_predicate()).order_by(MemoryEntry.created_at.desc())
         if project_id:
             stmt = stmt.where(MemoryEntry.project_id == project_id)
         if tenant_ids is not None:
@@ -100,7 +131,7 @@ class MemoryRepository:
         limit: int = 20,
         tenant_ids: set[str] | None = None,
     ) -> list[MemoryEntry]:
-        stmt = select(MemoryEntry).where(MemoryEntry.type == MemoryType.decision).order_by(MemoryEntry.created_at.desc())
+        stmt = select(MemoryEntry).where(self.current_predicate(), MemoryEntry.type == MemoryType.decision).order_by(MemoryEntry.created_at.desc())
         if project_id:
             stmt = stmt.where(MemoryEntry.project_id == project_id)
         if tenant_ids is not None:
@@ -124,7 +155,7 @@ class MemoryRepository:
         limit: int = 20,
         tenant_ids: set[str] | None = None,
     ) -> list[MemoryEntry]:
-        stmt = select(MemoryEntry).order_by(MemoryEntry.created_at.desc())
+        stmt = select(MemoryEntry).where(self.current_predicate()).order_by(MemoryEntry.created_at.desc())
         if project_id:
             stmt = stmt.where(MemoryEntry.project_id == project_id)
         if tenant_ids is not None:
@@ -147,7 +178,7 @@ class MemoryRepository:
         limit: int = 20,
         tenant_ids: set[str] | None = None,
     ) -> list[MemoryEntry]:
-        stmt = select(MemoryEntry).order_by(MemoryEntry.created_at.desc())
+        stmt = select(MemoryEntry).where(self.current_predicate()).order_by(MemoryEntry.created_at.desc())
         if project_id:
             stmt = stmt.where(MemoryEntry.project_id == project_id)
         if tenant_ids is not None:
@@ -170,7 +201,7 @@ class MemoryRepository:
         projects = self.db.scalars(stmt).all()
         summaries: list[dict] = []
         for project in projects:
-            entries = self.db.scalars(select(MemoryEntry).where(MemoryEntry.project_id == project.id)).all()
+            entries = self.db.scalars(select(MemoryEntry).where(MemoryEntry.project_id == project.id, self.current_predicate())).all()
             import_entries = [item for item in entries if item.source_agent == "memorybank-import-agent"]
             import_events = [
                 item
@@ -214,10 +245,13 @@ class MemoryRepository:
         limit: int = 10,
         types: list[MemoryType] | None = None,
         include_archived: bool = False,
+        as_of: datetime | None = None,
     ) -> list[tuple[MemoryEntry, float]]:
         stmt: Select[tuple[MemoryEntry]] = select(MemoryEntry)
-        if not include_archived:
-            stmt = stmt.where(MemoryEntry.archived.is_(False))
+        if as_of is not None:
+            stmt = stmt.where(self.historical_predicate(as_of))
+        elif not include_archived:
+            stmt = stmt.where(self.current_predicate())
         if project_ids:
             stmt = stmt.where(MemoryEntry.project_id.in_(project_ids))
         elif project_id:
@@ -245,6 +279,7 @@ class MemoryRepository:
                 limit=limit,
                 types=types,
                 include_archived=include_archived,
+                as_of=as_of,
             )
 
         pattern = f"%{query.strip()}%"
@@ -274,14 +309,17 @@ class MemoryRepository:
         limit: int = 10,
         types: list[MemoryType] | None = None,
         include_archived: bool = False,
+        as_of: datetime | None = None,
     ) -> list[tuple[MemoryEntry, float]]:
         tokens = self._search_tokens(query)
         if not tokens:
             return []
 
         stmt = select(MemoryEntry)
-        if not include_archived:
-            stmt = stmt.where(MemoryEntry.archived.is_(False))
+        if as_of is not None:
+            stmt = stmt.where(self.historical_predicate(as_of))
+        elif not include_archived:
+            stmt = stmt.where(self.current_predicate())
         if project_ids:
             stmt = stmt.where(MemoryEntry.project_id.in_(project_ids))
         elif project_id:
@@ -368,7 +406,7 @@ class MemoryRepository:
     ) -> list[MemoryEntry]:
         cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
         stmt = select(MemoryEntry).where(
-            MemoryEntry.archived.is_(False),
+            self.current_predicate(),
             MemoryEntry.created_at < cutoff,
             MemoryEntry.usage_count <= max_usage_count,
             MemoryEntry.importance <= max_importance,
