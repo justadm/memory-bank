@@ -226,9 +226,11 @@ class ConnectorService:
                 relative = PurePosixPath(action.path)
                 spec = self.registry[relative]
                 path = self._path(relative)
-                if action.kind in {"preserve", "adopt"}:
-                    if spec.ownership is OwnershipMode.USER_OWNED and not path.exists():
+                if spec.ownership is OwnershipMode.USER_OWNED:
+                    if not path.exists():
                         _write_atomic(path, b"", 0o600)
+                    continue
+                if action.kind in {"preserve", "adopt"}:
                     continue
                 if spec.ownership is OwnershipMode.MANAGED_SECTION:
                     section = render_artifact(spec, self.context).decode().strip()
