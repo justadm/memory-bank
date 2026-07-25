@@ -1,6 +1,31 @@
 
 # MVP Memory Bank
 
+## Следующий продуктовый этап: Codex Connect и Temporal Memory
+
+Подтверждённый дизайн:
+
+- [MemLayer Codex Connect and Temporal Memory Design](docs/superpowers/specs/2026-07-25-memlayer-codex-connect-temporal-memory-design.md)
+- [Memanto Competitive Review](docs/memanto-competitive-review-2026-07-25.md)
+
+Этап включает:
+
+1. project-local `memlayer connect codex` с dry-run, managed manifest, skill,
+   безопасным `disconnect` и read-only `doctor`;
+2. first-class `provenance`, `confidence`, `valid_from`, `valid_to` и
+   `supersedes_id`;
+3. immutable semantic revisions;
+4. `as-of`, `changed-since` и revision history;
+5. поэтапную миграцию существующих API, SDK, console и root-pack callers;
+6. dogfood на ограниченном наборе проектов до production deployment.
+
+Отложено:
+
+- Claude Code, Cursor и другие agent connectors;
+- OKF export/import;
+- замена retrieval backend;
+- production rollout без отдельного approval.
+
 ## Цель MVP
 
 Сделать простой сервис памяти для агентов:
