@@ -1,4 +1,5 @@
 from memorybank_sdk import MemoryAwareAgent
+from memorybank_sdk.client import MemoryBankClient
 
 
 class FakeMemoryClient:
@@ -157,3 +158,29 @@ def test_sdk_project_import_helper():
     assert client.import_payloads[0]["entries"][1]["type"] == "risk"
     assert client.import_payloads[0]["detect_conflicts"] is True
     assert client.import_payloads[0]["existing_entry_mode"] == "update"
+
+
+def test_sdk_resolve_project_sends_connector_identity():
+    client = MemoryBankClient("http://example.test")
+    calls = []
+
+    def request(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        return {"project_id": "project-1", "status": "created"}
+
+    client._request = request
+    result = client.resolve_project(
+        agent="codex",
+        connector_identity="identity-1",
+        project_name="demo",
+        tenant_id="tenant-a",
+    )
+
+    assert result["project_id"] == "project-1"
+    assert calls == [("POST", "/projects/resolve", {"json": {
+        "agent": "codex",
+        "connector_identity": "identity-1",
+        "project_name": "demo",
+        "tenant_id": "tenant-a",
+    }})]
+    client.close()

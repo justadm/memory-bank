@@ -71,6 +71,29 @@ class MemoryBankClient:
             json={"name": name, "description": description, "metadata": metadata or {}},
         )
 
+    def resolve_project(
+        self,
+        *,
+        agent: Literal["codex"],
+        connector_identity: str,
+        project_name: str,
+        tenant_id: str | None = None,
+        existing_project_id: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "agent": agent,
+            "connector_identity": connector_identity,
+            "project_name": project_name,
+        }
+        if tenant_id is not None:
+            payload["tenant_id"] = tenant_id
+        if existing_project_id is not None:
+            payload["existing_project_id"] = existing_project_id
+        return self._request("POST", "/projects/resolve", json=payload)
+
+    def get_project(self, project_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/projects/{project_id}")
+
     def import_project_scan(
         self,
         *,
