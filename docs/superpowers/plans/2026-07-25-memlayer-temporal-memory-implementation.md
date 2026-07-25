@@ -29,6 +29,7 @@
 - Modify: `app/models/__init__.py`
 - Create: `app/models/memory_change_feed.py`
 - Create: `alembic/versions/20260725_0006_temporal_memory.py`
+- Create: `scripts/verify_temporal_migrations.py`
 - Modify: `tests/test_api.py`
 - Create: `tests/test_temporal_models.py`
 
@@ -51,6 +52,7 @@ def test_memory_entry_defaults_to_unspecified_current_revision(db_session):
     assert entry.valid_from is not None
     assert entry.valid_to is None
     assert entry.supersedes_id is None
+    assert entry.history_available is True
 ```
 
 Also assert confidence rejects values outside `0.0..1.0`, `valid_to <= valid_from` fails, self-superseding fails, and a second successor for one predecessor violates the unique constraint.
@@ -85,33 +87,64 @@ class MemoryChangeEventKind(str, Enum):
     restored = "restored"
 ```
 
-`MemoryEntry` gains `provenance`, `confidence`, `valid_from`, `valid_to`, and `supersedes_id`. `MemoryChangeFeedState` is keyed by `project_id`; `MemoryChangeEvent` is keyed by `(project_id, sequence)` and includes `feed_epoch`, `event_kind`, `occurred_at`, `normalized_tenant_key`, `entry_id`, `previous_entry_id`, `actor`, and `reason`.
+`MemoryEntry` gains `provenance`, `confidence`, `valid_from`, `valid_to`,
+`supersedes_id`, and `history_available`. `MemoryChangeFeedState` is keyed by
+`project_id`; `MemoryChangeEvent` is keyed by `(project_id, sequence)` and
+includes `feed_epoch`, `event_kind`, `occurred_at`,
+`normalized_tenant_key`, `entry_id`, `previous_entry_id`, `actor`, and
+`reason`. Model metadata defines the SQLite full current/as-of support index;
+the Alembic migration defines the PostgreSQL partial/current and as-of indexes.
 
 - [ ] **Step 4: Write the migration**
 
 Migration `20260725_0006` must:
 
 1. add nullable temporal columns;
-2. backfill `provenance='unspecified'`, `valid_from=created_at`;
-3. make required columns non-null;
-4. add confidence, interval, self-reference, and single-successor constraints;
-5. add current/as-of indexes for PostgreSQL and SQLite-compatible indexes;
-6. create feed-state and event tables;
-7. create one feed-state row with sequence `0` for every existing project;
-8. set `down_revision = "20260725_0005"`.
+2. capture one database-derived `migration_cutover_at`;
+3. backfill non-archived rows with `valid_from=created_at`,
+   `valid_to=null`, and `history_available=true`;
+4. backfill archived rows with `valid_from=created_at`,
+   `valid_to=migration_cutover_at`, and `history_available=false`;
+5. make required columns non-null;
+6. add confidence, interval, self-reference, and single-successor constraints;
+7. add PostgreSQL current/as-of indexes;
+8. create feed-state and event tables;
+9. create one feed-state row with sequence `0` for every existing project;
+10. set `down_revision = "20260725_0005"`.
 
 It must not fabricate change events for existing memories.
 
-- [ ] **Step 5: Test upgrade and downgrade on disposable SQLite**
+- [ ] **Step 5: Test models on SQLite and migrations on PostgreSQL**
 
-Add a migration test that creates legacy rows, upgrades, verifies backfill and zero feed state, downgrades, and confirms the legacy schema remains readable.
+SQLite tests create schema through `Base.metadata.create_all()` and verify
+model constraints, predicates, and API behavior. They do not run the
+PostgreSQL-only Alembic chain.
+
+`scripts/verify_temporal_migrations.py` requires
+`MEMLAYER_MIGRATION_TEST_DATABASE_URL`, verifies it is PostgreSQL and is not
+equal to the normal configured database URL, then performs:
+
+```text
+base -> 20260429_0004
+insert active and archived legacy fixtures
+upgrade -> head
+verify cutover backfill, history markers, constraints, indexes, feed state
+downgrade -> 20260429_0004
+upgrade -> head
+```
+
+The script exits non-zero when the URL is missing, non-PostgreSQL, equal to the
+normal configured database URL, or its database name does not start with
+`memlayer_migration_test_`. It also requires
+`MEMLAYER_MIGRATION_TEST_CONFIRM=DISPOSABLE_ONLY`. The script resets only the
+dedicated test database schema and exits non-zero on any failed assertion.
 
 - [ ] **Step 6: Run focused tests and commit**
 
 ```bash
 .venv313/bin/pytest tests/test_temporal_models.py tests/test_api.py -q
 git diff --check
-git add app/models alembic/versions/20260725_0006_temporal_memory.py tests/test_temporal_models.py tests/test_api.py
+git add app/models alembic/versions/20260725_0006_temporal_memory.py scripts/verify_temporal_migrations.py tests/test_temporal_models.py tests/test_api.py
 git commit -m "Add temporal memory schema"
 ```
 
@@ -185,6 +218,7 @@ git commit -m "Enforce memory provenance boundaries"
 
 **Files:**
 - Modify: `app/repositories/memory_repository.py`
+- Modify: `app/repositories/project_repository.py`
 - Modify: `app/services/search_service.py`
 - Modify: `app/services/semantic_search_service.py`
 - Modify: `app/services/context_builder_service.py`
@@ -223,7 +257,12 @@ Create fixtures with:
 - archived closure;
 - historical entry that was active before archive.
 
-Assert current list/search/relevant/context/duplicates/import-match/auto-link/compaction/lifecycle/metrics exclude non-current rows. Assert `as_of` includes the historical row active at that instant even when it is now archived.
+Assert current list/search/relevant/context/duplicates/import-match/auto-link/
+compaction/lifecycle/metrics/project entry counts/admin summaries exclude
+non-current rows. Assert `as_of` includes a native historical row active at
+that instant even when it is now archived. Assert a legacy archived row with
+`history_available=false` is excluded both before and after
+`migration_cutover_at`.
 
 - [ ] **Step 3: Add repository predicates**
 
@@ -240,6 +279,7 @@ def current_predicate(at: datetime):
 @staticmethod
 def historical_predicate(at: datetime):
     return and_(
+        MemoryEntry.history_available.is_(True),
         MemoryEntry.valid_from <= at,
         or_(MemoryEntry.valid_to.is_(None), MemoryEntry.valid_to > at),
     )
@@ -250,6 +290,9 @@ Normalize and validate timezone-aware `at` once. Default reads use a single inje
 - [ ] **Step 4: Route every current consumer through the predicate**
 
 Refactor each inventoried query. Administrative `archived=true`, direct id, history, and explicit `as_of` use dedicated paths and must not accidentally inherit current filtering.
+`ProjectRepository.list_with_entry_counts(*, at)` must apply the same current
+predicate inside its outer join so project/admin counts cannot include
+superseded or future rows.
 
 - [ ] **Step 5: Re-run the inventory**
 
@@ -590,9 +633,9 @@ Use repository current/historical predicates. Do not infer old provenance. Conso
 
 Expose current/historical status, predecessor/successor ids, provenance, confidence, validity interval, and history navigation. Do not add semantic edit UI in this checkpoint.
 
-- [ ] **Step 4: Run a disposable migration and API drill**
+- [ ] **Step 4: Run disposable PostgreSQL migration and API drills**
 
-On a local disposable SQLite database:
+On a disposable PostgreSQL database:
 
 1. migrate legacy schema to head;
 2. verify legacy rows are current with unspecified provenance;
@@ -601,12 +644,16 @@ On a local disposable SQLite database:
 5. run concurrent stale revision and event-allocation tests;
 6. downgrade and upgrade again.
 
+Separately run the full SQLite model/API suite built with
+`Base.metadata.create_all()`. Do not run `alembic upgrade` against SQLite.
+
 Record sanitized command names, exit codes, row counts, sequences, and assertion summaries. Do not record content, API keys, project paths, or raw database dumps.
 
 - [ ] **Step 5: Run full verification**
 
 ```bash
 .venv313/bin/pytest
+MEMLAYER_MIGRATION_TEST_CONFIRM=DISPOSABLE_ONLY python3 scripts/verify_temporal_migrations.py
 python3 -m compileall app memorybank_sdk
 git diff --check
 git status --short

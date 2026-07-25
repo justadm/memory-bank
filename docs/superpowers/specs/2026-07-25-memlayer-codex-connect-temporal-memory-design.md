@@ -1,6 +1,6 @@
 # MemLayer Codex Connect and Temporal Memory Design
 
-Status: implementation-ready; production rollout not approved
+Status: final review amendment applied; pending independent implementation-plan gate
 
 Date: 2026-07-25
 
@@ -58,6 +58,15 @@ The final conditional review is also incorporated through:
    high-watermark;
 9. explicit manifest-less adoption of matching current or previously released
    root-pack artifacts.
+
+The final plan review additionally requires:
+
+10. PostgreSQL-authoritative Alembic drills and separate SQLite model/API
+    tests;
+11. fail-closed historical visibility for archived legacy rows;
+12. current-view filtering in project counts and every admin summary;
+13. a complete connector artifact hash interface;
+14. savepoint-based recovery from concurrent project-binding races.
 
 Implementation is split into two reviewed plans:
 
@@ -497,6 +506,7 @@ confidence   float, nullable, range 0.0 through 1.0
 valid_from   timezone-aware timestamp, non-null
 valid_to     timezone-aware timestamp, nullable
 supersedes_id UUID, nullable self-reference
+history_available boolean, non-null, default true
 ```
 
 Constraints:
@@ -570,15 +580,31 @@ compatibility period and is exposed in new code as
 Existing rows are backfilled as:
 
 ```text
-provenance = unspecified
-confidence = null
-valid_from = created_at
-valid_to = null
-supersedes_id = null
+non-archived legacy row:
+  provenance = unspecified
+  confidence = null
+  valid_from = created_at
+  valid_to = null
+  supersedes_id = null
+  history_available = true
+
+archived legacy row:
+  provenance = unspecified
+  confidence = null
+  valid_from = created_at
+  valid_to = migration_cutover_at
+  supersedes_id = null
+  history_available = false
 ```
 
-This records only the state known at migration time. Earlier historical states
-are not inferred.
+`migration_cutover_at` is one database-derived timestamp captured by the
+temporal migration. Every archived legacy row predates that timestamp. Its
+exact archive time and prior semantic state are unknown, so historical
+visibility fails closed: `as_of` never returns a legacy row with
+`history_available=false`, before or after the migration boundary. Direct id
+and authorized administrative reads still expose the row with the marker so
+an operator can see why no historical claim is made. New rows and all
+revisions use `history_available=true`.
 
 ## Current and Historical Read Semantics
 
@@ -611,9 +637,11 @@ rows. Superseded rows are available through history, direct id lookup, and
 authorized historical reads.
 
 Historical `as_of` evaluates the validity interval and does not apply the
-row's present-day `archived` flag. This is required because archive closes the
-interval and then marks the same row archived; a query for a time before that
-closure must still see the row.
+row's present-day `archived` flag, but it does require
+`history_available=true`. This is required because a native temporal archive
+closes the interval and then marks the same row archived; a query for a time
+before that closure must still see the row. Legacy archived rows do not have a
+trustworthy closure timestamp and remain excluded.
 
 `GET /memory/{id}` returns that exact revision even when it is no longer
 current. Its response includes:
@@ -624,6 +652,7 @@ valid_from
 valid_to
 supersedes_id
 successor_id
+history_available
 ```
 
 This prevents a historical citation from silently resolving to different
@@ -894,6 +923,23 @@ migration. Consumers bootstrap existing current state separately, then retain
 the returned sequence cursor. The API makes no claim about changes before the
 feed epoch.
 
+## Migration Verification Contract
+
+Alembic migrations are PostgreSQL-authoritative. The existing initial
+migration uses PostgreSQL `JSONB`, enum, GIN, and tsvector behavior and is not
+a portable SQLite migration chain. Implementation verification therefore
+uses:
+
+- a disposable PostgreSQL database for `base -> head -> downgrade -> head`,
+  legacy-row backfill, constraints, indexes, and feed-state checks;
+- SQLite `Base.metadata.create_all()` databases for model, repository,
+  service, API, temporal predicate, and concurrency-compatible unit tests;
+- no claim that `alembic upgrade` is supported against SQLite.
+
+The PostgreSQL drill is mandatory and fails closed when its dedicated test
+database URL is missing or does not identify a disposable PostgreSQL database.
+It never targets the configured production database.
+
 ### PATCH Compatibility
 
 Rollout is staged:
@@ -980,8 +1026,12 @@ Rollout is staged:
 
 ### Model and Migration Tests
 
-- PostgreSQL and SQLite-compatible model behavior;
+- mandatory full Alembic round trip on disposable PostgreSQL;
+- SQLite model/repository/API behavior through `Base.metadata.create_all()`,
+  not the PostgreSQL-only Alembic chain;
 - existing-row backfill;
+- legacy archived rows are marked `history_available=false` and never appear
+  in `as_of` before or after the migration cutover;
 - enum and confidence constraints;
 - provenance scope and validation-evidence constraints;
 - service-owned metadata rejection;

@@ -101,9 +101,12 @@ class ArtifactSpec:
     executable: bool = False
     managed_keys: tuple[str, ...] = ()
     preserve_on_disconnect: bool = False
+    expected_sha256: str | None = None
 ```
 
 `artifact_registry()` must return the complete ownership matrix from the design. `render_artifact()` must render bytes deterministically and must raise `ValueError` for unsupported agent/version combinations.
+`expected_sha256` is computed from the managed bytes rendered for the validated
+context; it is `None` for user-owned and create-if-absent runtime artifacts.
 
 - [ ] **Step 4: Add deterministic hash and historical-release tests**
 
@@ -470,7 +473,32 @@ def resolve(
     ...
 ```
 
-Resolve tenant through `resolve_tenant_for_create()`. Normalize global scope to `__global__`. Lock the binding lookup, catch the unique-race `IntegrityError`, reload the winner, and never auto-bind a same-name project. Explicit `existing_project_id` must pass tenant authorization.
+Resolve tenant through `resolve_tenant_for_create()`. Normalize global scope to
+`__global__`. Never auto-bind a same-name project. Explicit
+`existing_project_id` must pass tenant authorization.
+
+Create the binding inside `Session.begin_nested()` and flush inside that
+savepoint. On the unique-race `IntegrityError`, roll back only the nested
+transaction, expire the failed pending objects, and reselect the winner in the
+still-usable outer transaction. Do not query through a failed session and do
+not roll back unrelated work owned by the caller. Add a test that forces the
+losing flush and proves the subsequent read succeeds without
+`PendingRollbackError`.
+
+```python
+try:
+    with self.repository.db.begin_nested():
+        project, binding = self._create_project_and_binding(...)
+        self.repository.db.flush()
+except IntegrityError:
+    self.repository.db.expire_all()
+    binding = self.repository.get_connector_binding(...)
+    if binding is None:
+        raise
+```
+
+Both project and binding creation belong to the savepoint so the losing race
+cannot leave an orphan project.
 
 - [ ] **Step 5: Freeze tenant scope after first binding or memory**
 
