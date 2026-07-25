@@ -10,6 +10,7 @@ from uuid import UUID
 from memorybank_sdk import DEFAULT_MEMORYBANK_URL
 
 from .client import api_key_from_process_environment, make_client, resolve_and_verify
+from .doctor import DoctorService
 from .manifest import write_manifest_atomic
 from .service import ConnectorConflict, ConnectorPlan, ConnectorService, _write_atomic
 
@@ -28,6 +29,10 @@ def _parser() -> argparse.ArgumentParser:
             sub.add_argument("--api-url", default=DEFAULT_MEMORYBANK_URL)
             sub.add_argument("--tenant-id")
             sub.add_argument("--existing-project-id")
+    doctor = commands.add_parser("doctor")
+    doctor.add_argument("agent", choices=("codex",))
+    doctor.add_argument("--project-root", required=True)
+    doctor.add_argument("--json", action="store_true")
     return parser
 
 
@@ -138,8 +143,10 @@ def main(argv: list[str] | None = None) -> int:
                 tenant_id=args.tenant_id,
                 existing_project_id=args.existing_project_id,
             )
-        else:
+        elif args.command == "disconnect":
             result = run_disconnect(args.project_root, apply=args.apply)
+        else:
+            result = {"status": "checked", "operation": "doctor", "project_root": str(Path(args.project_root).expanduser().resolve()), **DoctorService(args.project_root).check().as_dict()}
     except (ConnectorConflict, ValueError, OSError, KeyError, json.JSONDecodeError) as exc:
         print(str(exc), file=__import__("sys").stderr)
         return 2
