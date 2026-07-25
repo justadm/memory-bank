@@ -50,6 +50,6 @@ def test_privacy_scanner_fails_closed(payload):
 
 def test_actor_is_safe_and_not_an_api_key():
     actor = safe_actor_id(principal("write"))
-    assert actor == "reviewer-example.com"
+    assert actor.startswith("principal-")
     assert "never-expose" not in actor
     assert ValidationEvidence.model_validate(evidence()).contains_sensitive_data is False

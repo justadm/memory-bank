@@ -33,9 +33,6 @@ LEGACY_COMPATIBILITY_METADATA_KEYS = frozenset({"quality_review_required", "requ
 _FORBIDDEN = re.compile(
     r"(?i)(authorization\s*:\s*bearer|x-api-key\s*:|-----begin .*private key-----|\b(?:sk|ghp|gho|xoxb|xoxp)-[a-z0-9_-]{8,}|\b(?:password|passwd|secret|token)\s*[:=]|\b(?:stdout|stderr|response_body|raw_output|customer_payload)\b)"
 )
-_ACTOR = re.compile(r"^[A-Za-z0-9._:-]{1,100}$")
-
-
 def scan_privacy_safe(value: Any) -> bool:
     if isinstance(value, dict):
         for key, item in value.items():

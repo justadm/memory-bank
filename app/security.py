@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
+import hashlib
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
@@ -22,8 +22,10 @@ class AuthPrincipal:
 
 
 def safe_actor_id(principal: AuthPrincipal) -> str:
-    value = re.sub(r"[^A-Za-z0-9._:-]", "-", principal.name or "principal")[:100]
-    return value or "principal"
+    if principal.name in {"anonymous", "system"}:
+        return principal.name
+    digest = hashlib.sha256((principal.name or "principal").encode()).hexdigest()[:24]
+    return f"principal-{digest}"
 
 
 def get_current_principal(
