@@ -68,6 +68,13 @@ The final plan review additionally requires:
 13. a complete connector artifact hash interface;
 14. savepoint-based recovery from concurrent project-binding races.
 
+The repeated gate additionally requires:
+
+15. one self-contained guarded migration runner shared by connector and
+    temporal checkpoints;
+16. a tracked, AST-derived current-query inventory whose exact-set lint fails
+    on every unclassified or structurally changed `MemoryEntry` query.
+
 Implementation is split into two reviewed plans:
 
 - [Codex Connector Implementation Plan](../plans/2026-07-25-memlayer-codex-connector-implementation.md)
@@ -630,6 +637,13 @@ The predicate is centralized in the repository and is the default for:
 - lifecycle jobs;
 - current-memory metrics and admin summaries.
 
+Every direct `MemoryEntry` database statement is tracked in
+`docs/current-memory-query-inventory.json` by path, qualified function, and
+normalized AST fingerprint. `scripts/lint_memory_query_inventory.py --check`
+compares the exact detected set, validates each classification and required
+guard, and fails on missing, stale, duplicate, or newly introduced queries.
+Comments are not accepted as classification evidence.
+
 History, revision-chain reads, explicit `as_of`, and explicit
 `archived=true` administration do not use the default current view.
 `archived=true` returns archived closures only; it does not expose superseded
@@ -936,9 +950,14 @@ uses:
   service, API, temporal predicate, and concurrency-compatible unit tests;
 - no claim that `alembic upgrade` is supported against SQLite.
 
-The PostgreSQL drill is mandatory and fails closed when its dedicated test
-database URL is missing or does not identify a disposable PostgreSQL database.
-It never targets the configured production database.
+The PostgreSQL drill is mandatory and runs only through
+`scripts/run_guarded_migration_drill.py`. The runner does not accept an
+external database URL. It creates a uniquely named, isolated Docker Compose
+project with PostgreSQL 16, synthetic credentials, no published host port, and
+an ephemeral volume; runs the requested Alembic target and assertions inside
+that network; and always executes `down --volumes --remove-orphans` in a
+`finally` path. It never reads or targets the configured application or
+production database.
 
 ### PATCH Compatibility
 
@@ -1054,6 +1073,8 @@ Rollout is staged:
 
 ### Temporal Retrieval Tests
 
+- AST query-inventory lint has an exact set match and valid guard for every
+  direct `MemoryEntry` query;
 - exact interval boundaries;
 - ordinary list, all search modes, relevant memory, context, duplicate
   detection, lifecycle, metrics, compaction, import matching, and auto-linking

@@ -29,7 +29,7 @@
 - Modify: `app/models/__init__.py`
 - Create: `app/models/memory_change_feed.py`
 - Create: `alembic/versions/20260725_0006_temporal_memory.py`
-- Create: `scripts/verify_temporal_migrations.py`
+- Modify: `scripts/run_guarded_migration_drill.py`
 - Modify: `tests/test_api.py`
 - Create: `tests/test_temporal_models.py`
 
@@ -120,9 +120,9 @@ SQLite tests create schema through `Base.metadata.create_all()` and verify
 model constraints, predicates, and API behavior. They do not run the
 PostgreSQL-only Alembic chain.
 
-`scripts/verify_temporal_migrations.py` requires
-`MEMLAYER_MIGRATION_TEST_DATABASE_URL`, verifies it is PostgreSQL and is not
-equal to the normal configured database URL, then performs:
+Extend `scripts/run_guarded_migration_drill.py` with
+`--fixture-profile temporal`. The runner provisions its own isolated
+PostgreSQL and performs:
 
 ```text
 base -> 20260429_0004
@@ -133,18 +133,16 @@ downgrade -> 20260429_0004
 upgrade -> head
 ```
 
-The script exits non-zero when the URL is missing, non-PostgreSQL, equal to the
-normal configured database URL, or its database name does not start with
-`memlayer_migration_test_`. It also requires
-`MEMLAYER_MIGRATION_TEST_CONFIRM=DISPOSABLE_ONLY`. The script resets only the
-dedicated test database schema and exits non-zero on any failed assertion.
+The runner uses the same no-external-URL and unconditional-cleanup contract
+defined by the connector plan. It exits non-zero on any failed migration or
+assertion.
 
 - [ ] **Step 6: Run focused tests and commit**
 
 ```bash
 .venv313/bin/pytest tests/test_temporal_models.py tests/test_api.py -q
 git diff --check
-git add app/models alembic/versions/20260725_0006_temporal_memory.py scripts/verify_temporal_migrations.py tests/test_temporal_models.py tests/test_api.py
+git add app/models alembic/versions/20260725_0006_temporal_memory.py scripts/run_guarded_migration_drill.py tests/test_temporal_models.py tests/test_api.py
 git commit -m "Add temporal memory schema"
 ```
 
@@ -231,21 +229,50 @@ git commit -m "Enforce memory provenance boundaries"
 - Modify: `app/services/lifecycle_service.py`
 - Modify: `app/repositories/metrics_repository.py`
 - Modify: `app/services/admin_observability_service.py`
+- Create: `docs/current-memory-query-inventory.json`
+- Create: `scripts/lint_memory_query_inventory.py`
+- Create: `tests/test_memory_query_inventory.py`
 - Create: `tests/test_temporal_visibility.py`
 
 **Interfaces:**
 - Produces: `MemoryRepository.current_predicate(at)`, `historical_predicate(at)`, and current-by-default repository methods.
 - Consumes: first-class validity columns from Task 1.
 
-- [ ] **Step 1: Inventory every direct `MemoryEntry` query**
+- [ ] **Step 1: Create the tracked query inventory and failing lint test**
 
-Run:
+`scripts/lint_memory_query_inventory.py` parses Python AST under `app/` and
+finds every statement that both references `MemoryEntry` and performs a
+database query or mutation through `select`, `query`, `get`, `execute`,
+`scalars`, `update`, or `delete`. Each detected statement gets a stable key:
 
-```bash
-rg -n "select\\(MemoryEntry\\)|query\\(MemoryEntry\\)|MemoryEntry\\." app
+```text
+relative_path : qualified_function : normalized_ast_sha256
 ```
 
-Record each current, historical, or operational use in a test parameter table. No direct query may remain unclassified.
+Line numbers are diagnostic only and are not part of identity. Store the
+reviewed set in `docs/current-memory-query-inventory.json`:
+
+```json
+{
+  "schema_version": 1,
+  "queries": [
+    {
+      "key": "app/repositories/memory_repository.py:MemoryRepository.list:<sha256>",
+      "classification": "current-view",
+      "required_guard": "current_predicate",
+      "owner": "MemoryRepository.list"
+    }
+  ]
+}
+```
+
+Allowed classifications are `current-view`, `historical-view`,
+`exact-id-view`, and `operational-row-update`. `--write` creates or refreshes
+the inventory only after explicit review; normal `--check` compares the exact
+detected key set and exits non-zero for missing, extra, or duplicate entries.
+
+`tests/test_memory_query_inventory.py` invokes `--check`. Before inventory
+population it must fail and list every unclassified query.
 
 - [ ] **Step 2: Write failing boundary tests**
 
@@ -294,24 +321,29 @@ Refactor each inventoried query. Administrative `archived=true`, direct id, hist
 predicate inside its outer join so project/admin counts cannot include
 superseded or future rows.
 
-- [ ] **Step 5: Re-run the inventory**
+- [ ] **Step 5: Enforce guards and refresh the reviewed inventory**
 
-Every remaining direct query must have an adjacent comment naming one of:
+For each inventory row, the linter also verifies:
 
 ```text
-current-view
-historical-view
-operational-row-update
+current-view           -> enclosing function calls current_predicate
+historical-view        -> enclosing function calls historical_predicate
+exact-id-view          -> lookup is keyed by entry id and does not feed a current summary
+operational-row-update -> owner is present in a hardcoded internal allowlist
 ```
 
-The test fails if a newly added unclassified query appears.
+After refactoring, run `--write`, review the JSON diff, then run `--check`.
+Any new or structurally changed direct query produces a new AST fingerprint
+and fails until a reviewer classifies it. Comments alone never satisfy the
+test.
 
 - [ ] **Step 6: Run tests and commit**
 
 ```bash
-.venv313/bin/pytest tests/test_temporal_visibility.py tests/test_api.py tests/test_importer.py -q
+python3 scripts/lint_memory_query_inventory.py --check
+.venv313/bin/pytest tests/test_memory_query_inventory.py tests/test_temporal_visibility.py tests/test_api.py tests/test_importer.py -q
 git diff --check
-git add app/repositories app/services tests/test_temporal_visibility.py tests/test_api.py tests/test_importer.py
+git add app/repositories app/services docs/current-memory-query-inventory.json scripts/lint_memory_query_inventory.py tests/test_memory_query_inventory.py tests/test_temporal_visibility.py tests/test_api.py tests/test_importer.py
 git commit -m "Apply temporal visibility to memory reads"
 ```
 
@@ -653,7 +685,8 @@ Record sanitized command names, exit codes, row counts, sequences, and assertion
 
 ```bash
 .venv313/bin/pytest
-MEMLAYER_MIGRATION_TEST_CONFIRM=DISPOSABLE_ONLY python3 scripts/verify_temporal_migrations.py
+python3 scripts/lint_memory_query_inventory.py --check
+python3 scripts/run_guarded_migration_drill.py --target head --fixture-profile temporal
 python3 -m compileall app memorybank_sdk
 git diff --check
 git status --short

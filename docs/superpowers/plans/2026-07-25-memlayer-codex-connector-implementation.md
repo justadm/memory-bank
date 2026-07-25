@@ -391,6 +391,8 @@ git commit -m "Add safe root-pack adoption and disconnect"
 **Files:**
 - Create: `app/models/project_connector_identity.py`
 - Create: `alembic/versions/20260725_0005_project_connector_identity.py`
+- Create: `deploy/test/docker-compose.migration.yml`
+- Create: `scripts/run_guarded_migration_drill.py`
 - Create: `app/services/project_connector_service.py`
 - Modify: `app/models/__init__.py`
 - Modify: `app/repositories/project_repository.py`
@@ -398,6 +400,7 @@ git commit -m "Add safe root-pack adoption and disconnect"
 - Modify: `app/routers/projects.py`
 - Modify: `app/services/memory_service.py`
 - Test: `tests/test_api.py`
+- Test: `tests/test_migration_drill_guard.py`
 
 **Interfaces:**
 - Produces: `ProjectResolveRequest`, `ProjectResolveResponse`, `ProjectConnectorService.resolve()`, `POST /projects/resolve`.
@@ -504,23 +507,41 @@ cannot leave an orphan project.
 
 Update `ProjectService.update_project()` so a changed `tenant_id` returns `409 project_tenant_scope_locked` when the project has either a connector binding or at least one memory entry.
 
-- [ ] **Step 6: Run API and migration tests**
+- [ ] **Step 6: Add the guarded migration runner**
+
+`scripts/run_guarded_migration_drill.py` accepts only a repository migration
+target and fixture profile. It must not accept a database URL. It generates a
+unique Compose project name and synthetic database credentials, starts
+`deploy/test/docker-compose.migration.yml` without published ports or
+persistent volumes, runs Alembic and assertions inside the isolated network,
+and executes `down --volumes --remove-orphans` from `finally`, including on
+timeout or failed assertions.
+
+Tests mock the subprocess boundary and prove:
+
+- external database URL flags and environment overrides are rejected;
+- compose project and database names carry a random
+  `memlayer_migration_drill_` prefix;
+- cleanup runs after success, migration failure, timeout, and interruption;
+- connector profile performs `base -> 20260725_0005 -> 20260429_0004 ->
+  20260725_0005`;
+- no production `.env` file or configured `DATABASE_URL` is read.
+
+- [ ] **Step 7: Run API and guarded migration tests**
 
 Run:
 
 ```bash
 .venv313/bin/pytest tests/test_api.py -k "project_resolve or tenant_scope_locked" -q
-alembic upgrade head
-alembic downgrade 20260429_0004
-alembic upgrade head
+python3 scripts/run_guarded_migration_drill.py --target 20260725_0005 --fixture-profile connector
 ```
 
-Expected: tests pass and disposable local migration round trip succeeds.
+Expected: tests pass and the isolated PostgreSQL migration round trip succeeds.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add app/models app/repositories/project_repository.py app/schemas/projects.py app/routers/projects.py app/services alembic/versions/20260725_0005_project_connector_identity.py tests/test_api.py
+git add app/models app/repositories/project_repository.py app/schemas/projects.py app/routers/projects.py app/services alembic/versions/20260725_0005_project_connector_identity.py deploy/test/docker-compose.migration.yml scripts/run_guarded_migration_drill.py tests/test_api.py tests/test_migration_drill_guard.py
 git commit -m "Add idempotent connector project identity"
 ```
 
