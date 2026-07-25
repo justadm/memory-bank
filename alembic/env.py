@@ -12,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.config import get_settings
-from app.models import access_log, memory_entry, memory_link, project  # noqa: F401
+from app.models import access_log, memory_entry, memory_link, project, project_connector_identity  # noqa: F401
 from app.models.base import Base
 
 

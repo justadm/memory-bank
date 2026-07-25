@@ -56,6 +56,7 @@ class ProjectService:
 
         if "tenant_id" in payload.model_fields_set or "metadata" in payload.model_fields_set:
             metadata = dict(project.metadata_ or {})
+            current_tenant_id = project.tenant_id
             if metadata_value is not None:
                 metadata.update(metadata_value)
             if "tenant_id" in payload.model_fields_set:
@@ -64,6 +65,15 @@ class ProjectService:
                     metadata["tenant_id"] = tenant_id
                 else:
                     metadata.pop("tenant_id", None)
+            next_tenant_id = str(metadata.get("tenant_id")) if metadata.get("tenant_id") is not None else None
+            if next_tenant_id != current_tenant_id and (
+                self.repository.has_connector_binding(project.id)
+                or self.repository.has_memory_entries(project.id)
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={"code": "project_tenant_scope_locked"},
+                )
             setattr(project, "metadata_", metadata)
         self.repository.db.add(project)
         self.repository.db.flush()

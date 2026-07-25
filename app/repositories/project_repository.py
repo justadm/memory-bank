@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models.memory_entry import MemoryEntry
 from app.models.project import Project
+from app.models.project_connector_identity import ProjectConnectorIdentity
 
 
 class ProjectRepository:
@@ -33,6 +34,39 @@ class ProjectRepository:
 
     def get(self, project_id: uuid.UUID) -> Project | None:
         return self.db.get(Project, project_id)
+
+    def find_by_name_and_tenant(self, name: str, tenant_id: str | None) -> Project | None:
+        projects = self.db.scalars(select(Project).order_by(Project.created_at)).all()
+        return next((project for project in projects if project.name == name and project.tenant_id == tenant_id), None)
+
+    def get_connector_identity(
+        self,
+        *,
+        agent: str,
+        normalized_tenant_key: str,
+        connector_identity: uuid.UUID,
+        lock: bool = False,
+    ) -> ProjectConnectorIdentity | None:
+        statement = select(ProjectConnectorIdentity).where(
+            ProjectConnectorIdentity.agent == agent,
+            ProjectConnectorIdentity.normalized_tenant_key == normalized_tenant_key,
+            ProjectConnectorIdentity.connector_identity == connector_identity,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return self.db.scalar(statement)
+
+    def has_connector_binding(self, project_id: uuid.UUID) -> bool:
+        return self.db.scalar(
+            select(ProjectConnectorIdentity.id)
+            .where(ProjectConnectorIdentity.project_id == project_id)
+            .limit(1)
+        ) is not None
+
+    def has_memory_entries(self, project_id: uuid.UUID) -> bool:
+        return self.db.scalar(
+            select(MemoryEntry.id).where(MemoryEntry.project_id == project_id).limit(1)
+        ) is not None
 
     def delete(self, project: Project) -> None:
         self.db.delete(project)

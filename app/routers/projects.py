@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.repositories.project_repository import ProjectRepository
 from app.security import require_read_access, require_write_access
-from app.schemas.projects import ProjectCreate, ProjectResponse, ProjectUpdate
+from app.schemas.projects import ProjectCreate, ProjectResolveRequest, ProjectResolveResponse, ProjectResponse, ProjectUpdate
+from app.services.project_connector_service import ProjectConnectorService
 from app.services.memory_service import ProjectService
 
 
@@ -15,6 +16,23 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 def get_project_service(db: Session = Depends(get_db)) -> ProjectService:
     return ProjectService(ProjectRepository(db))
+
+
+def get_project_connector_service(db: Session = Depends(get_db)) -> ProjectConnectorService:
+    return ProjectConnectorService(ProjectRepository(db))
+
+
+@router.post("/resolve", response_model=ProjectResolveResponse)
+def resolve_project(
+    payload: ProjectResolveRequest,
+    response: Response,
+    service: ProjectConnectorService = Depends(get_project_connector_service),
+    principal=Depends(require_write_access),
+) -> ProjectResolveResponse:
+    result = service.resolve(payload, principal=principal)
+    if result.status == "created":
+        response.status_code = status.HTTP_201_CREATED
+    return result
 
 
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)

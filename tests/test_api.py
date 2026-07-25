@@ -15,6 +15,60 @@ def test_create_project(client):
     assert response.json()["name"] == "Memory Bank MVP"
 
 
+def test_project_resolve_is_idempotent(client):
+    payload = {
+        "agent": "codex",
+        "connector_identity": "d8399b69-82ff-46ec-8e03-1930f1c84735",
+        "project_name": "demo",
+    }
+
+    first = client.post("/projects/resolve", json=payload)
+    second = client.post("/projects/resolve", json=payload)
+
+    assert first.status_code == 201
+    assert second.status_code == 200
+    assert first.json()["project_id"] == second.json()["project_id"]
+    assert first.json()["status"] == "created"
+    assert second.json()["status"] == "resolved"
+
+
+def test_project_resolve_rejects_ambiguous_name(client):
+    client.post("/projects", json={"name": "demo"})
+    response = client.post(
+        "/projects/resolve",
+        json={
+            "agent": "codex",
+            "connector_identity": "d8399b69-82ff-46ec-8e03-1930f1c84735",
+            "project_name": "demo",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "existing_project_requires_explicit_id"
+
+
+def test_project_tenant_scope_locked_after_connector_binding(client):
+    created = client.post("/projects", json={"name": "bound", "tenant_id": "tenant-a"})
+    assert created.status_code == 201
+    project_id = created.json()["id"]
+
+    bound = client.post(
+        "/projects/resolve",
+        json={
+            "agent": "codex",
+            "connector_identity": "b6399b69-82ff-46ec-8e03-1930f1c84735",
+            "project_name": "bound",
+            "existing_project_id": project_id,
+            "tenant_id": "tenant-a",
+        },
+    )
+    assert bound.status_code == 200
+    changed = client.patch(f"/projects/{project_id}", json={"tenant_id": "tenant-b"})
+
+    assert changed.status_code == 409
+    assert changed.json()["detail"]["code"] == "project_tenant_scope_locked"
+
+
 def test_console_shell_served(client):
     response = client.get("/console/")
     assert response.status_code == 200
