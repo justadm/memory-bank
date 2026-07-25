@@ -5,6 +5,8 @@ import json
 import os
 from pathlib import Path
 
+from memlayer_connector.service import ConnectorService
+
 MANAGED_START = "<!-- MEMLAYER_ROOT_PACK:START -->"
 MANAGED_END = "<!-- MEMLAYER_ROOT_PACK:END -->"
 PRODUCTION_API_URL = "https://api.memlayer.ru"
@@ -220,7 +222,39 @@ def ensure_gitignore_has_memlayer(project_root: Path, dry_run: bool) -> None:
     write_text(gitignore_path, ignore_line + "\n", dry_run=dry_run)
 
 
-def install_for_project(project_root: Path, preferred_url: str, local_url: str, human_url: str, dry_run: bool) -> dict[str, object]:
+def install_for_project(
+    project_root: Path,
+    preferred_url: str,
+    local_url: str,
+    human_url: str,
+    dry_run: bool,
+    connector_mode: bool = False,
+) -> dict[str, object]:
+    if connector_mode:
+        service = ConnectorService(
+            project_root,
+            preferred_url=preferred_url,
+            local_url=local_url,
+            human_url=human_url,
+        )
+        plan = service.plan_connect()
+        if not plan.ready:
+            return {
+                "project": Path(project_root).name,
+                "root": str(Path(project_root).resolve()),
+                "status": "conflict",
+                "conflicts": [item.code for item in plan.conflicts],
+                "files": [action.path for action in plan.actions],
+            }
+        manifest = None if dry_run else service.apply_connect(plan)
+        return {
+            "project": Path(project_root).name,
+            "root": str(Path(project_root).resolve()),
+            "status": "planned" if dry_run else "applied",
+            "connector_mode": True,
+            "connector_identity": str(manifest.connector_identity) if manifest else None,
+            "files": [action.path for action in plan.actions],
+        }
     project_name = project_root.name
     managed_section = render_template("AGENTS_SECTION.md.tmpl")
     memlayer_dir = project_root / ".memlayer"

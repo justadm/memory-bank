@@ -230,6 +230,23 @@ def test_install_for_project_preserves_existing_local_env(tmp_path: Path) -> Non
     assert "MEMLAYER_READ_RECEIPT_ENABLED=true" in local_env
 
 
+def test_connector_mode_does_not_seed_environment_key(tmp_path: Path, monkeypatch) -> None:
+    project_root = tmp_path / "ConnectorProject"
+    project_root.mkdir()
+    monkeypatch.setenv("MEMORYBANK_API_KEY", "must-not-be-copied")
+
+    install_for_project(
+        project_root,
+        preferred_url=PRODUCTION_API_URL,
+        local_url=LOCAL_API_URL,
+        human_url=PRODUCTION_API_URL,
+        dry_run=False,
+        connector_mode=True,
+    )
+
+    assert "must-not-be-copied" not in (project_root / ".memlayer/.env.memlayer").read_text(encoding="utf-8")
+
+
 def test_installed_api_helper_accepts_memlayer_write_api_key_alias(tmp_path: Path) -> None:
     project_root = tmp_path / "AliasKeyProject"
     project_root.mkdir()

@@ -96,6 +96,18 @@ docker compose exec api pytest
 - `.memlayer/.env.memlayer.example` — переменные окружения для подключения к MemLayer
 - `.memlayer/memlayer.config.json` — машинно-читаемый проектный конфиг для агентов и tool wrappers
 
+Для Codex-only connector используется dry-run-first интерфейс:
+
+```bash
+./memlayer connect codex --project-root /path/to/project
+./memlayer connect codex --project-root /path/to/project --apply
+./memlayer connect codex --project-root /path/to/project --apply --register-project
+./memlayer doctor --project-root /path/to/project
+./memlayer disconnect codex --project-root /path/to/project --apply
+```
+
+`connect` не импортирует содержимое репозитория. Регистрация проекта выполняется только явно через `--apply --register-project`, а `.memlayer/.env.memlayer` остаётся пользовательским: connector не seed-ит, не читает, не хэширует и не удаляет этот файл. Legacy installer и onboarding сохраняют прежний import workflow и не переключаются на регистрацию автоматически.
+
 Installer:
 
 ```bash

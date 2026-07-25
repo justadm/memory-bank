@@ -78,6 +78,18 @@ Deployment assets are in:
 
 External repositories can be prepared for MemLayer with a hidden `.memlayer/` pack. It keeps agent instructions, runtime helpers, local snapshots, and offline queue files out of the project root.
 
+For the Codex-only connector, use the dry-run-first interface:
+
+```bash
+./memlayer connect codex --project-root /path/to/project
+./memlayer connect codex --project-root /path/to/project --apply
+./memlayer connect codex --project-root /path/to/project --apply --register-project
+./memlayer doctor --project-root /path/to/project
+./memlayer disconnect codex --project-root /path/to/project --apply
+```
+
+Connect does not import repository content. Project registration is an explicit `--apply --register-project` action, and `.memlayer/.env.memlayer` remains user-owned: the connector never seeds, reads, hashes, or deletes it. The legacy installer and onboarding script remain available for their existing import workflow; they do not silently switch to registration.
+
 Installer:
 
 ```bash

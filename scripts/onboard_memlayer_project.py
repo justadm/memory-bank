@@ -52,6 +52,7 @@ class OnboardOptions:
     smoke_query: str = "architecture"
     command_timeout_seconds: int = 120
     env_file: str | None = None
+    connector_mode: bool = False
 
 
 def parse_names(raw: str | None) -> list[str] | None:
@@ -266,6 +267,7 @@ def onboard_project(
             local_url=options.local_url,
             human_url=options.human_url,
             dry_run=not options.apply,
+            connector_mode=options.connector_mode,
         )
         summary["pack"] = {
             "status": "applied" if options.apply else "planned",
