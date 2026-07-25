@@ -168,3 +168,17 @@
 - 2026-07-25 plan-review correction: commit `b0c8b11` resolves the final five connector/temporal-plan findings. The earlier MemLayer checkpoint `eba5577e-9b46-4286-8bd0-d19f3e938871` is marked superseded; replacement checkpoint `47ac03b1-eddf-49ee-929f-435167bee532` records `pending_independent_gate`, `122 passed`, and no runtime, push, migration, or production action.
 - 2026-07-25 repeated-gate correction: commit `e522dcc` replaces external migration URLs and direct Alembic commands with one isolated Docker-backed migration runner, and replaces the informal query inventory with a tracked AST-derived exact-set lint contract. Checkpoint `47ac03b1-eddf-49ee-929f-435167bee532` is superseded by `550ffd80-a116-4841-b3f7-dd58ab8c7e6d`; status remains `pending_independent_gate`.
 - 2026-07-26 Compose-isolation correction: commit `11dc06a` requires a generated `0600` env file and temporary project directory outside the repository, explicit Compose path flags, disabled default `.env` discovery, and an allowlisted subprocess environment. Checkpoint `550ffd80-a116-4841-b3f7-dd58ab8c7e6d` is superseded by `ce2577dc-851a-448f-8b28-1ee7e77e9412`; status remains `pending_independent_gate`.
+
+## 2026-07-25 - Codex connector and temporal memory design implementation
+
+### Actions
+
+- Implemented the Codex connector artifact registry, strict untrusted-manifest/path validation, safe adoption planning, idempotent project binding, dry-run CLI, explicit registration client, read-only doctor, and compatibility root-pack mode in isolated branch `codex/memlayer-codex-connector`.
+- Added sanitized synthetic-project dogfood evidence in `docs/examples/codex-connector-dogfood.md`.
+- Kept production untouched; no project registration, repository import, deployment, or push was performed.
+
+### Verification
+
+- Full local suite: `122 passed`.
+- Connector/API/CLI/doctor/root-pack focused suites passed; migration `20260725_0005` upgrade/downgrade/upgrade round-trip passed from the existing `20260429_0004` stamp on disposable SQLite state.
+- `git diff --check` passed before the final checkpoint.

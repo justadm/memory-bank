@@ -30,7 +30,7 @@ def _parser() -> argparse.ArgumentParser:
             sub.add_argument("--tenant-id")
             sub.add_argument("--existing-project-id")
     doctor = commands.add_parser("doctor")
-    doctor.add_argument("agent", choices=("codex",))
+    doctor.add_argument("agent", nargs="?", choices=("codex",), default="codex")
     doctor.add_argument("--project-root", required=True)
     doctor.add_argument("--json", action="store_true")
     return parser
