@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -217,9 +217,12 @@ def get_memory(
 def update_memory(
     entry_id: uuid.UUID,
     payload: MemoryUpdate,
+    response: Response,
     service: MemoryService = Depends(get_memory_service),
     principal=Depends(require_write_access),
 ) -> MemoryResponse:
+    response.headers["Deprecation"] = "true"
+    response.headers["Link"] = f'</memory/{entry_id}/revise>; rel="successor"'
     return service.update_memory(entry_id, payload, principal=principal, operation_source="api")
 
 

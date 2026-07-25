@@ -193,6 +193,46 @@ class MemoryService:
                 )
         return created
 
+    def update_operational_fields(
+        self,
+        entry_id: uuid.UUID,
+        *,
+        fields: dict[str, object] | None = None,
+        metadata_patch: dict[str, object] | None = None,
+        operation: str,
+        principal: AuthPrincipal | None = None,
+    ) -> MemoryEntry:
+        allowed_fields = {"usage_count", "last_used_at"}
+        allowed_metadata = {
+            "quality",
+            "quality_review_required",
+            "review_overdue",
+            "review_status",
+            "review_history",
+            "requires_review",
+            "import_runs_count",
+            "last_imported_at",
+            "import_history",
+            "import_conflicts",
+            "decision_conflicts",
+            "decision_status",
+            "supersedes_entry_id",
+            "deprecated_by_entry_id",
+            "compacted_into_entry_id",
+            "compaction_applied_at",
+        }
+        if not operation or set(fields or {}) - allowed_fields or set(metadata_patch or {}) - allowed_metadata:
+            raise HTTPException(status_code=422, detail="invalid operational update")
+        entry = self.get_memory(entry_id, principal=principal)
+        for field, value in (fields or {}).items():
+            setattr(entry, field, value)
+        metadata = dict(entry.metadata_ or {})
+        metadata.update(metadata_patch or {})
+        entry.metadata_ = metadata
+        self.memory_repository.db.add(entry)
+        self.memory_repository.db.flush()
+        return entry
+
     def get_memory(self, entry_id: uuid.UUID, *, principal: AuthPrincipal | None = None) -> MemoryEntry:
         entry = self.memory_repository.get(entry_id)
         if not entry:

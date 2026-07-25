@@ -280,7 +280,12 @@ class MetricsRepository:
         }
 
     def _memory_entries(self, *, project_id: uuid.UUID | None = None, tenant_ids: set[str] | None = None) -> list[MemoryEntry]:
-        stmt = select(MemoryEntry)
+        now = datetime.now(timezone.utc)
+        stmt = select(MemoryEntry).where(
+            MemoryEntry.valid_from <= now,
+            or_(MemoryEntry.valid_to.is_(None), MemoryEntry.valid_to > now),
+            MemoryEntry.archived.is_(False),
+        )
         if project_id:
             stmt = stmt.where(MemoryEntry.project_id == project_id)
         if tenant_ids is not None:

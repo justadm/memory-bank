@@ -182,3 +182,5 @@
 - Full local suite: `122 passed`.
 - Connector/API/CLI/doctor/root-pack focused suites passed; migration `20260725_0005` upgrade/downgrade/upgrade round-trip passed from the existing `20260429_0004` stamp on disposable SQLite state.
 - `git diff --check` passed before the final checkpoint.
+- Added temporal schema, privacy-safe provenance evidence, current/as-of predicates, signed sequence change feed, immutable revision/history/restore APIs, compatibility headers, and SDK methods; sanitized evidence is in `docs/examples/temporal-memory-dogfood.md`.
+- Final isolated verification after temporal work: `163 passed`; no production or deployment actions performed.

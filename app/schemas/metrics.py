@@ -9,6 +9,9 @@ class MemoryMetricsResponse(BaseModel):
     archived_entries: int
     reuse_rate: float
     orphan_rate: float
+    provenance_distribution: dict[str, int] = {}
+    current_revision_count: int = 0
+    historical_revision_count: int = 0
 
 
 class GraphMetricsResponse(BaseModel):
