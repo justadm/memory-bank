@@ -3,10 +3,12 @@
 
 ## Следующий продуктовый этап: Codex Connect и Temporal Memory
 
-Согласованное продуктовое направление; implementation contract дополнен по
-результатам независимого review и ожидает финального подтверждения:
+Согласованное продуктовое направление; implementation contract прошёл
+независимый review и готов к поэтапной реализации:
 
 - [MemLayer Codex Connect and Temporal Memory Design](docs/superpowers/specs/2026-07-25-memlayer-codex-connect-temporal-memory-design.md)
+- [Codex Connector Implementation Plan](docs/superpowers/plans/2026-07-25-memlayer-codex-connector-implementation.md)
+- [Temporal Memory Implementation Plan](docs/superpowers/plans/2026-07-25-memlayer-temporal-memory-implementation.md)
 - [Memanto Competitive Review](docs/memanto-competitive-review-2026-07-25.md)
 
 Этап включает:

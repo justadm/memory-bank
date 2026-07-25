@@ -1,6 +1,6 @@
 # MemLayer Codex Connect and Temporal Memory Design
 
-Status: review amendment applied; pending final approval
+Status: implementation-ready; production rollout not approved
 
 Date: 2026-07-25
 
@@ -49,6 +49,20 @@ document through:
 4. an append-only change-event model with stable cursor pagination;
 5. immutable revision identity, graph, actor, provenance, and restore rules;
 6. separate doctor authorization and verified-read/write states.
+
+The final conditional review is also incorporated through:
+
+7. treating the manifest as untrusted input and reconstructing ownership from
+   the connector registry;
+8. sequence-only change-feed ordering with a committed per-project
+   high-watermark;
+9. explicit manifest-less adoption of matching current or previously released
+   root-pack artifacts.
+
+Implementation is split into two reviewed plans:
+
+- [Codex Connector Implementation Plan](../plans/2026-07-25-memlayer-codex-connector-implementation.md)
+- [Temporal Memory Implementation Plan](../plans/2026-07-25-memlayer-temporal-memory-implementation.md)
 
 ## Product Boundary
 
