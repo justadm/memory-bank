@@ -3,7 +3,8 @@
 
 ## Следующий продуктовый этап: Codex Connect и Temporal Memory
 
-Подтверждённый дизайн:
+Согласованное продуктовое направление; implementation contract дополнен по
+результатам независимого review и ожидает финального подтверждения:
 
 - [MemLayer Codex Connect and Temporal Memory Design](docs/superpowers/specs/2026-07-25-memlayer-codex-connect-temporal-memory-design.md)
 - [Memanto Competitive Review](docs/memanto-competitive-review-2026-07-25.md)
