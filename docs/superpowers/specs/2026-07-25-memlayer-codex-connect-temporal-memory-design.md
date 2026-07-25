@@ -186,7 +186,7 @@ The complete connector ownership matrix is:
 | Path | Ownership | Connect/update behavior | Disconnect behavior |
 | --- | --- | --- | --- |
 | `AGENTS.md` | `managed_section` | Upsert the sentinel block only when its prior managed hash matches | Remove only the unchanged managed block |
-| `.gitignore` | `managed_line` | Add the exact `.memlayer/` line once | Remove only the exact connector-added line when safe |
+| `.gitignore` | `managed_line` | Add the exact `.memlayer/` line once | Preserve the protective line |
 | `.agents/skills/memlayer/SKILL.md` | `whole_file` | Create or replace only when the recorded whole-file hash matches | Delete only when the hash matches |
 | `.memlayer/MEMLAYER.md` | `whole_file` | Create or hash-guarded replace | Delete only when the hash matches |
 | `.memlayer/.env.memlayer.example` | `whole_file` | Create or hash-guarded replace; contains no key | Delete only when the hash matches |
@@ -201,10 +201,10 @@ The complete connector ownership matrix is:
 | `.memlayer/memlayer_snapshot_pull.sh` | `whole_file` | Create or hash-guarded replace | Delete only when the hash matches |
 | `.memlayer/memlayer_payload.py` | `whole_file` | Create or hash-guarded replace | Delete only when the hash matches |
 | `.memlayer/.env.memlayer` | `user_owned` | Create mode `0600` with an empty key only when absent | Always preserve |
-| `.memlayer/memlayer.snapshot.json` | `create_if_absent` | Create an empty snapshot only when absent | Delete only if connector-created and still at its initial hash |
-| `.memlayer/memlayer.snapshot.md` | `create_if_absent` | Create an empty snapshot only when absent | Delete only if connector-created and still at its initial hash |
-| `.memlayer/memlayer.offline.log.md` | `create_if_absent` | Create an empty log only when absent | Delete only if connector-created and still at its initial hash |
-| `.memlayer/memlayer.offline.queue.jsonl` | `create_if_absent` | Create an empty queue only when absent | Delete only if connector-created, empty, and at its initial hash |
+| `.memlayer/memlayer.snapshot.json` | `create_if_absent` | Create an empty snapshot only when absent | Always preserve runtime state |
+| `.memlayer/memlayer.snapshot.md` | `create_if_absent` | Create an empty snapshot only when absent | Always preserve runtime state |
+| `.memlayer/memlayer.offline.log.md` | `create_if_absent` | Create an empty log only when absent | Always preserve runtime state |
+| `.memlayer/memlayer.offline.queue.jsonl` | `create_if_absent` | Create an empty queue only when absent | Always preserve runtime state |
 
 The managed config keys are the root-pack schema version, project name, project
 root, connector identity, API URLs, retry policy, read/write defaults, and
@@ -218,10 +218,62 @@ is schema-validated, written atomically after successful apply, and deleted
 last after successful disconnect. Invalid or unrecognized manifest content is
 a conflict, not a reset signal.
 
+The manifest is untrusted input. Before reconnect or disconnect, the connector:
+
+1. canonicalizes `project_root` and requires it to equal the CLI project root;
+2. requires `agent=codex`;
+3. requires one safe UUID `connector_identity` matching the managed config and,
+   when live identity is available, the server binding;
+4. accepts only normalized relative POSIX paths from the fixed connector
+   artifact registry;
+5. rejects absolute paths, empty paths, `.`, `..`, NUL bytes, backslashes, and
+   duplicate path records;
+6. walks every existing path component with `lstat`, rejects symlinks, and
+   verifies the resolved parent remains below the canonical project root;
+7. reconstructs expected ownership and released template hashes from
+   `(agent, root_pack_version, path)` in code;
+8. rejects missing, extra, or ownership-mismatched manifest records.
+
+Disconnect never derives a deletion target or ownership mode solely from the
+manifest. For `whole_file`, current content must match a released template hash
+from the connector registry, not merely the hash written in the manifest.
+Managed sections, lines, and JSON keys are likewise constrained by the
+registry. The manifest records observed installation state, but the registry
+defines what the connector is allowed to touch.
+
 The connector never copies an API key from process environment into
 `.env.memlayer`. Existing legacy top-level MemLayer files are reported by
 doctor but are not moved or deleted by `connect`; migration is a separate
 explicit operation.
+
+### Existing Root-Pack Adoption
+
+When no connection manifest exists, `connect` performs a complete read-only
+inventory before planning any write:
+
+1. validate all known paths with the same canonical path and symlink rules;
+2. treat an absent artifact according to the ownership matrix;
+3. adopt a `whole_file` only when its bytes match a current or known prior
+   released template rendered for the detected project settings;
+4. adopt the `AGENTS.md` block only when both sentinels are well formed and the
+   managed body matches a current or known prior released block;
+5. treat a known prior block or whole-file template as `adopt`, followed by a
+   hash-guarded `upgrade` action;
+6. adopt managed config keys only when their canonical values match a known
+   generated configuration; preserve identity and unknown user keys;
+7. preserve an existing `.env.memlayer` without reading its values;
+8. preserve existing snapshots, logs, and queues as user/runtime state and
+   record `created_by_connector=false`;
+9. record pre-existing matching `.gitignore` content as unowned;
+10. fail the entire plan before mutation on malformed sentinels, unknown
+    managed content, path escape, symlink, or ownership conflict.
+
+Files created during the successful apply use
+`created_by_connector=true`. Matching pre-existing artifacts and runtime files
+use `false`. Adoption performs no network request and does not infer or create
+a project id. Known prior hashes begin with the root-pack templates present at
+the time this connector ships and grow only through reviewed release registry
+entries.
 
 ### Ownership and Disconnect
 
@@ -754,20 +806,30 @@ valid_from <= t AND (valid_to IS NULL OR valid_to > t)
 ### Changed-Since
 
 ```http
-GET /memory/changes?project_id=...&changed_since=...&limit=...
+GET /memory/changes?project_id=...&after_sequence=...&limit=...
 GET /memory/changes?project_id=...&cursor=...&limit=...
 ```
 
 This endpoint reads an append-only `memory_change_events` table rather than
 inferring changes from `memory_entries.updated_at`.
 
+Each project has one `memory_change_feed_state` row:
+
+```text
+project_id             primary key
+feed_epoch             UUID
+committed_sequence     non-negative integer
+started_at             timezone-aware server timestamp
+```
+
 Event fields:
 
 ```text
-sequence             monotonic integer primary key
+project_id           composite primary key part
+sequence             per-project monotonic primary key part
+feed_epoch
 event_kind           created | revised | archived | restored
 occurred_at          timezone-aware server timestamp
-project_id
 normalized_tenant_key server-derived tenant scope at event time
 entry_id             resulting or closed entry
 previous_entry_id    nullable
@@ -776,35 +838,47 @@ reason               nullable, sanitized and bounded
 ```
 
 Every semantic create, revision, archive, or restore writes exactly one event
-in the same transaction as the memory change. Usage counters, access
-timestamps, review actions, import-run counters, and other operational updates
-do not enter this semantic change feed.
+in the same transaction as the memory change. The transaction locks the
+project feed-state row, allocates `sequence=committed_sequence+1`, inserts the
+event, and updates `committed_sequence` before commit. Concurrent mutations for
+one project therefore serialize event allocation. A reader uses only the
+committed high-watermark and cannot advance past an uncommitted lower sequence.
 
-Ordering is `(sequence ASC)`, so equal timestamps cannot drop or reorder
-events. `changed_since` is RFC 3339 and exclusive:
+Usage counters, access timestamps, review actions, import-run counters, and
+other operational updates do not enter this semantic change feed.
+
+Ordering and checkpointing use only `(project_id, feed_epoch, sequence)`.
+`occurred_at` is informational and never participates in filtering, ordering,
+or cursor advancement.
+
+`after_sequence` is an exclusive integer checkpoint and is allowed only on the
+first page; it defaults to `0`. The response returns an opaque, versioned
+cursor containing project id, tenant key, feed epoch, and last sequence.
+Subsequent pages use:
 
 ```text
-occurred_at > changed_since
+feed_epoch = cursor.feed_epoch
+AND sequence > cursor.sequence
+AND sequence <= committed_high_watermark
 ```
 
-It is allowed only on the first page. The response returns an opaque,
-versioned, project-bound cursor containing the last sequence. Subsequent pages
-use `sequence > cursor.sequence`; supplying both parameters is a validation
-error. `limit` defaults to 100 and is capped at 500. `has_more` and
-`next_cursor` are always returned.
+Supplying both `after_sequence` and `cursor` is a validation error. `limit`
+defaults to 100 and is capped at 500. `has_more`, `next_cursor`,
+`committed_high_watermark`, and `feed_epoch` are always returned.
 
 Indexes:
 
 - `(project_id, sequence)`;
-- `(project_id, occurred_at, sequence)`.
+- unique `(project_id, feed_epoch, sequence)`.
 
 Tenant and project authorization matches normal memory reads. A cursor issued
-for another project or tenant is rejected.
+for another project, tenant, or feed epoch is rejected.
 
 Existing memory rows do not receive fabricated historical events. The endpoint
-returns `history_complete_from`, equal to the change-feed migration timestamp.
-A `changed_since` value earlier than that timestamp returns a validation error
-with `history_complete_from`, rather than implying a complete feed.
+returns `feed_started_at` and starts with sequence `0` at the change-feed
+migration. Consumers bootstrap existing current state separately, then retain
+the returned sequence cursor. The API makes no claim about changes before the
+feed epoch.
 
 ### PATCH Compatibility
 
@@ -852,6 +926,10 @@ Rollout is staged:
 - apply preserves existing `AGENTS.md`;
 - repeated connect is idempotent;
 - manifest contains no secrets;
+- manifest rejects absolute, parent, duplicate, non-allowlisted, and
+  symlink-escaping paths;
+- disconnect reconstructs ownership and released hashes from the connector
+  registry instead of trusting manifest claims;
 - disconnect removes unchanged managed artifacts;
 - disconnect preserves user-modified skill files;
 - every root-pack path follows the ownership matrix;
@@ -859,6 +937,10 @@ Rollout is staged:
 - modified section, line, managed JSON keys, and whole files fail closed;
 - create-if-absent runtime files are not overwritten;
 - legacy top-level files are reported but not relocated;
+- matching manifest-less root-pack files are adopted without mutation;
+- known prior templates produce explicit adopt-plus-upgrade actions;
+- unknown or malformed managed sections fail before any write;
+- adopted runtime files and pre-existing `.gitignore` content remain unowned;
 - unsupported/global agent modes fail closed;
 - registration is never called without the explicit flag.
 
@@ -914,8 +996,10 @@ Rollout is staged:
   exclude superseded revisions;
 - `as_of` returns the correct historical revision;
 - direct id lookup returns exact historical content and successor metadata;
-- `changed_since` and cursor pagination are exclusive, stable, and complete
-  across equal timestamps;
+- sequence checkpoint and cursor pagination are exclusive, stable, and
+  complete across out-of-order and equal timestamps;
+- concurrent event transactions cannot expose a high-watermark beyond an
+  uncommitted lower sequence;
 - operational updates do not emit semantic change events;
 - archived and superseded entries do not appear as currently active;
 - lexical, semantic, and hybrid modes preserve temporal filtering.
@@ -947,8 +1031,8 @@ provenance distribution without changing update semantics.
 
 ### Stage 4: Revisions and Temporal Reads
 
-Add revision service, history, as-of, and changed-since. Keep semantic PATCH in
-diagnostic mode.
+Add revision service, history, as-of, and sequence-based change feed. Keep
+semantic PATCH in compatibility/deprecation mode.
 
 ### Stage 5: Caller Migration
 
@@ -969,7 +1053,7 @@ Roll out to two or three projects. Measure:
 - missing provenance rate;
 - inferred versus validated distribution;
 - revision count and stale-write conflicts;
-- as-of and changed-since usage;
+- as-of and change-feed usage;
 - memory retrieval usefulness and review load.
 
 ## Deferred Backlog
