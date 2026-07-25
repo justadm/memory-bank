@@ -1,0 +1,21 @@
+# MemLayer Codex Skill
+
+Use MemLayer as project-scoped context and evidence, never as the authoritative source of truth.
+
+## Boundary
+
+- Git, runtime state, and authoritative APIs remain the source of truth.
+- MemLayer provides retrieved context, decisions, constraints, risks, artifacts, and sanitized evidence.
+- Verify freshness and important outcomes against the authoritative source before relying on them.
+
+## Project workflow
+
+1. Read `.memlayer/memlayer.config.json` and the local snapshot before meaningful work.
+2. Use the configured `project_id` and `source_agent=codex` when writing.
+3. Prefer snapshot-first reads; refresh from live MemLayer only when needed.
+4. Record useful decisions, constraints, risks, artifacts, and task outcomes with privacy-safe summaries.
+5. Never write API keys, credentials, customer payloads, raw logs, secret identifiers, or unsupported claims.
+6. If live MemLayer is unavailable, use the offline queue and verify later through authoritative read-back.
+7. Run `./.memlayer/../memlayer doctor --project-root .` when auth, routing, identity, or readiness is unclear.
+
+Do not write on every conversational turn. Write only meaningful project memory and verify live outcomes through authoritative sources.
