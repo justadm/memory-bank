@@ -6,7 +6,22 @@ import pytest
 
 import memlayer_connector.service as connector_service_module
 from memlayer_connector.manifest import write_manifest_atomic
-from memlayer_connector.service import ConnectorConflict, ConnectorService, _write_atomic
+from memlayer_connector.service import (
+    ConnectorConflict,
+    ConnectorService,
+    _digest,
+    _write_atomic,
+)
+
+CURRENT_SKILL_DOCTOR_LINE = (
+    b"7. Run `./.memlayer/memlayer_api.sh doctor` when endpoint or auth routing "
+    b"is unclear. Use the connector CLI's `doctor` command from the MemLayer "
+    b"installation when connector identity or readiness must be verified.\n"
+)
+PRIOR_SKILL_DOCTOR_LINE = (
+    b"7. Run `./.memlayer/../memlayer doctor --project-root .` when auth, routing, "
+    b"identity, or readiness is unclear.\n"
+)
 
 
 def test_matching_manifestless_pack_adopts_artifacts_and_rotates_untrusted_identity(
@@ -43,6 +58,139 @@ def test_matching_manifestless_pack_adopts_artifacts_and_rotates_untrusted_ident
         json.loads(config_path.read_text(encoding="utf-8"))["connector_identity"]
         != json.loads(before[config_path])["connector_identity"]
     )
+
+
+def test_reconnect_upgrades_known_prior_released_skill(tmp_path: Path) -> None:
+    service = ConnectorService(tmp_path)
+    manifest = service.apply_connect(service.plan_connect())
+    skill_path = tmp_path / ".agents/skills/memlayer/SKILL.md"
+    current = skill_path.read_bytes()
+    prior = current.replace(
+        CURRENT_SKILL_DOCTOR_LINE,
+        PRIOR_SKILL_DOCTOR_LINE,
+    )
+    assert prior != current
+    skill_path.write_bytes(prior)
+    skill_record = next(
+        record
+        for record in manifest.managed_files
+        if record.path == ".agents/skills/memlayer/SKILL.md"
+    )
+    skill_record.content_sha256 = _digest(prior)
+    write_manifest_atomic(service.manifest_path, manifest)
+
+    plan = service.plan_connect()
+
+    assert plan.ready
+    assert any(
+        action.kind == "upgrade"
+        and action.path == ".agents/skills/memlayer/SKILL.md"
+        for action in plan.actions
+    )
+    upgraded_manifest = service.apply_connect(plan)
+    assert skill_path.read_bytes() == current
+    upgraded_record = next(
+        record
+        for record in upgraded_manifest.managed_files
+        if record.path == ".agents/skills/memlayer/SKILL.md"
+    )
+    assert upgraded_record.created_by_connector is True
+    assert upgraded_record.content_sha256 == _digest(current)
+
+
+def test_manifestless_upgrade_preserves_preexisting_skill_ownership(
+    tmp_path: Path,
+) -> None:
+    service = ConnectorService(tmp_path)
+    service.apply_connect(service.plan_connect())
+    skill_path = tmp_path / ".agents/skills/memlayer/SKILL.md"
+    current = skill_path.read_bytes()
+    skill_path.write_bytes(
+        current.replace(
+            CURRENT_SKILL_DOCTOR_LINE,
+            PRIOR_SKILL_DOCTOR_LINE,
+        )
+    )
+    service.manifest_path.unlink()
+
+    plan = service.plan_connect()
+
+    assert plan.ready
+    manifest = service.apply_connect(plan)
+    skill_record = next(
+        record
+        for record in manifest.managed_files
+        if record.path == ".agents/skills/memlayer/SKILL.md"
+    )
+    assert skill_path.read_bytes() == current
+    assert skill_record.created_by_connector is False
+    disconnect = service.plan_disconnect()
+    skill_action = next(
+        action
+        for action in disconnect.actions
+        if action.path == ".agents/skills/memlayer/SKILL.md"
+    )
+    assert skill_action.kind == "preserve"
+
+
+def test_reconnect_rejects_manifest_and_file_release_hash_mismatch(
+    tmp_path: Path,
+) -> None:
+    service = ConnectorService(tmp_path)
+    manifest = service.apply_connect(service.plan_connect())
+    skill_path = tmp_path / ".agents/skills/memlayer/SKILL.md"
+    current = skill_path.read_bytes()
+    prior = current.replace(
+        CURRENT_SKILL_DOCTOR_LINE,
+        PRIOR_SKILL_DOCTOR_LINE,
+    )
+    skill_path.write_bytes(prior)
+    current_hash = _digest(current)
+    record = next(
+        record
+        for record in manifest.managed_files
+        if record.path == ".agents/skills/memlayer/SKILL.md"
+    )
+    assert record.content_sha256 == current_hash
+    write_manifest_atomic(service.manifest_path, manifest)
+
+    plan = service.plan_connect()
+
+    assert not plan.ready
+    assert any(
+        conflict.code == "modified_managed_file"
+        and conflict.path == ".agents/skills/memlayer/SKILL.md"
+        for conflict in plan.conflicts
+    )
+
+
+def test_reconnect_preserves_connector_created_ownership(
+    tmp_path: Path,
+) -> None:
+    service = ConnectorService(tmp_path)
+    initial = service.apply_connect(service.plan_connect())
+    initial_record = next(
+        record
+        for record in initial.managed_files
+        if record.path == ".agents/skills/memlayer/SKILL.md"
+    )
+    assert initial_record.created_by_connector is True
+
+    reconnected = service.apply_connect(service.plan_connect())
+
+    reconnected_record = next(
+        record
+        for record in reconnected.managed_files
+        if record.path == ".agents/skills/memlayer/SKILL.md"
+    )
+    assert reconnected_record.created_by_connector is True
+    disconnect = service.plan_disconnect()
+    skill_action = next(
+        action
+        for action in disconnect.actions
+        if action.path == ".agents/skills/memlayer/SKILL.md"
+    )
+    assert skill_action.kind == "remove"
 
 
 def test_unknown_managed_block_fails_before_any_write(tmp_path: Path) -> None:

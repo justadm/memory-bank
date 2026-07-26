@@ -64,7 +64,7 @@ def _validate_hash(record: ManifestRecord, spec: ArtifactSpec) -> None:
             OwnershipMode.MANAGED_SECTION,
             OwnershipMode.MANAGED_LINE,
         }
-        and record.content_sha256 != spec.expected_sha256
+        and not spec.is_released_hash(record.content_sha256)
     ):
         raise ManifestConflict(f"manifest hash is not a released connector artifact: {record.path}")
 

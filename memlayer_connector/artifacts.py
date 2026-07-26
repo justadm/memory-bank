@@ -12,6 +12,11 @@ ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES = ROOT / "templates" / "project_root_pack"
 SUPPORTED_AGENT = "codex"
 SUPPORTED_ROOT_PACK_VERSION = 1
+PRIOR_RELEASED_HASHES: dict[str, tuple[str, ...]] = {
+    ".agents/skills/memlayer/SKILL.md": (
+        "sha256:832e5ef04e6c8394c694e0a00dbe76e49d0a48fd4cb47443e7e56d5ee7862fc2",
+    ),
+}
 FORMATTED_TEMPLATES = {
     "AGENTS_SECTION.md.tmpl",
     "MEMLAYER.md.tmpl",
@@ -48,6 +53,13 @@ class ArtifactSpec:
     managed_keys: tuple[str, ...] = ()
     preserve_on_disconnect: bool = False
     expected_sha256: str | None = None
+    prior_released_sha256: tuple[str, ...] = ()
+
+    def is_released_hash(self, value: str | None) -> bool:
+        return bool(value) and value in {
+            self.expected_sha256,
+            *self.prior_released_sha256,
+        }
 
 
 def _specs() -> tuple[ArtifactSpec, ...]:
@@ -168,7 +180,14 @@ def artifact_registry(agent: str, root_pack_version: int, context: RenderContext
                     + f"\n{MANAGED_SECTION_END}".encode()
                 )
             expected = "sha256:" + hashlib.sha256(rendered).hexdigest()
-        result[spec.path] = replace(spec, expected_sha256=expected)
+        result[spec.path] = replace(
+            spec,
+            expected_sha256=expected,
+            prior_released_sha256=PRIOR_RELEASED_HASHES.get(
+                str(spec.path),
+                (),
+            ),
+        )
     return result
 
 

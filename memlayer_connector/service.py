@@ -364,8 +364,42 @@ class ConnectorService:
                 elif not exists:
                     actions.append(ConnectorAction("create", str(relative), spec.ownership, "managed artifact is absent"))
                 elif spec.ownership is OwnershipMode.WHOLE_FILE:
-                    if path.read_bytes() == expected:
+                    current = path.read_bytes()
+                    current_hash = _digest(current)
+                    previous_record = (
+                        next(
+                            (
+                                record
+                                for record in manifest.managed_files
+                                if record.path == str(relative)
+                            ),
+                            None,
+                        )
+                        if manifest
+                        else None
+                    )
+                    if (
+                        previous_record is not None
+                        and current_hash != previous_record.content_sha256
+                    ):
+                        conflicts.append(
+                            ConnectorConflictItem(
+                                "modified_managed_file",
+                                str(relative),
+                                "whole-file content differs from manifest",
+                            )
+                        )
+                    elif current == expected:
                         actions.append(ConnectorAction("adopt", str(relative), spec.ownership, "matching released artifact"))
+                    elif spec.is_released_hash(current_hash):
+                        actions.append(
+                            ConnectorAction(
+                                "upgrade",
+                                str(relative),
+                                spec.ownership,
+                                "upgrade known prior released artifact",
+                            )
+                        )
                     else:
                         conflicts.append(ConnectorConflictItem("modified_managed_file", str(relative), "whole-file content differs"))
                 elif spec.ownership is OwnershipMode.MANAGED_SECTION:
@@ -549,6 +583,14 @@ class ConnectorService:
                         expected_root_identity=self.root_identity,
                     )
             records: list[ManifestRecord] = []
+            previous_records = (
+                {
+                    record.path: record
+                    for record in plan.manifest.managed_files
+                }
+                if plan.manifest
+                else {}
+            )
             for relative, spec in self.registry.items():
                 path = self._path(relative)
                 created = any(
@@ -562,6 +604,27 @@ class ConnectorService:
                     }
                     for action in plan.actions
                 )
+                retained_action = next(
+                    (
+                        action
+                        for action in plan.actions
+                        if action.path == str(relative)
+                        and action.kind in {"adopt", "upgrade"}
+                    ),
+                    None,
+                )
+                if retained_action is not None:
+                    previous = previous_records.get(str(relative))
+                    if previous is not None:
+                        created = previous.created_by_connector
+                    elif retained_action.kind == "upgrade":
+                        created = False
+                elif any(
+                    action.path == str(relative)
+                    and action.kind == "upgrade"
+                    for action in plan.actions
+                ):
+                    created = False
                 if spec.ownership is OwnershipMode.USER_OWNED:
                     digest = None
                 elif spec.ownership is OwnershipMode.MANAGED_KEYS:
@@ -650,7 +713,10 @@ class ConnectorService:
                 continue
             if spec.ownership is OwnershipMode.WHOLE_FILE:
                 actual = _digest(path.read_bytes())
-                if actual != record.content_sha256 or actual != spec.expected_sha256:
+                if (
+                    actual != record.content_sha256
+                    or not spec.is_released_hash(actual)
+                ):
                     conflicts.append(ConnectorConflictItem("modified_managed_file", record.path, "hash differs from manifest"))
                 else:
                     actions.append(ConnectorAction("remove", record.path, spec.ownership, "unchanged connector-created file"))

@@ -51,3 +51,18 @@ def test_unsupported_agent_and_version_fail_closed(tmp_path: Path) -> None:
         artifact_registry("cursor", 1, make_context(tmp_path))
     with pytest.raises(ValueError, match="unsupported root-pack"):
         artifact_registry("codex", 2, make_context(tmp_path))
+
+
+def test_codex_skill_uses_installed_cli_command(tmp_path: Path) -> None:
+    spec = artifact_registry("codex", 1, make_context(tmp_path))[
+        PurePosixPath(".agents/skills/memlayer/SKILL.md")
+    ]
+
+    rendered = render_artifact(spec, make_context(tmp_path)).decode()
+
+    assert "./.memlayer/memlayer_api.sh doctor" in rendered
+    assert "memlayer doctor codex --project-root ." not in rendered
+    assert "./.memlayer/../memlayer" not in rendered
+    assert artifact_registry("codex", 1, make_context(tmp_path))[
+        PurePosixPath(".memlayer/memlayer_api.sh")
+    ].executable is True
