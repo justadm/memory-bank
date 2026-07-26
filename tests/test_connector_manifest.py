@@ -74,6 +74,21 @@ def test_manifest_identity_must_match_config(tmp_path: Path) -> None:
         validate_manifest_identity(manifest, config={"connector_identity": str(uuid4())})
 
 
+def test_manifest_identity_requires_managed_config_values(tmp_path: Path) -> None:
+    payload = valid_payload(tmp_path)
+    connector_identity = payload["connector_identity"]
+    payload["project_id"] = str(uuid4())
+    manifest = ConnectionManifest.model_validate(payload)
+
+    with pytest.raises(ManifestConflict, match="connector_identity"):
+        validate_manifest_identity(manifest, config={})
+    with pytest.raises(ManifestConflict, match="project_id"):
+        validate_manifest_identity(
+            manifest,
+            config={"connector_identity": connector_identity},
+        )
+
+
 def test_manifest_atomic_round_trip_and_user_owned_hash(tmp_path: Path) -> None:
     payload = valid_payload(tmp_path)
     manifest = validate_manifest(payload, project_root=tmp_path, registry=registry_for(tmp_path))

@@ -164,9 +164,19 @@ def load_validated_manifest(
 
 def validate_manifest_identity(manifest: ConnectionManifest, *, config: Mapping[str, Any]) -> None:
     configured = config.get("connector_identity")
-    if configured and str(manifest.connector_identity) != str(configured):
+    if not configured or str(manifest.connector_identity) != str(configured):
         raise ManifestConflict("connector_identity does not match config")
-    if manifest.project_id is not None and config.get("project_id") and str(manifest.project_id) != str(config["project_id"]):
+    manifest_project_id = (
+        str(manifest.project_id)
+        if manifest.project_id is not None
+        else None
+    )
+    configured_project_id = (
+        str(config["project_id"])
+        if config.get("project_id")
+        else None
+    )
+    if manifest_project_id != configured_project_id:
         raise ManifestConflict("project_id does not match config")
 
 
