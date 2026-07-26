@@ -90,6 +90,60 @@ def current_items(db):
     ]
 
 
+def test_unrelated_guard_does_not_cover_an_unguarded_query(tmp_path: Path) -> None:
+    app_root = tmp_path / "app"
+    app_root.mkdir()
+    (app_root / "sample.py").write_text(
+        """
+from sqlalchemy import select
+from app.models.memory_entry import MemoryEntry
+from app.repositories.memory_repository import MemoryRepository
+
+def mixed_queries(db):
+    guarded_stmt = select(MemoryEntry).where(MemoryRepository.current_predicate())
+    guarded = list(db.scalars(guarded_stmt))
+    unguarded_stmt = select(MemoryEntry)
+    unguarded = list(db.scalars(unguarded_stmt))
+    return guarded, unguarded
+"""
+    )
+
+    detected = scan_memory_queries(app_root)
+
+    assert len(detected) == 2
+    guarded, unguarded = sorted(detected, key=lambda item: item.line)
+    assert guarded.guard_calls == frozenset({"current_predicate"})
+    assert unguarded.guard_calls == frozenset()
+
+
+def test_reused_query_variable_does_not_inherit_guard_from_previous_query(
+    tmp_path: Path,
+) -> None:
+    app_root = tmp_path / "app"
+    app_root.mkdir()
+    (app_root / "sample.py").write_text(
+        """
+from sqlalchemy import select
+from app.models.memory_entry import MemoryEntry
+from app.repositories.memory_repository import MemoryRepository
+
+def mixed_queries(db):
+    stmt = select(MemoryEntry).where(MemoryRepository.current_predicate())
+    guarded = list(db.scalars(stmt))
+    stmt = select(MemoryEntry)
+    unguarded = list(db.scalars(stmt))
+    return guarded, unguarded
+"""
+    )
+
+    detected = scan_memory_queries(app_root)
+
+    assert len(detected) == 2
+    guarded, unguarded = sorted(detected, key=lambda item: item.line)
+    assert guarded.guard_calls == frozenset({"current_predicate"})
+    assert unguarded.guard_calls == frozenset()
+
+
 def test_tracked_repository_inventory_is_complete() -> None:
     findings = check_inventory(
         app_root=REPO_ROOT / "app",

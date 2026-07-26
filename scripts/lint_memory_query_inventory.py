@@ -73,7 +73,16 @@ def _has_query_call(node: ast.AST) -> bool:
     return False
 
 
-def _function_guard_calls(node: ast.FunctionDef | ast.AsyncFunctionDef) -> frozenset[str]:
+def _is_query_builder(node: ast.AST) -> bool:
+    return any(
+        isinstance(child, ast.Call)
+        and _call_name(child) in {"select", "query", "update", "delete"}
+        and _references_memory_entry(child)
+        for child in ast.walk(node)
+    )
+
+
+def _guard_calls(node: ast.AST) -> frozenset[str]:
     return frozenset(
         name
         for child in ast.walk(node)
@@ -86,6 +95,153 @@ def _function_guard_calls(node: ast.FunctionDef | ast.AsyncFunctionDef) -> froze
             "historical_rows_predicate",
         }
     )
+
+
+def _statement_symbols(node: ast.AST) -> frozenset[str]:
+    return frozenset(
+        child.id
+        for child in ast.walk(node)
+        if isinstance(child, ast.Name)
+        and child.id not in {"MemoryEntry", "self"}
+    )
+
+
+def _assigned_names(node: ast.stmt) -> frozenset[str]:
+    targets: list[ast.AST] = []
+    if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+        if isinstance(node, ast.Assign):
+            targets.extend(node.targets)
+        else:
+            targets.append(node.target)
+    return frozenset(
+        child.id
+        for target in targets
+        for child in ast.walk(target)
+        if isinstance(child, ast.Name)
+    )
+
+
+def _assignment_value(node: ast.stmt) -> ast.AST | None:
+    if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+        return node.value
+    return None
+
+
+def _guard_aliases(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> dict[str, frozenset[str]]:
+    all_statements = [
+        child
+        for child in ast.walk(node)
+        if isinstance(child, ast.stmt)
+        and not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    ]
+    guards_by_symbol: dict[str, frozenset[str]] = {}
+    for statement in all_statements:
+        targets = _assigned_names(statement)
+        value = _assignment_value(statement)
+        if not targets or value is None:
+            continue
+        if isinstance(value, ast.Call) and _call_name(value) in {
+            "current_predicate",
+            "historical_predicate",
+            "historical_rows_predicate",
+        }:
+            for symbol in targets:
+                guards_by_symbol[symbol] = _guard_calls(value)
+        elif isinstance(value, ast.Name) and value.id in guards_by_symbol:
+            for symbol in targets:
+                guards_by_symbol[symbol] = guards_by_symbol[value.id]
+    return guards_by_symbol
+
+
+def _guards_from_query_root(
+    statement: ast.stmt,
+    *,
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    aliases: dict[str, frozenset[str]],
+    stop_line: int | None = None,
+) -> frozenset[str]:
+    guards = set(_guard_calls(statement))
+    for symbol in _statement_symbols(statement):
+        guards.update(aliases.get(symbol, ()))
+
+    targets = _assigned_names(statement)
+    if not targets:
+        return frozenset(guards)
+    later_statements = sorted(
+        (
+            later
+            for later in ast.walk(function)
+            if isinstance(later, ast.stmt)
+            and later.lineno > statement.lineno
+            and (stop_line is None or later.lineno <= stop_line)
+        ),
+        key=lambda item: item.lineno,
+    )
+    for later in later_statements:
+        if isinstance(later, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        later_targets = _assigned_names(later)
+        if not targets.intersection(later_targets):
+            continue
+        value = _assignment_value(later)
+        if value is None:
+            continue
+        if _references_memory_entry(value) and _has_query_call(value):
+            break
+        guards.update(_guard_calls(value))
+        for symbol in _statement_symbols(value):
+            guards.update(aliases.get(symbol, ()))
+    return frozenset(guards)
+
+
+def _query_guard_calls(
+    statement: ast.stmt,
+    *,
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    aliases: dict[str, frozenset[str]],
+) -> frozenset[str]:
+    guards = set(
+        _guards_from_query_root(
+            statement,
+            function=function,
+            aliases=aliases,
+        )
+    )
+    value = _assignment_value(statement)
+    if value is not None and _is_query_builder(value):
+        return frozenset(guards)
+
+    referenced = _statement_symbols(statement)
+    prior_roots = sorted(
+        (
+            candidate
+            for candidate in ast.walk(function)
+            if isinstance(candidate, ast.stmt)
+            and candidate.lineno < statement.lineno
+            and _assigned_names(candidate).intersection(referenced)
+            and _assignment_value(candidate) is not None
+            and _is_query_builder(_assignment_value(candidate))
+        ),
+        key=lambda item: item.lineno,
+        reverse=True,
+    )
+    covered: set[str] = set()
+    for root in prior_roots:
+        root_targets = _assigned_names(root).intersection(referenced)
+        if root_targets.issubset(covered):
+            continue
+        guards.update(
+            _guards_from_query_root(
+                root,
+                function=function,
+                aliases=aliases,
+                stop_line=statement.lineno,
+            )
+        )
+        covered.update(root_targets)
+    return frozenset(guards)
 
 
 def _is_exact_id_lookup(node: ast.AST) -> bool:
@@ -134,7 +290,7 @@ def _scan_file(path: Path, *, relative_path: str) -> list[DetectedQuery]:
 
         def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
             owner = ".".join([*self.classes, node.name])
-            guards = _function_guard_calls(node)
+            aliases = _guard_aliases(node)
             for statement in _query_statements(node):
                 normalized = ast.dump(statement, annotate_fields=True, include_attributes=False)
                 fingerprint = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
@@ -144,7 +300,11 @@ def _scan_file(path: Path, *, relative_path: str) -> list[DetectedQuery]:
                         path=relative_path,
                         owner=owner,
                         line=statement.lineno,
-                        guard_calls=guards,
+                        guard_calls=_query_guard_calls(
+                            statement,
+                            function=node,
+                            aliases=aliases,
+                        ),
                         exact_id_lookup=_is_exact_id_lookup(statement),
                     )
                 )
