@@ -39,6 +39,7 @@ class DetectedQuery:
     owner: str
     line: int
     guard_calls: frozenset[str]
+    direct_guard_calls: frozenset[str]
     exact_id_lookup: bool
 
 
@@ -245,6 +246,17 @@ def _query_guard_calls(
     return frozenset(guards)
 
 
+def _direct_query_guard_calls(
+    statement: ast.stmt,
+    *,
+    aliases: dict[str, frozenset[str]],
+) -> frozenset[str]:
+    guards = set(_guard_calls(statement))
+    for symbol in _statement_symbols(statement):
+        guards.update(aliases.get(symbol, ()))
+    return frozenset(guards)
+
+
 def _is_exact_id_lookup(node: ast.AST) -> bool:
     for child in ast.walk(node):
         if (
@@ -261,11 +273,25 @@ def _is_exact_id_lookup(node: ast.AST) -> bool:
 
 
 def _query_statements(node: ast.AST) -> Iterable[ast.stmt]:
+    compound_statements = (
+        ast.For,
+        ast.AsyncFor,
+        ast.While,
+        ast.If,
+        ast.With,
+        ast.AsyncWith,
+        ast.Match,
+        ast.Try,
+    )
     for child in ast.iter_child_nodes(node):
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             continue
         if isinstance(child, ast.stmt):
-            if _references_memory_entry(child) and _has_query_call(child):
+            if (
+                not isinstance(child, compound_statements)
+                and _references_memory_entry(child)
+                and _has_query_call(child)
+            ):
                 yield child
             yield from _query_statements(child)
 
@@ -304,6 +330,10 @@ def _scan_file(path: Path, *, relative_path: str) -> list[DetectedQuery]:
                         guard_calls=_query_guard_calls(
                             statement,
                             function=node,
+                            aliases=aliases,
+                        ),
+                        direct_guard_calls=_direct_query_guard_calls(
+                            statement,
                             aliases=aliases,
                         ),
                         exact_id_lookup=_is_exact_id_lookup(statement),
@@ -401,7 +431,7 @@ def check_inventory(*, app_root: Path, inventory_path: Path) -> list[str]:
                 or any(not isinstance(item, str) for item in required_guards)
             ):
                 findings.append(f"{key}: mixed-view required_guards mismatch")
-            elif set(required_guards) != set(query.guard_calls):
+            elif set(required_guards) != set(query.direct_guard_calls):
                 findings.append(
                     f"{key}: mixed-view guard coverage mismatch"
                 )
@@ -426,7 +456,7 @@ def _suggest_row(query: DetectedQuery, existing: dict | None) -> dict:
             "required_guards": sorted(query.guard_calls),
             "owner": query.owner,
         }
-    if existing:
+    if existing and existing.get("classification") != "mixed-view":
         return {
             "key": query.key,
             "classification": existing["classification"],

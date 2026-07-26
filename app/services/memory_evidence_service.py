@@ -30,7 +30,7 @@ SERVICE_OWNED_METADATA_KEYS = frozenset(
 )
 
 _FORBIDDEN = re.compile(
-    r"(?i)(authorization\s*:\s*bearer|x-api-key\s*:|-----begin .*private key-----|\b(?:sk|ghp|gho|xoxb|xoxp)-[a-z0-9_-]{8,}|\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd|secret|token)\s*[:=]|\b(?:stdout|stderr|response[_-]?body|raw[_-]?output|customer[_-]?payload|customer[_-]?data)\b)"
+    r"(?i)(authorization\s*:\s*bearer|x-api-key\s*:|-----begin .*private key-----|\b(?:sk|ghp|gho|xoxb|xoxp)-[a-z0-9_-]{8,}|\b[a-z0-9_-]{0,40}(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd|secret|token)\s*[:=]|\b(?:stdout|stderr|response[_-]?body|raw[_-]?output|customer[_-]?payload|customer[_-]?data)\b)"
 )
 _SAFE_REDACTED_ASSIGNMENT = re.compile(
     r"(?i)\b(?:api[_-]?key|password|passwd|secret|token)\s*[:=]\s*\[REDACTED\]"
@@ -45,7 +45,7 @@ def scan_privacy_safe(value: Any) -> bool:
                 "",
                 str(key).strip().lower(),
             )
-            if normalized_key in {
+            forbidden_key_suffixes = {
                 "authorization",
                 "xapikey",
                 "apikey",
@@ -62,7 +62,11 @@ def scan_privacy_safe(value: Any) -> bool:
                 "responsebody",
                 "customerpayload",
                 "customerdata",
-            }:
+            }
+            if any(
+                normalized_key.endswith(suffix)
+                for suffix in forbidden_key_suffixes
+            ):
                 return False
             if not scan_privacy_safe(item):
                 return False

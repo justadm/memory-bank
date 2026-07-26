@@ -105,17 +105,23 @@ class MemoryRepository:
         as_of: datetime | None = None,
         current_only: bool = True,
     ) -> list[MemoryEntry]:
-        stmt = select(MemoryEntry).order_by(MemoryEntry.created_at.desc())
+        if as_of is not None:
+            stmt = select(MemoryEntry).where(
+                self.historical_predicate(as_of)
+            )
+        elif current_only and archived is not True:
+            stmt = select(MemoryEntry).where(self.current_predicate())
+        else:
+            stmt = select(MemoryEntry).where(
+                self.historical_rows_predicate()
+            )
+        stmt = stmt.order_by(MemoryEntry.created_at.desc())
         if project_ids:
             stmt = stmt.where(MemoryEntry.project_id.in_(project_ids))
         elif project_id:
             stmt = stmt.where(MemoryEntry.project_id == project_id)
         if memory_type:
             stmt = stmt.where(MemoryEntry.type == memory_type)
-        if as_of is not None:
-            stmt = stmt.where(self.historical_predicate(as_of))
-        elif current_only and archived is not True:
-            stmt = stmt.where(self.current_predicate())
         if archived is not None:
             stmt = stmt.where(MemoryEntry.archived == archived)
         return list(self.db.scalars(stmt))
@@ -288,11 +294,16 @@ class MemoryRepository:
         include_archived: bool = False,
         as_of: datetime | None = None,
     ) -> list[tuple[MemoryEntry, float]]:
-        stmt: Select[tuple[MemoryEntry]] = select(MemoryEntry)
         if as_of is not None:
-            stmt = stmt.where(self.historical_predicate(as_of))
-        elif not include_archived:
-            stmt = stmt.where(self.current_predicate())
+            stmt: Select[tuple[MemoryEntry]] = select(MemoryEntry).where(
+                self.historical_predicate(as_of)
+            )
+        elif include_archived:
+            stmt = select(MemoryEntry).where(
+                self.historical_rows_predicate()
+            )
+        else:
+            stmt = select(MemoryEntry).where(self.current_predicate())
         if project_ids:
             stmt = stmt.where(MemoryEntry.project_id.in_(project_ids))
         elif project_id:
@@ -357,11 +368,16 @@ class MemoryRepository:
         if not tokens:
             return []
 
-        stmt = select(MemoryEntry)
         if as_of is not None:
-            stmt = stmt.where(self.historical_predicate(as_of))
-        elif not include_archived:
-            stmt = stmt.where(self.current_predicate())
+            stmt = select(MemoryEntry).where(
+                self.historical_predicate(as_of)
+            )
+        elif include_archived:
+            stmt = select(MemoryEntry).where(
+                self.historical_rows_predicate()
+            )
+        else:
+            stmt = select(MemoryEntry).where(self.current_predicate())
         if project_ids:
             stmt = stmt.where(MemoryEntry.project_id.in_(project_ids))
         elif project_id:

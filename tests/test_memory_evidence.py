@@ -43,6 +43,8 @@ def test_validated_provenance_requires_scope_and_safe_evidence():
     {"api_key": "sensitive-value"},
     {"apiKey": "sensitive-value"},
     {"accessToken": "sensitive-value"},
+    {"openaiApiKey": "sensitive-value"},
+    {"githubToken": "sensitive-value"},
     {"customer_payload": "private customer record"},
     {"customerPayload": "private customer record"},
     {"responseBody": "private response"},
@@ -51,6 +53,8 @@ def test_validated_provenance_requires_scope_and_safe_evidence():
     {"password": "value"},
     "api_key=sensitive-value",
     "customerPayload=private customer record",
+    "openaiApiKey=sensitive-value",
+    "githubToken=sensitive-value",
 ])
 def test_privacy_scanner_fails_closed(payload):
     assert scan_privacy_safe(payload) is False
