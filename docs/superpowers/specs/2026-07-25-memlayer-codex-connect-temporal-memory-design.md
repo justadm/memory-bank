@@ -74,6 +74,9 @@ The repeated gate additionally requires:
     temporal checkpoints;
 16. a tracked, AST-derived current-query inventory whose exact-set lint fails
     on every unclassified or structurally changed `MemoryEntry` query.
+17. Compose environment isolation through an explicit temporary env file,
+    temporary project directory, disabled default `.env` discovery, and an
+    allowlisted child-process environment.
 
 Implementation is split into two reviewed plans:
 
@@ -958,6 +961,26 @@ an ephemeral volume; runs the requested Alembic target and assertions inside
 that network; and always executes `down --volumes --remove-orphans` in a
 `finally` path. It never reads or targets the configured application or
 production database.
+
+Every Compose invocation uses the same generated command prefix:
+
+```text
+docker compose
+  --project-name <random migration project>
+  --project-directory <temporary directory outside repository>
+  --env-file <temporary directory>/compose.env
+  --file <absolute repository path>/deploy/test/docker-compose.migration.yml
+```
+
+The runner creates `compose.env` with mode `0600` and only synthetic migration
+values, runs subprocesses with `cwd` set to the temporary directory, and
+constructs child `env` from a fixed allowlist required to reach Docker
+(`PATH`, `HOME`, `DOCKER_HOST`, `DOCKER_CONTEXT`, `DOCKER_CONFIG`,
+`XDG_RUNTIME_DIR`, and `TMPDIR` when present). It sets `PWD` to the temporary
+directory and `COMPOSE_DISABLE_ENV_FILE=1`. It does not inherit `DATABASE_URL`,
+`COMPOSE_FILE`, `COMPOSE_ENV_FILES`, repository `MEMLAYER_*`, `POSTGRES_*`,
+proxy credentials, or API-key variables. The same prefix, cwd, and environment
+are mandatory for setup, migration, assertions, and cleanup.
 
 ### PATCH Compatibility
 

@@ -517,12 +517,54 @@ persistent volumes, runs Alembic and assertions inside the isolated network,
 and executes `down --volumes --remove-orphans` from `finally`, including on
 timeout or failed assertions.
 
+Before invoking Compose, create a `TemporaryDirectory` outside the repository
+and write `compose.env` there with mode `0600`. The file contains only
+synthetic migration database values and the non-secret absolute repository
+root required by the test compose file. Build one immutable command prefix and
+reuse it for every Compose call, including cleanup:
+
+```python
+compose_prefix = [
+    "docker", "compose",
+    "--project-name", compose_project_name,
+    "--project-directory", str(temp_dir),
+    "--env-file", str(temp_dir / "compose.env"),
+    "--file", str(repo_root / "deploy/test/docker-compose.migration.yml"),
+]
+```
+
+Run every subprocess with `cwd=temp_dir`. Build `child_env` from a fixed
+allowlist only:
+
+```text
+PATH
+HOME
+DOCKER_HOST
+DOCKER_CONTEXT
+DOCKER_CONFIG
+XDG_RUNTIME_DIR
+TMPDIR
+```
+
+Copy an allowlisted key only when present, set `PWD=temp_dir` and
+`COMPOSE_DISABLE_ENV_FILE=1`, and pass `env=child_env` explicitly. Never copy
+the parent environment wholesale. In particular, omit `DATABASE_URL`,
+`COMPOSE_FILE`, `COMPOSE_PROJECT_NAME`, `COMPOSE_ENV_FILES`, all repository
+`MEMLAYER_*` and `POSTGRES_*` values, proxy variables that may contain
+credentials, and API-key variables.
+
 Tests mock the subprocess boundary and prove:
 
 - external database URL flags and environment overrides are rejected;
 - compose project and database names carry a random
   `memlayer_migration_drill_` prefix;
 - cleanup runs after success, migration failure, timeout, and interruption;
+- every subprocess command contains the explicit `--env-file`,
+  `--project-directory`, `--project-name`, and absolute `--file` arguments;
+- subprocess `cwd` is the temporary directory and `env` contains only the
+  allowlist plus runner-owned `PWD` and `COMPOSE_DISABLE_ENV_FILE=1`;
+- generated `compose.env` is outside the repository, mode `0600`, and contains
+  no value inherited from repository `.env`;
 - connector profile performs `base -> 20260725_0005 -> 20260429_0004 ->
   20260725_0005`;
 - no production `.env` file or configured `DATABASE_URL` is read.
