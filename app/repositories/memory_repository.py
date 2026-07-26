@@ -50,6 +50,7 @@ class MemoryRepository:
     def historical_predicate(at: datetime):
         moment = MemoryRepository._normalize_at(at)
         return and_(
+            MemoryEntry.history_available.is_(True),
             MemoryEntry.valid_from <= moment,
             or_(MemoryEntry.valid_to.is_(None), MemoryEntry.valid_to > moment),
         )

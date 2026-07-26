@@ -34,6 +34,7 @@ class MemoryEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
     valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    history_available: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     supersedes_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("memory_entries.id", ondelete="RESTRICT"), nullable=True
     )
@@ -52,6 +53,20 @@ class MemoryEntry(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             unique=True,
             sqlite_where=text("supersedes_id IS NOT NULL"),
             postgresql_where=text("supersedes_id IS NOT NULL"),
+        ),
+        Index(
+            "idx_memory_entries_temporal_current",
+            "project_id",
+            "valid_from",
+            "valid_to",
+            "archived",
+        ),
+        Index(
+            "idx_memory_entries_temporal_as_of",
+            "project_id",
+            "history_available",
+            "valid_from",
+            "valid_to",
         ),
     )
 

@@ -28,6 +28,7 @@ def test_memory_entry_defaults_to_unspecified_current_revision(db_session):
     assert entry.valid_from is not None
     assert entry.valid_to is None
     assert entry.supersedes_id is None
+    assert entry.history_available is True
 
 
 @pytest.mark.parametrize("field", ["confidence"])

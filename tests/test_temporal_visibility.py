@@ -1,10 +1,13 @@
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
+
 from app.models.enums import MemoryType
 from app.models.memory_entry import MemoryEntry
 from app.models.project import Project
 from app.repositories.metrics_repository import MetricsRepository
 from app.repositories.project_repository import ProjectRepository
+from app.repositories.memory_repository import MemoryRepository
 
 
 def test_as_of_search_sees_historical_revision_but_current_search_does_not(client):
@@ -60,3 +63,39 @@ def test_project_counts_and_metrics_exclude_future_and_superseded_rows(db_sessio
 
     assert project_counts[project] == 1
     assert metrics["active_entries"] == 1
+
+
+def test_historical_predicate_excludes_legacy_archived_rows(db_session):
+    now = datetime.now(timezone.utc)
+    project = Project(name="Legacy archive boundary", metadata_={})
+    db_session.add(project)
+    db_session.flush()
+    native = MemoryEntry(
+        type=MemoryType.note,
+        content="native history",
+        project_id=project.id,
+        valid_from=now - timedelta(days=2),
+        valid_to=now,
+        archived=True,
+        history_available=True,
+    )
+    legacy = MemoryEntry(
+        type=MemoryType.note,
+        content="legacy archive",
+        project_id=project.id,
+        valid_from=now - timedelta(days=2),
+        valid_to=now,
+        archived=True,
+        history_available=False,
+    )
+    db_session.add_all([native, legacy])
+    db_session.flush()
+
+    visible = db_session.scalars(
+        select(MemoryEntry).where(
+            MemoryRepository.historical_predicate(now - timedelta(days=1))
+        )
+    ).all()
+
+    assert native in visible
+    assert legacy not in visible

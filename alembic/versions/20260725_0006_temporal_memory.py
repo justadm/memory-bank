@@ -1,6 +1,5 @@
 """Add temporal memory fields and project change feeds."""
 
-from datetime import datetime, timezone
 import uuid
 
 from alembic import op
@@ -19,12 +18,37 @@ def upgrade() -> None:
     op.add_column("memory_entries", sa.Column("confidence", sa.Float(), nullable=True))
     op.add_column("memory_entries", sa.Column("valid_from", sa.DateTime(timezone=True), nullable=True))
     op.add_column("memory_entries", sa.Column("valid_to", sa.DateTime(timezone=True), nullable=True))
+    op.add_column("memory_entries", sa.Column("history_available", sa.Boolean(), nullable=True))
     op.add_column("memory_entries", sa.Column("supersedes_id", sa.Uuid(), nullable=True))
+    migration_cutover_at = bind.scalar(sa.text("SELECT CURRENT_TIMESTAMP"))
     op.execute(sa.text("UPDATE memory_entries SET provenance = 'unspecified' WHERE provenance IS NULL"))
-    op.execute(sa.text("UPDATE memory_entries SET valid_from = created_at WHERE valid_from IS NULL"))
+    bind.execute(
+        sa.text(
+            """
+            UPDATE memory_entries
+            SET valid_from = created_at,
+                valid_to = NULL,
+                history_available = TRUE
+            WHERE archived = FALSE
+            """
+        )
+    )
+    bind.execute(
+        sa.text(
+            """
+            UPDATE memory_entries
+            SET valid_from = created_at,
+                valid_to = :migration_cutover_at,
+                history_available = FALSE
+            WHERE archived = TRUE
+            """
+        ),
+        {"migration_cutover_at": migration_cutover_at},
+    )
     if bind.dialect.name != "sqlite":
         op.alter_column("memory_entries", "provenance", nullable=False)
         op.alter_column("memory_entries", "valid_from", nullable=False)
+        op.alter_column("memory_entries", "history_available", nullable=False)
         op.create_foreign_key(
             "fk_memory_entries_supersedes_id",
             "memory_entries",
@@ -48,8 +72,19 @@ def upgrade() -> None:
             "memory_entries",
             "supersedes_id IS NULL OR supersedes_id <> id",
         )
-    op.create_index("idx_memory_entries_temporal_current", "memory_entries", ["project_id", "valid_from", "valid_to", "archived"])
     if bind.dialect.name == "postgresql":
+        op.create_index(
+            "idx_memory_entries_temporal_current",
+            "memory_entries",
+            ["project_id", "valid_from"],
+            postgresql_where=sa.text("archived = FALSE AND valid_to IS NULL"),
+        )
+        op.create_index(
+            "idx_memory_entries_temporal_as_of",
+            "memory_entries",
+            ["project_id", "valid_from", "valid_to"],
+            postgresql_where=sa.text("history_available = TRUE"),
+        )
         op.create_index(
             "uq_memory_single_successor",
             "memory_entries",
@@ -58,6 +93,16 @@ def upgrade() -> None:
             postgresql_where=sa.text("supersedes_id IS NOT NULL"),
         )
     else:
+        op.create_index(
+            "idx_memory_entries_temporal_current",
+            "memory_entries",
+            ["project_id", "valid_from", "valid_to", "archived"],
+        )
+        op.create_index(
+            "idx_memory_entries_temporal_as_of",
+            "memory_entries",
+            ["project_id", "history_available", "valid_from", "valid_to"],
+        )
         op.create_index(
             "uq_memory_single_successor",
             "memory_entries",
@@ -87,10 +132,14 @@ def upgrade() -> None:
         sa.Column("previous_entry_id", sa.Uuid(), nullable=True),
         sa.Column("actor", sa.String(length=100), nullable=False),
         sa.Column("reason", sa.Text(), nullable=True),
-        sa.UniqueConstraint("project_id", "sequence", name="uq_memory_change_event_sequence"),
+        sa.UniqueConstraint(
+            "project_id",
+            "feed_epoch",
+            "sequence",
+            name="uq_memory_change_event_sequence",
+        ),
     )
     op.create_index("idx_memory_change_events_project_sequence", "memory_change_events", ["project_id", "sequence"])
-    now = datetime.now(timezone.utc)
     project_rows = bind.execute(sa.text("SELECT id FROM projects")).all()
     for row in project_rows:
         op.bulk_insert(
@@ -102,7 +151,13 @@ def upgrade() -> None:
                 sa.column("created_at", sa.DateTime(timezone=True)),
                 sa.column("updated_at", sa.DateTime(timezone=True)),
             ),
-            [{"project_id": uuid.UUID(str(row[0])), "feed_epoch": uuid.uuid4(), "sequence": 0, "created_at": now, "updated_at": now}],
+            [{
+                "project_id": uuid.UUID(str(row[0])),
+                "feed_epoch": uuid.uuid4(),
+                "sequence": 0,
+                "created_at": migration_cutover_at,
+                "updated_at": migration_cutover_at,
+            }],
         )
 
 
@@ -112,6 +167,7 @@ def downgrade() -> None:
     op.drop_table("memory_change_events")
     op.drop_table("memory_change_feed_states")
     op.drop_index("uq_memory_single_successor", table_name="memory_entries")
+    op.drop_index("idx_memory_entries_temporal_as_of", table_name="memory_entries")
     op.drop_index("idx_memory_entries_temporal_current", table_name="memory_entries")
     if bind.dialect.name != "sqlite":
         op.drop_constraint("ck_memory_no_self_successor", "memory_entries", type_="check")
@@ -119,6 +175,7 @@ def downgrade() -> None:
         op.drop_constraint("ck_memory_confidence", "memory_entries", type_="check")
         op.drop_constraint("fk_memory_entries_supersedes_id", "memory_entries", type_="foreignkey")
     op.drop_column("memory_entries", "supersedes_id")
+    op.drop_column("memory_entries", "history_available")
     op.drop_column("memory_entries", "valid_to")
     op.drop_column("memory_entries", "valid_from")
     op.drop_column("memory_entries", "confidence")

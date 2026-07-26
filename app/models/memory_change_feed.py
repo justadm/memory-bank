@@ -22,7 +22,15 @@ class MemoryChangeFeedState(TimestampMixin, Base):
 
 class MemoryChangeEvent(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "memory_change_events"
-    __table_args__ = (Index("uq_memory_change_event_sequence", "project_id", "sequence", unique=True),)
+    __table_args__ = (
+        Index(
+            "uq_memory_change_event_sequence",
+            "project_id",
+            "feed_epoch",
+            "sequence",
+            unique=True,
+        ),
+    )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False

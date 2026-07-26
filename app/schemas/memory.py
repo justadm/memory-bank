@@ -68,6 +68,7 @@ class MemoryResponse(BaseModel):
     confidence: float | None
     valid_from: datetime
     valid_to: datetime | None
+    history_available: bool
     supersedes_id: uuid.UUID | None
     is_current: bool | None = None
     successor_id: uuid.UUID | None = None
