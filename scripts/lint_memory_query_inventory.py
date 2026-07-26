@@ -64,6 +64,8 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
     module_aliases: set[str] = set()
     package_aliases: set[str] = set()
     query_aliases = {name: name for name in QUERY_CALLS}
+    cast_aliases: set[str] = set()
+    typing_module_aliases: set[str] = set()
 
     def dotted_parts(node: ast.AST) -> tuple[str, ...]:
         if isinstance(node, ast.Name):
@@ -107,6 +109,32 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
             return node.attr
         return None
 
+    def is_typing_module_reference(node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Name)
+            and node.id in typing_module_aliases
+        )
+
+    def is_cast_reference(node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Name)
+            and node.id in cast_aliases
+        ) or (
+            isinstance(node, ast.Attribute)
+            and node.attr == "cast"
+            and is_typing_module_reference(node.value)
+        )
+
+    def unwrap_transparent_call(node: ast.AST) -> ast.AST:
+        current = node
+        while (
+            isinstance(current, ast.Call)
+            and is_cast_reference(current.func)
+            and len(current.args) == 2
+        ):
+            current = current.args[1]
+        return current
+
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
             if node.level > 0:
@@ -124,10 +152,14 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
                         module_aliases.add(imported.asname or imported.name)
                     elif (
                         relative_module == ""
-                        and imported.name == "models"
+                        and imported.name in {"models", "memory_entry"}
                     ):
                         module_aliases.add(imported.asname or imported.name)
                 continue
+            if node.module in {"typing", "typing_extensions"}:
+                for imported in node.names:
+                    if imported.name == "cast":
+                        cast_aliases.add(imported.asname or imported.name)
             if node.module and node.module.startswith("sqlalchemy"):
                 for imported in node.names:
                     if imported.name in QUERY_CALLS:
@@ -156,6 +188,10 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
                     package_aliases.add("app")
                 elif imported.name == "app":
                     package_aliases.add(imported.asname or "app")
+                elif imported.name in {"typing", "typing_extensions"}:
+                    typing_module_aliases.add(
+                        imported.asname or imported.name
+                    )
 
     changed = True
     while changed:
@@ -163,15 +199,28 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
         for node in ast.walk(tree):
             if not isinstance(node, (ast.Assign, ast.AnnAssign)):
                 continue
-            value = node.value
-            if value is None:
+            raw_value = node.value
+            if raw_value is None:
                 continue
+            value = unwrap_transparent_call(raw_value)
             query_name = query_reference_name(value)
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             for target in targets:
                 if not isinstance(target, ast.Name):
                     continue
-                if query_name and query_aliases.get(target.id) != query_name:
+                if (
+                    is_cast_reference(raw_value)
+                    and target.id not in cast_aliases
+                ):
+                    cast_aliases.add(target.id)
+                    changed = True
+                elif (
+                    is_typing_module_reference(raw_value)
+                    and target.id not in typing_module_aliases
+                ):
+                    typing_module_aliases.add(target.id)
+                    changed = True
+                elif query_name and query_aliases.get(target.id) != query_name:
                     query_aliases[target.id] = query_name
                     changed = True
                 elif is_model_reference(value) and target.id not in model_aliases:
@@ -191,6 +240,13 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
                     changed = True
 
     class AliasNormalizer(ast.NodeTransformer):
+        def visit_Call(self, node: ast.Call):
+            node = self.generic_visit(node)
+            unwrapped = unwrap_transparent_call(node)
+            if unwrapped is not node:
+                return ast.copy_location(unwrapped, node)
+            return node
+
         def visit_Name(self, node: ast.Name):
             if (
                 isinstance(node.ctx, ast.Load)
