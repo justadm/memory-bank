@@ -639,6 +639,24 @@ def lookup(db, flag):
     )
     return query_for(MemoryEntry)
 """,
+        """
+from app.models import MemoryEntry
+
+def lookup(db, fallback, flag):
+    query_for = db.query if flag else fallback
+    return query_for(MemoryEntry)
+""",
+        """
+from app.models import MemoryEntry
+from typing import Any, cast
+
+def lookup(db, fallback, flag):
+    query_for = cast(
+        Any,
+        cast(Any, db.query) if flag else fallback,
+    )
+    return query_for(MemoryEntry)
+""",
     ],
 )
 def test_inventory_detects_conditional_query_aliases(
@@ -684,6 +702,58 @@ def establish_alias(db):
 
 def unrelated(query_for):
     return query_for(MemoryEntry)
+"""
+    )
+    inventory_path = tmp_path / "inventory.json"
+    inventory_path.write_text(
+        json.dumps({"schema_version": 1, "queries": []})
+    )
+
+    findings = check_inventory(
+        app_root=app_root,
+        inventory_path=inventory_path,
+    )
+
+    assert findings == []
+
+
+@pytest.mark.parametrize(
+    "function_body",
+    [
+        """
+    from helpers import q
+    return q(MemoryEntry)
+""",
+        """
+    for q in callables:
+        return q(MemoryEntry)
+    return None
+""",
+        """
+    with manager as q:
+        return q(MemoryEntry)
+""",
+        """
+    try:
+        raise RuntimeError
+    except RuntimeError as q:
+        return q(MemoryEntry)
+""",
+    ],
+)
+def test_query_aliases_respect_lexical_bindings(
+    tmp_path: Path,
+    function_body: str,
+) -> None:
+    app_root = tmp_path / "app"
+    app_root.mkdir()
+    (app_root / "sample.py").write_text(
+        f"""
+from app.models import MemoryEntry
+from sqlalchemy import select as q
+
+def unrelated(callables=(), manager=None):
+{function_body}
 """
     )
     inventory_path = tmp_path / "inventory.json"

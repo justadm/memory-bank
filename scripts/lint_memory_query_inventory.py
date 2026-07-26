@@ -119,8 +119,8 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
                 unwrap_transparent_call(node.orelse),
                 aliases,
             )
-            if body_name and else_name:
-                return body_name
+            if body_name or else_name:
+                return body_name or else_name
         return None
 
     def is_typing_module_reference(node: ast.AST) -> bool:
@@ -332,6 +332,27 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
             ]
         }
 
+    def target_names(target: ast.AST | None) -> set[str]:
+        if target is None:
+            return set()
+        return {
+            child.id
+            for child in ast.walk(target)
+            if isinstance(child, ast.Name)
+        }
+
+    def imported_names(node: ast.Import | ast.ImportFrom) -> set[str]:
+        if isinstance(node, ast.Import):
+            return {
+                imported.asname or imported.name.split(".", 1)[0]
+                for imported in node.names
+            }
+        return {
+            imported.asname or imported.name
+            for imported in node.names
+            if imported.name != "*"
+        }
+
     scope_query_aliases: dict[int, dict[str, str]] = {}
 
     def collect_scope_aliases(
@@ -348,13 +369,28 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
                     targets = node.targets
                 elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)):
                     targets = [node.target]
+                elif isinstance(node, (ast.For, ast.AsyncFor)):
+                    targets = [node.target]
+                elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                    local_names.update(imported_names(node))
+                    continue
+                elif isinstance(node, (ast.With, ast.AsyncWith)):
+                    local_names.update(
+                        name
+                        for item in node.items
+                        for name in target_names(item.optional_vars)
+                    )
+                    continue
+                elif isinstance(node, ast.ExceptHandler):
+                    if node.name:
+                        local_names.add(node.name)
+                    continue
                 else:
                     continue
                 local_names.update(
-                    child.id
+                    name
                     for target in targets
-                    for child in ast.walk(target)
-                    if isinstance(child, ast.Name)
+                    for name in target_names(target)
                 )
         for name in local_names:
             aliases.pop(name, None)
