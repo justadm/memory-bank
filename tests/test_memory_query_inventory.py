@@ -543,6 +543,81 @@ def test_inventory_detects_relative_model_and_keyword_cast_aliases(
     assert "missing inventory row" in findings[0]
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
+from app.models import MemoryEntry
+
+def lookup(db, value):
+    return db.get(entity=MemoryEntry, ident=value)
+""",
+        """
+from app.models import MemoryEntry
+
+def lookup(db, value):
+    fetch_one = db.get
+    return fetch_one(entity=MemoryEntry, ident=value)
+""",
+        """
+from app.models import MemoryEntry
+from typing import Any, cast
+
+def lookup(db, value):
+    fetch_one = cast(Any, db.get)
+    return fetch_one(
+        entity=cast(Any, MemoryEntry),
+        ident=value,
+    )
+""",
+        """
+from app.models import MemoryEntry
+from typing import Any, cast
+
+def lookup(db, value):
+    return cast(Any, db.get)(
+        entity=cast(Any, MemoryEntry),
+        ident=value,
+    )
+""",
+        """
+from app.models import MemoryEntry
+from typing import Any, cast
+
+def lookup(db):
+    return (query_for := cast(Any, db.query))(MemoryEntry)
+""",
+        """
+from app.models import MemoryEntry
+from typing import Any, cast
+
+def lookup(db):
+    query_for, unused = cast(Any, db.query), None
+    return query_for(MemoryEntry)
+""",
+    ],
+)
+def test_inventory_fails_closed_for_keyword_and_complex_aliases(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    app_root = tmp_path / "app"
+    app_root.mkdir()
+    (app_root / "sample.py").write_text(source)
+    inventory_path = tmp_path / "inventory.json"
+    inventory_path.write_text(
+        json.dumps({"schema_version": 1, "queries": []})
+    )
+
+    findings = check_inventory(
+        app_root=app_root,
+        inventory_path=inventory_path,
+    )
+
+    assert len(findings) == 1
+    assert "missing inventory row" in findings[0]
+
+
 def test_current_view_requires_central_predicate_call(tmp_path: Path) -> None:
     app_root = tmp_path / "app"
     app_root.mkdir()

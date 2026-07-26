@@ -147,6 +147,21 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
             current = value
         return current
 
+    def assignment_bindings(
+        target: ast.AST,
+        value: ast.AST,
+    ) -> Iterable[tuple[ast.Name, ast.AST]]:
+        if isinstance(target, ast.Name):
+            yield target, value
+            return
+        if (
+            isinstance(target, (ast.Tuple, ast.List))
+            and isinstance(value, (ast.Tuple, ast.List))
+            and len(target.elts) == len(value.elts)
+        ):
+            for child_target, child_value in zip(target.elts, value.elts):
+                yield from assignment_bindings(child_target, child_value)
+
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
             if node.level > 0:
@@ -215,49 +230,68 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
     while changed:
         changed = False
         for node in ast.walk(tree):
-            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            if not isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
                 continue
             raw_value = node.value
             if raw_value is None:
                 continue
-            value = unwrap_transparent_call(raw_value)
-            query_name = query_reference_name(value)
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            for target in targets:
-                if not isinstance(target, ast.Name):
-                    continue
-                if (
-                    is_cast_reference(raw_value)
-                    and target.id not in cast_aliases
+            for raw_target in targets:
+                for target, bound_value in assignment_bindings(
+                    raw_target,
+                    raw_value,
                 ):
-                    cast_aliases.add(target.id)
-                    changed = True
-                elif (
-                    is_typing_module_reference(raw_value)
-                    and target.id not in typing_module_aliases
-                ):
-                    typing_module_aliases.add(target.id)
-                    changed = True
-                elif query_name and query_aliases.get(target.id) != query_name:
-                    query_aliases[target.id] = query_name
-                    changed = True
-                elif is_model_reference(value) and target.id not in model_aliases:
-                    model_aliases.add(target.id)
-                    changed = True
-                elif (
-                    is_module_reference(value)
-                    and target.id not in module_aliases
-                ):
-                    module_aliases.add(target.id)
-                    changed = True
-                elif (
-                    is_package_reference(value)
-                    and target.id not in package_aliases
-                ):
-                    package_aliases.add(target.id)
-                    changed = True
+                    value = unwrap_transparent_call(bound_value)
+                    query_name = query_reference_name(value)
+                    if (
+                        is_cast_reference(bound_value)
+                        and target.id not in cast_aliases
+                    ):
+                        cast_aliases.add(target.id)
+                        changed = True
+                    elif (
+                        is_typing_module_reference(bound_value)
+                        and target.id not in typing_module_aliases
+                    ):
+                        typing_module_aliases.add(target.id)
+                        changed = True
+                    elif (
+                        query_name
+                        and query_aliases.get(target.id) != query_name
+                    ):
+                        query_aliases[target.id] = query_name
+                        changed = True
+                    elif (
+                        is_model_reference(value)
+                        and target.id not in model_aliases
+                    ):
+                        model_aliases.add(target.id)
+                        changed = True
+                    elif (
+                        is_module_reference(value)
+                        and target.id not in module_aliases
+                    ):
+                        module_aliases.add(target.id)
+                        changed = True
+                    elif (
+                        is_package_reference(value)
+                        and target.id not in package_aliases
+                    ):
+                        package_aliases.add(target.id)
+                        changed = True
 
     class AliasNormalizer(ast.NodeTransformer):
+        def visit_NamedExpr(self, node: ast.NamedExpr):
+            node = self.generic_visit(node)
+            if isinstance(node.target, ast.Name):
+                query_name = query_aliases.get(node.target.id)
+                if query_name:
+                    return ast.copy_location(
+                        ast.Name(id=query_name, ctx=ast.Load()),
+                        node,
+                    )
+            return node
+
         def visit_Call(self, node: ast.Call):
             node = self.generic_visit(node)
             unwrapped = unwrap_transparent_call(node)
@@ -309,7 +343,22 @@ def _has_query_call(node: ast.AST) -> bool:
         if name not in QUERY_CALLS:
             continue
         if name == "get":
-            if child.args and isinstance(child.args[0], ast.Name) and child.args[0].id == "MemoryEntry":
+            positional_entity = child.args[0] if child.args else None
+            keyword_entity = next(
+                (
+                    keyword.value
+                    for keyword in child.keywords
+                    if keyword.arg == "entity"
+                ),
+                None,
+            )
+            if (
+                positional_entity is not None
+                and _references_memory_entry(positional_entity)
+            ) or (
+                keyword_entity is not None
+                and _references_memory_entry(keyword_entity)
+            ):
                 return True
             continue
         if _references_memory_entry(child):
@@ -511,7 +560,22 @@ def _is_exact_id_lookup(node: ast.AST) -> bool:
         ):
             return True
         if isinstance(child, ast.Call) and _call_name(child) == "get":
-            if child.args and isinstance(child.args[0], ast.Name) and child.args[0].id == "MemoryEntry":
+            positional_entity = child.args[0] if child.args else None
+            keyword_entity = next(
+                (
+                    keyword.value
+                    for keyword in child.keywords
+                    if keyword.arg == "entity"
+                ),
+                None,
+            )
+            if (
+                positional_entity is not None
+                and _references_memory_entry(positional_entity)
+            ) or (
+                keyword_entity is not None
+                and _references_memory_entry(keyword_entity)
+            ):
                 return True
     return False
 
