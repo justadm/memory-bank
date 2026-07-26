@@ -475,30 +475,46 @@ class ConnectorService:
         fresh = self.plan_disconnect()
         if not fresh.ready or fresh.actions != plan.actions:
             raise ConnectorConflict("stale disconnect plan")
-        for action in plan.actions:
-            if action.kind != "remove":
-                continue
-            relative = PurePosixPath(action.path)
-            path = self._path(relative)
-            spec = self.registry[relative]
-            if not path.exists():
-                continue
-            if spec.ownership is OwnershipMode.MANAGED_SECTION:
-                text = path.read_text(encoding="utf-8")
-                block = _section(text)
-                if not block or _digest(block[1].encode()) != next(r.content_sha256 for r in plan.manifest.managed_files if r.path == action.path):
-                    raise ConnectorConflict(f"stale disconnect plan: {action.path}")
-                cleaned = text.replace(block[1], "", 1)
-                data = (cleaned.strip() + "\n").encode() if cleaned.strip() else b""
-                _write_atomic(path, data)
-            elif spec.ownership is OwnershipMode.MANAGED_KEYS:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                for key in spec.managed_keys:
-                    data.pop(key, None)
-                if data:
-                    _write_atomic(path, (json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n").encode())
+        snapshots: dict[Path, tuple[bytes, int]] = {}
+
+        def capture(path: Path) -> None:
+            if path.exists() and path not in snapshots:
+                snapshots[path] = (path.read_bytes(), path.stat().st_mode & 0o777)
+
+        def restore() -> None:
+            for path, (content, mode) in reversed(tuple(snapshots.items())):
+                _write_atomic(path, content, mode)
+
+        try:
+            for action in plan.actions:
+                if action.kind != "remove":
+                    continue
+                relative = PurePosixPath(action.path)
+                path = self._path(relative)
+                spec = self.registry[relative]
+                if not path.exists():
+                    continue
+                capture(path)
+                if spec.ownership is OwnershipMode.MANAGED_SECTION:
+                    text = path.read_text(encoding="utf-8")
+                    block = _section(text)
+                    if not block or _digest(block[1].encode()) != next(r.content_sha256 for r in plan.manifest.managed_files if r.path == action.path):
+                        raise ConnectorConflict(f"stale disconnect plan: {action.path}")
+                    cleaned = text.replace(block[1], "", 1)
+                    data = (cleaned.strip() + "\n").encode() if cleaned.strip() else b""
+                    _write_atomic(path, data)
+                elif spec.ownership is OwnershipMode.MANAGED_KEYS:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                    for key in spec.managed_keys:
+                        data.pop(key, None)
+                    if data:
+                        _write_atomic(path, (json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n").encode())
+                    else:
+                        path.unlink()
                 else:
                     path.unlink()
-            else:
-                path.unlink()
-        self.manifest_path.unlink(missing_ok=True)
+            capture(self.manifest_path)
+            self.manifest_path.unlink(missing_ok=True)
+        except BaseException:
+            restore()
+            raise

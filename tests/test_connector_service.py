@@ -125,3 +125,43 @@ def test_connect_rolls_back_all_files_when_apply_fails_midway(tmp_path: Path, mo
     assert (tmp_path / "AGENTS.md").read_text(encoding="utf-8") == original_agents
     assert not service.manifest_path.exists()
     assert not any(path.is_file() for path in (tmp_path / ".memlayer").rglob("*"))
+
+
+def test_disconnect_rolls_back_all_files_when_apply_fails_midway(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = tmp_path / ".memlayer/memlayer.config.json"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        json.dumps({"user_setting": "preserve"}) + "\n",
+        encoding="utf-8",
+    )
+    service = ConnectorService(tmp_path)
+    service.apply_connect(service.plan_connect())
+    before = {
+        path.relative_to(tmp_path): (path.read_bytes(), path.stat().st_mode & 0o777)
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    real_write = connector_service_module._write_atomic
+    failed = False
+
+    def fail_on_config(path, data, mode=None):
+        nonlocal failed
+        if path.name == "memlayer.config.json" and not failed:
+            failed = True
+            raise OSError("synthetic disconnect failure")
+        return real_write(path, data, mode)
+
+    monkeypatch.setattr(connector_service_module, "_write_atomic", fail_on_config)
+
+    with pytest.raises(OSError, match="synthetic disconnect failure"):
+        service.apply_disconnect(service.plan_disconnect())
+
+    after = {
+        path.relative_to(tmp_path): (path.read_bytes(), path.stat().st_mode & 0o777)
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
