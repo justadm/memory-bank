@@ -11,7 +11,7 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from .artifacts import ArtifactSpec, OwnershipMode, RenderContext, artifact_registry, managed_values, render_artifact
-from .manifest import ConnectionManifest, ManifestConflict, ManifestRecord, load_validated_manifest, safe_project_path, validate_manifest, write_manifest_atomic
+from .manifest import ConnectionManifest, ManifestConflict, ManifestRecord, load_validated_manifest, safe_project_path, validate_manifest, validate_manifest_identity, write_manifest_atomic
 
 START = "<!-- MEMLAYER_ROOT_PACK:START -->"
 END = "<!-- MEMLAYER_ROOT_PACK:END -->"
@@ -44,6 +44,7 @@ class ConnectorPlan:
     actions: tuple[ConnectorAction, ...]
     conflicts: tuple[ConnectorConflictItem, ...]
     connector_identity: UUID | None = None
+    project_id: UUID | None = None
     observed: tuple[tuple[str, str | None], ...] = ()
     manifest: ConnectionManifest | None = None
 
@@ -128,7 +129,55 @@ class ConnectorService:
     def _manifest(self) -> ConnectionManifest | None:
         if not self.manifest_path.exists():
             return None
-        return load_validated_manifest(self.manifest_path, project_root=self.root, registry=self.registry)
+        manifest = load_validated_manifest(
+            self.manifest_path,
+            project_root=self.root,
+            registry=self.registry,
+        )
+        config = self._read_config()
+        validate_manifest_identity(manifest, config=config)
+        return manifest
+
+    def _read_config(self) -> dict:
+        path = self._path(PurePosixPath(".memlayer/memlayer.config.json"))
+        if not path.exists():
+            return {}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ManifestConflict("connector config is not valid JSON") from exc
+        if not isinstance(payload, dict):
+            raise ManifestConflict("connector config must be a JSON object")
+        return payload
+
+    def _adoptable_project_id(self, config: dict) -> UUID | None:
+        configured_root = config.get("project_root")
+        configured_name = config.get("project_name")
+        if configured_root is not None:
+            try:
+                if Path(str(configured_root)).expanduser().resolve() != self.root:
+                    raise ManifestConflict(
+                        "manifest-less config belongs to another project root"
+                    )
+            except OSError as exc:
+                raise ManifestConflict(
+                    "manifest-less config has an invalid project root"
+                ) from exc
+        if configured_name is not None and str(configured_name) != self.root.name:
+            raise ManifestConflict(
+                "manifest-less config belongs to another project name"
+            )
+        raw_project_id = config.get("project_id")
+        if raw_project_id is None:
+            return None
+        if configured_root is None:
+            raise ManifestConflict(
+                "manifest-less project identity requires matching project_root"
+            )
+        try:
+            return UUID(str(raw_project_id))
+        except ValueError as exc:
+            raise ManifestConflict("manifest-less config has invalid project_id") from exc
 
     def _observed(self) -> dict[str, str | None]:
         observed: dict[str, str | None] = {}
@@ -217,19 +266,25 @@ class ConnectorService:
         conflicts: list[ConnectorConflictItem] = []
         actions: list[ConnectorAction] = []
         manifest = None
+        adopted_project_id = None
         try:
             manifest = self._manifest()
         except ManifestConflict as exc:
             conflicts.append(ConnectorConflictItem("invalid_manifest", str(self.manifest_path), str(exc)))
         identity = manifest.connector_identity if manifest else None
-        if identity is None:
-            config_path = self._path(PurePosixPath(".memlayer/memlayer.config.json"))
-            if config_path.exists():
-                try:
-                    raw_identity = json.loads(config_path.read_text(encoding="utf-8")).get("connector_identity")
-                    identity = UUID(raw_identity) if raw_identity else None
-                except (OSError, UnicodeError, json.JSONDecodeError, ValueError, AttributeError):
-                    identity = None
+        if manifest is not None:
+            adopted_project_id = manifest.project_id
+        else:
+            try:
+                adopted_project_id = self._adoptable_project_id(self._read_config())
+            except ManifestConflict as exc:
+                conflicts.append(
+                    ConnectorConflictItem(
+                        "foreign_or_invalid_config",
+                        ".memlayer/memlayer.config.json",
+                        str(exc),
+                    )
+                )
         identity = identity or uuid4()
         for relative, spec in self.registry.items():
             path = self._path(relative)
@@ -276,7 +331,16 @@ class ConnectorService:
                         actions.append(ConnectorAction("update_managed_keys", str(relative), spec.ownership, "merge connector keys and preserve unknown keys"))
             except (OSError, UnicodeError, ConnectorConflict) as exc:
                 conflicts.append(ConnectorConflictItem("inventory_error", str(relative), str(exc)))
-        return ConnectorPlan("connect", str(self.root), tuple(actions), tuple(conflicts), identity, tuple(sorted(self._observed().items())), manifest)
+        return ConnectorPlan(
+            operation="connect",
+            project_root=str(self.root),
+            actions=tuple(actions),
+            conflicts=tuple(conflicts),
+            connector_identity=identity,
+            project_id=adopted_project_id,
+            observed=tuple(sorted(self._observed().items())),
+            manifest=manifest,
+        )
 
     def apply_connect(self, plan: ConnectorPlan) -> ConnectionManifest:
         if plan.operation != "connect" or not plan.ready:
@@ -384,7 +448,7 @@ class ConnectorService:
                 else:
                     digest = _digest(path.read_bytes())
                 records.append(ManifestRecord(path=str(relative), ownership=spec.ownership, created_by_connector=created, content_sha256=digest))
-            manifest = ConnectionManifest(schema_version=1, agent="codex", project_root=str(self.root), connector_identity=identity, project_id=None, root_pack_version=1, installed_at=datetime.now(timezone.utc), managed_files=records)
+            manifest = ConnectionManifest(schema_version=1, agent="codex", project_root=str(self.root), connector_identity=identity, project_id=plan.project_id, root_pack_version=1, installed_at=datetime.now(timezone.utc), managed_files=records)
             capture(self.manifest_path)
             write_manifest_atomic(self.manifest_path, manifest)
             return manifest
@@ -398,9 +462,31 @@ class ConnectorService:
         try:
             manifest = self._manifest()
         except ManifestConflict as exc:
-            return ConnectorPlan("disconnect", str(self.root), (), (ConnectorConflictItem("invalid_manifest", str(self.manifest_path), str(exc)),))
+            return ConnectorPlan(
+                operation="disconnect",
+                project_root=str(self.root),
+                actions=(),
+                conflicts=(
+                    ConnectorConflictItem(
+                        "invalid_manifest",
+                        str(self.manifest_path),
+                        str(exc),
+                    ),
+                ),
+            )
         if manifest is None:
-            return ConnectorPlan("disconnect", str(self.root), (), (ConnectorConflictItem("missing_manifest", str(self.manifest_path), "cannot safely disconnect without manifest"),))
+            return ConnectorPlan(
+                operation="disconnect",
+                project_root=str(self.root),
+                actions=(),
+                conflicts=(
+                    ConnectorConflictItem(
+                        "missing_manifest",
+                        str(self.manifest_path),
+                        "cannot safely disconnect without manifest",
+                    ),
+                ),
+            )
         for record in manifest.managed_files:
             spec = self.registry[PurePosixPath(record.path)]
             path = self._path(PurePosixPath(record.path))
@@ -467,7 +553,16 @@ class ConnectorService:
                             "managed config keys differ from manifest",
                         )
                     )
-        return ConnectorPlan("disconnect", str(self.root), tuple(actions), tuple(conflicts), manifest.connector_identity, tuple(sorted(self._observed().items())), manifest)
+        return ConnectorPlan(
+            operation="disconnect",
+            project_root=str(self.root),
+            actions=tuple(actions),
+            conflicts=tuple(conflicts),
+            connector_identity=manifest.connector_identity,
+            project_id=manifest.project_id,
+            observed=tuple(sorted(self._observed().items())),
+            manifest=manifest,
+        )
 
     def apply_disconnect(self, plan: ConnectorPlan) -> None:
         if plan.operation != "disconnect" or not plan.ready or not plan.manifest:

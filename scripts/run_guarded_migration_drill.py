@@ -168,7 +168,14 @@ def run_guarded_migration_drill(
         finally:
             try:
                 run_command(
-                    [*compose_prefix, "down", "--volumes", "--remove-orphans"],
+                    [
+                        *compose_prefix,
+                        "down",
+                        "--volumes",
+                        "--remove-orphans",
+                        "--rmi",
+                        "local",
+                    ],
                     cwd=temp_dir,
                     env=child_env,
                     check=True,

@@ -1,6 +1,9 @@
 import json
 from pathlib import Path
 
+import pytest
+
+import memlayer_connector.cli as connector_cli
 from memlayer_connector.cli import main, run_connect
 from memlayer_connector.manifest import load_validated_manifest
 from memlayer_connector.service import ConnectorService
@@ -65,3 +68,33 @@ def test_registration_retry_reuses_connector_identity(tmp_path: Path):
     )
     assert str(manifest.project_id) == config["project_id"]
     assert service.local_integrity_findings(manifest) == ()
+
+
+def test_registration_persistence_rolls_back_config_when_manifest_write_fails(
+    tmp_path: Path,
+    monkeypatch,
+):
+    service = ConnectorService(tmp_path)
+    manifest = service.apply_connect(service.plan_connect())
+    config_path = tmp_path / ".memlayer/memlayer.config.json"
+    config_before = config_path.read_bytes()
+    manifest_before = service.manifest_path.read_bytes()
+
+    def fail_manifest_write(*args, **kwargs):
+        raise OSError("synthetic manifest failure")
+
+    monkeypatch.setattr(
+        connector_cli,
+        "write_manifest_atomic",
+        fail_manifest_write,
+    )
+
+    with pytest.raises(OSError, match="synthetic manifest failure"):
+        connector_cli._persist_registration(
+            service,
+            manifest,
+            {"project_id": "d8399b69-82ff-46ec-8e03-1930f1c84735"},
+        )
+
+    assert config_path.read_bytes() == config_before
+    assert service.manifest_path.read_bytes() == manifest_before

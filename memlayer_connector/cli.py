@@ -61,6 +61,18 @@ def _emit(payload: dict[str, Any], as_json: bool) -> None:
 
 def _persist_registration(service: ConnectorService, manifest: Any, resolved: dict[str, Any]) -> None:
     config_path = service._path(next(path for path in service.registry if str(path) == ".memlayer/memlayer.config.json"))
+    config_before = config_path.read_bytes() if config_path.exists() else None
+    config_mode = config_path.stat().st_mode & 0o777 if config_path.exists() else None
+    manifest_before = (
+        service.manifest_path.read_bytes()
+        if service.manifest_path.exists()
+        else None
+    )
+    manifest_mode = (
+        service.manifest_path.stat().st_mode & 0o777
+        if service.manifest_path.exists()
+        else None
+    )
     config = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
     config["connector_identity"] = str(manifest.connector_identity)
     config["project_id"] = str(resolved["project_id"])
@@ -74,7 +86,9 @@ def _persist_registration(service: ConnectorService, manifest: Any, resolved: di
         "read_back_at": checked_at,
         "receipt_id": str(uuid4()),
     }
-    _write_atomic(config_path, (json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode())
+    config_bytes = (
+        json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode()
     manifest.project_id = UUID(str(resolved["project_id"]))
     config_spec = next(
         spec
@@ -97,7 +111,23 @@ def _persist_registration(service: ConnectorService, manifest: Any, resolved: di
         if record.path == ".memlayer/memlayer.config.json":
             record.content_sha256 = config_hash
             break
-    write_manifest_atomic(service.manifest_path, manifest)
+    try:
+        _write_atomic(config_path, config_bytes)
+        write_manifest_atomic(service.manifest_path, manifest)
+    except BaseException:
+        if config_before is None:
+            config_path.unlink(missing_ok=True)
+        else:
+            _write_atomic(config_path, config_before, config_mode)
+        if manifest_before is None:
+            service.manifest_path.unlink(missing_ok=True)
+        else:
+            _write_atomic(
+                service.manifest_path,
+                manifest_before,
+                manifest_mode,
+            )
+        raise
 
 
 def run_connect(

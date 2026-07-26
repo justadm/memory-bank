@@ -116,7 +116,13 @@ def test_runner_uses_isolated_compose_context_and_synthetic_env_file(tmp_path: P
         "--exit-code-from",
         "migration",
     ]
-    assert calls[1][0][10:] == ["down", "--volumes", "--remove-orphans"]
+    assert calls[1][0][10:] == [
+        "down",
+        "--volumes",
+        "--remove-orphans",
+        "--rmi",
+        "local",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -146,7 +152,13 @@ def test_runner_always_attempts_cleanup(tmp_path: Path, failure: BaseException) 
             temporary_parent=tmp_path,
         )
 
-    assert calls[-1][-3:] == ["down", "--volumes", "--remove-orphans"]
+    assert calls[-1][-5:] == [
+        "down",
+        "--volumes",
+        "--remove-orphans",
+        "--rmi",
+        "local",
+    ]
 
 
 def test_runner_rejects_target_profile_mismatch_before_compose(tmp_path: Path) -> None:

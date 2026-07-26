@@ -75,6 +75,26 @@ def test_doctor_reports_queue_and_stale_snapshot_without_secrets(tmp_path: Path)
     assert "private" not in serialized
 
 
+def test_doctor_counts_only_valid_queue_records_and_reports_invalid_lines(tmp_path: Path):
+    service = ConnectorService(tmp_path)
+    service.apply_connect(service.plan_connect())
+    (tmp_path / ".memlayer/memlayer.offline.queue.jsonl").write_text(
+        '{"valid":true}\nnot-json\n["not", "an", "object"]\n',
+        encoding="utf-8",
+    )
+
+    output = DoctorService(tmp_path, FakeApi()).check().as_dict()
+
+    assert output["queue_pending"] == 1
+    invalid = [
+        item for item in output["findings"] if item["code"] == "invalid_queue_entry"
+    ]
+    assert [item["path"] for item in invalid] == [
+        ".memlayer/memlayer.offline.queue.jsonl:2",
+        ".memlayer/memlayer.offline.queue.jsonl:3",
+    ]
+
+
 def test_doctor_does_not_report_local_connected_when_managed_file_drifted(tmp_path: Path):
     service = ConnectorService(tmp_path)
     service.apply_connect(service.plan_connect())

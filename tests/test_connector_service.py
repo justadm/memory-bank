@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+from uuid import uuid4
 
 import pytest
 
@@ -8,7 +9,9 @@ from memlayer_connector.manifest import write_manifest_atomic
 from memlayer_connector.service import ConnectorConflict, ConnectorService
 
 
-def test_matching_manifestless_pack_is_adopted_without_rewrite(tmp_path: Path) -> None:
+def test_matching_manifestless_pack_adopts_artifacts_and_rotates_untrusted_identity(
+    tmp_path: Path,
+) -> None:
     service = ConnectorService(tmp_path)
     plan = service.plan_connect()
     assert plan.ready
@@ -19,7 +22,27 @@ def test_matching_manifestless_pack_is_adopted_without_rewrite(tmp_path: Path) -
     assert adopted.ready
     assert any(action.kind == "adopt" for action in adopted.actions)
     service.apply_connect(adopted)
-    assert {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file() if path.name != "connection-manifest.json"} == {path: value for path, value in before.items() if path.name != "connection-manifest.json"}
+    after = {
+        path: path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file() and path.name != "connection-manifest.json"
+    }
+    config_path = tmp_path / ".memlayer/memlayer.config.json"
+    before_without_control_files = {
+        path: value
+        for path, value in before.items()
+        if path.name != "connection-manifest.json" and path != config_path
+    }
+    after_without_control_files = {
+        path: value
+        for path, value in after.items()
+        if path != config_path
+    }
+    assert after_without_control_files == before_without_control_files
+    assert (
+        json.loads(config_path.read_text(encoding="utf-8"))["connector_identity"]
+        != json.loads(before[config_path])["connector_identity"]
+    )
 
 
 def test_unknown_managed_block_fails_before_any_write(tmp_path: Path) -> None:
@@ -165,3 +188,98 @@ def test_disconnect_rolls_back_all_files_when_apply_fails_midway(
         if path.is_file()
     }
     assert after == before
+
+
+def test_reconnect_and_disconnect_reject_config_identity_mismatch(
+    tmp_path: Path,
+) -> None:
+    service = ConnectorService(tmp_path)
+    manifest = service.apply_connect(service.plan_connect())
+    config_path = tmp_path / ".memlayer/memlayer.config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["connector_identity"] = str(uuid4())
+    config_path.write_text(
+        json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    config_spec = service.registry[
+        next(
+            path
+            for path in service.registry
+            if str(path) == ".memlayer/memlayer.config.json"
+        )
+    ]
+    managed = {key: config.get(key) for key in config_spec.managed_keys}
+    from memlayer_connector.service import _digest
+
+    config_hash = _digest(
+        (
+            json.dumps(
+                managed,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode()
+    )
+    for record in manifest.managed_files:
+        if record.path == ".memlayer/memlayer.config.json":
+            record.content_sha256 = config_hash
+    write_manifest_atomic(service.manifest_path, manifest)
+
+    assert service.plan_connect().ready is False
+    assert service.plan_disconnect().ready is False
+
+
+def test_manifestless_foreign_config_is_rejected(tmp_path: Path) -> None:
+    config_path = tmp_path / ".memlayer/memlayer.config.json"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        json.dumps(
+            {
+                "connector_identity": str(uuid4()),
+                "project_id": str(uuid4()),
+                "project_root": "/foreign/project",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    plan = ConnectorService(tmp_path).plan_connect()
+
+    assert plan.ready is False
+    assert any(item.code == "foreign_or_invalid_config" for item in plan.conflicts)
+
+
+def test_manifestless_matching_root_adopts_project_with_new_connector_identity(
+    tmp_path: Path,
+) -> None:
+    old_identity = uuid4()
+    project_id = uuid4()
+    config_path = tmp_path / ".memlayer/memlayer.config.json"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        json.dumps(
+            {
+                "connector_identity": str(old_identity),
+                "project_id": str(project_id),
+                "project_name": tmp_path.name,
+                "project_root": str(tmp_path),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    service = ConnectorService(tmp_path)
+
+    plan = service.plan_connect()
+    manifest = service.apply_connect(plan)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+
+    assert plan.ready is True
+    assert plan.connector_identity != old_identity
+    assert manifest.project_id == project_id
+    assert config["project_id"] == str(project_id)
+    assert config["connector_identity"] == str(plan.connector_identity)

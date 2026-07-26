@@ -111,7 +111,25 @@ class DoctorService:
         queue_pending = 0
         if queue_path.exists():
             try:
-                queue_pending = sum(1 for line in queue_path.read_text(encoding="utf-8").splitlines() if line.strip())
+                for line_number, line in enumerate(
+                    queue_path.read_text(encoding="utf-8").splitlines(),
+                    start=1,
+                ):
+                    if not line.strip():
+                        continue
+                    try:
+                        item = json.loads(line)
+                    except json.JSONDecodeError:
+                        item = None
+                    if not isinstance(item, dict):
+                        findings.append(
+                            DoctorFinding(
+                                "invalid_queue_entry",
+                                f".memlayer/memlayer.offline.queue.jsonl:{line_number}",
+                            )
+                        )
+                        continue
+                    queue_pending += 1
             except (OSError, UnicodeError):
                 findings.append(DoctorFinding("queue_unreadable", ".memlayer/memlayer.offline.queue.jsonl"))
 
