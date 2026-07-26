@@ -116,6 +116,8 @@ class MemoryRevisionResponse(BaseModel):
 
 
 class MemoryRestoreRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     source_entry_id: uuid.UUID | None = None
     reason: str = Field(default="restored historical memory", min_length=1, max_length=500)
 

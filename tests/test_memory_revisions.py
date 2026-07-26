@@ -73,6 +73,24 @@ def test_revision_schema_rejects_identity_and_archive_changes(client):
         assert response.status_code == 422
 
 
+def test_restore_schema_rejects_unknown_identity_fields(client):
+    project = client.post("/projects", json={"name": "Strict restore schema"}).json()
+    entry = client.post(
+        "/memory",
+        json={"type": "note", "content": "before", "project_id": project["id"]},
+    ).json()
+
+    response = client.post(
+        f"/memory/{entry['id']}/restore",
+        json={
+            "reason": "invalid restore identity override",
+            "project_id": project["id"],
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_revision_inherits_links_once_and_exposes_lineage(client):
     project = client.post("/projects", json={"name": "Link inheritance"}).json()
     source = client.post(
