@@ -5,14 +5,14 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from memorybank_sdk import DEFAULT_MEMORYBANK_URL
 
 from .client import api_key_from_process_environment, make_client, resolve_and_verify
 from .doctor import DoctorService
 from .manifest import write_manifest_atomic
-from .service import ConnectorConflict, ConnectorPlan, ConnectorService, _write_atomic
+from .service import ConnectorConflict, ConnectorPlan, ConnectorService, _digest, _write_atomic
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -64,14 +64,39 @@ def _persist_registration(service: ConnectorService, manifest: Any, resolved: di
     config = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
     config["connector_identity"] = str(manifest.connector_identity)
     config["project_id"] = str(resolved["project_id"])
-    config["last_verified_write"] = {
-        "status": "verified",
-        "agent": "codex",
-        "project_id": str(resolved["project_id"]),
-        "verified_at": datetime.now(timezone.utc).isoformat(),
+    checked_at = datetime.now(timezone.utc).isoformat()
+    config["last_write_check"] = {
+        "status": "success",
+        "operation": "project_registration",
+        "target_type": "project",
+        "target_id": str(resolved["project_id"]),
+        "attempted_at": checked_at,
+        "read_back_at": checked_at,
+        "receipt_id": str(uuid4()),
     }
     _write_atomic(config_path, (json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode())
     manifest.project_id = UUID(str(resolved["project_id"]))
+    config_spec = next(
+        spec
+        for path, spec in service.registry.items()
+        if str(path) == ".memlayer/memlayer.config.json"
+    )
+    managed = {key: config.get(key) for key in config_spec.managed_keys}
+    config_hash = _digest(
+        (
+            json.dumps(
+                managed,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode()
+    )
+    for record in manifest.managed_files:
+        if record.path == ".memlayer/memlayer.config.json":
+            record.content_sha256 = config_hash
+            break
     write_manifest_atomic(service.manifest_path, manifest)
 
 

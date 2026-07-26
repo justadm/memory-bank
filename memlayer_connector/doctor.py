@@ -68,6 +68,17 @@ class DoctorService:
             manifest = None
             local_connected = False
             findings.append(DoctorFinding("invalid_manifest", ".memlayer/connection-manifest.json"))
+        if manifest:
+            integrity_findings = self.service.local_integrity_findings(manifest)
+            if integrity_findings:
+                local_connected = False
+                findings.extend(
+                    DoctorFinding(
+                        item.code,
+                        item.path,
+                    )
+                    for item in integrity_findings
+                )
 
         config: dict[str, Any] = {}
         if config_path.exists():
@@ -143,10 +154,20 @@ class DoctorService:
                 if close:
                     close()
 
-        write_check = config.get("last_verified_write") if isinstance(config.get("last_verified_write"), dict) else {}
-        if _fresh(write_check.get("verified_at")) and write_check.get("status") == "verified" and live_read_verified:
+        write_check = config.get("last_write_check") if isinstance(config.get("last_write_check"), dict) else {}
+        successful_receipt = (
+            write_check.get("status") == "success"
+            and write_check.get("operation") in {"project_registration", "memory_write"}
+            and write_check.get("target_type") == "project"
+            and manifest is not None
+            and str(write_check.get("target_id")) == str(manifest.project_id)
+            and bool(write_check.get("receipt_id"))
+            and _fresh(write_check.get("attempted_at"))
+            and _fresh(write_check.get("read_back_at"))
+        )
+        if successful_receipt and live_read_verified:
             live_write_verified: Literal["true", "false", "unknown"] = "true"
-        elif _fresh(write_check.get("checked_at")) and write_check.get("status") == "failed":
+        elif _fresh(write_check.get("attempted_at")) and write_check.get("status") == "failed":
             live_write_verified = "false"
         else:
             live_write_verified = "unknown"

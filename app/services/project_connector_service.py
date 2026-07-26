@@ -37,6 +37,7 @@ class ProjectConnectorService:
                 raise HTTPException(status_code=409, detail={"code": "binding_target_missing"})
             return self._response(project, payload, "resolved")
 
+        project: Project | None
         if payload.existing_project_id:
             project = self.repository.get(payload.existing_project_id)
             if not project:
@@ -50,22 +51,26 @@ class ProjectConnectorService:
                     status_code=status.HTTP_409_CONFLICT,
                     detail={"code": "existing_project_requires_explicit_id", "project_id": str(existing.id)},
                 )
-            metadata = {"tenant_id": tenant_id} if tenant_id else {}
-            project = Project(name=payload.project_name, metadata_=metadata)
-            self.repository.create(project)
+            project = None
             action = "created"
 
-        binding = ProjectConnectorIdentity(
-            agent=payload.agent,
-            normalized_tenant_key=normalized_tenant_key,
-            connector_identity=payload.connector_identity,
-            project_id=project.id,
-        )
-        self.repository.db.add(binding)
         try:
-            self.repository.db.flush()
+            with self.repository.db.begin_nested():
+                if project is None:
+                    metadata = {"tenant_id": tenant_id} if tenant_id else {}
+                    project = self.repository.create(
+                        Project(name=payload.project_name, metadata_=metadata)
+                    )
+                binding = ProjectConnectorIdentity(
+                    agent=payload.agent,
+                    normalized_tenant_key=normalized_tenant_key,
+                    connector_identity=payload.connector_identity,
+                    project_id=project.id,
+                )
+                self.repository.db.add(binding)
+                self.repository.db.flush()
         except IntegrityError as exc:
-            self.repository.db.rollback()
+            self.repository.db.expire_all()
             winner = self.repository.get_connector_identity(
                 agent=payload.agent,
                 normalized_tenant_key=normalized_tenant_key,
@@ -76,6 +81,7 @@ class ProjectConnectorService:
                 if winner_project:
                     return self._response(winner_project, payload, "resolved")
             raise HTTPException(status_code=409, detail={"code": "connector_identity_race"}) from exc
+        assert project is not None
         return self._response(project, payload, action)
 
     @staticmethod

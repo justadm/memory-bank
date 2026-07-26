@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 
 from memlayer_connector.cli import main, run_connect
+from memlayer_connector.manifest import load_validated_manifest
+from memlayer_connector.service import ConnectorService
 
 
 def test_connect_is_dry_run_by_default(tmp_path: Path, capsys):
@@ -49,4 +51,17 @@ def test_registration_retry_reuses_connector_identity(tmp_path: Path):
     assert fake.connector_identities == [result["connector_identity"]] * 2
     assert fake.import_calls == []
     assert result["status"] == "registered"
-    assert json.loads((tmp_path / ".memlayer/memlayer.config.json").read_text())["project_id"] == "d8399b69-82ff-46ec-8e03-1930f1c84735"
+    config = json.loads((tmp_path / ".memlayer/memlayer.config.json").read_text())
+    assert config["project_id"] == "d8399b69-82ff-46ec-8e03-1930f1c84735"
+    assert config["last_write_check"]["status"] == "success"
+    assert config["last_write_check"]["target_id"] == config["project_id"]
+    assert config["last_write_check"]["receipt_id"]
+
+    service = ConnectorService(tmp_path)
+    manifest = load_validated_manifest(
+        service.manifest_path,
+        project_root=tmp_path,
+        registry=service.registry,
+    )
+    assert str(manifest.project_id) == config["project_id"]
+    assert service.local_integrity_findings(manifest) == ()

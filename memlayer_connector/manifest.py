@@ -47,8 +47,8 @@ def _canonical_root(project_root: str | Path) -> Path:
     return root.resolve()
 
 
-def _validate_hash(record: ManifestRecord, expected_ownership: OwnershipMode) -> None:
-    if expected_ownership is OwnershipMode.USER_OWNED:
+def _validate_hash(record: ManifestRecord, spec: ArtifactSpec) -> None:
+    if spec.ownership is OwnershipMode.USER_OWNED:
         if record.content_sha256 is not None:
             raise ManifestConflict(f"user-owned artifact must not have a hash: {record.path}")
         return
@@ -57,6 +57,16 @@ def _validate_hash(record: ManifestRecord, expected_ownership: OwnershipMode) ->
     digest = record.content_sha256.removeprefix("sha256:")
     if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
         raise ManifestConflict(f"invalid content hash: {record.path}")
+    if (
+        spec.ownership
+        in {
+            OwnershipMode.WHOLE_FILE,
+            OwnershipMode.MANAGED_SECTION,
+            OwnershipMode.MANAGED_LINE,
+        }
+        and record.content_sha256 != spec.expected_sha256
+    ):
+        raise ManifestConflict(f"manifest hash is not a released connector artifact: {record.path}")
 
 
 def safe_project_path(
@@ -130,7 +140,7 @@ def validate_manifest(
         expected = registry[path]
         if record.ownership is not expected.ownership:
             raise ManifestConflict(f"manifest ownership mismatch: {record.path}")
-        _validate_hash(record, expected.ownership)
+        _validate_hash(record, expected)
     if seen != expected_paths:
         missing = sorted(str(path) for path in expected_paths - seen)
         extra = sorted(str(path) for path in seen - expected_paths)

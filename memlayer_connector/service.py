@@ -57,6 +57,7 @@ def _digest(data: bytes) -> str:
 
 
 def _write_atomic(path: Path, data: bytes, mode: int | None = None) -> None:
+    previous_mode = path.stat().st_mode & 0o777 if path.exists() else None
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
@@ -65,15 +66,21 @@ def _write_atomic(path: Path, data: bytes, mode: int | None = None) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
-        if mode is not None:
-            path.chmod(mode)
+        effective_mode = mode if mode is not None else previous_mode
+        if effective_mode is not None:
+            path.chmod(effective_mode)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
 
 
 def _render_new_agents(context: RenderContext, section: bytes) -> bytes:
-    return f"# {context.project_name} Agent Guide\n\nThis repository is connected to MemLayer.\n\n{START}\n".encode() + section + f"{END}\n".encode()
+    return (
+        f"# {context.project_name} Agent Guide\n\n"
+        f"This repository is connected to MemLayer.\n\n{START}\n".encode()
+        + section.rstrip()
+        + f"\n{END}\n".encode()
+    )
 
 
 def _section(text: str) -> tuple[str, str] | None:
@@ -149,6 +156,63 @@ class ConnectorService:
                 observed[str(relative)] = _digest(path.read_bytes())
         return observed
 
+    def local_integrity_findings(
+        self,
+        manifest: ConnectionManifest,
+    ) -> tuple[ConnectorConflictItem, ...]:
+        records = {PurePosixPath(record.path): record for record in manifest.managed_files}
+        findings: list[ConnectorConflictItem] = []
+        for relative, spec in self.registry.items():
+            path = self._path(relative)
+            record = records[relative]
+            if not path.exists():
+                findings.append(
+                    ConnectorConflictItem(
+                        "missing_managed_artifact",
+                        str(relative),
+                        "connector artifact is absent",
+                    )
+                )
+                continue
+            if spec.ownership is OwnershipMode.USER_OWNED:
+                continue
+            if spec.ownership is OwnershipMode.CREATE_IF_ABSENT:
+                continue
+            try:
+                if spec.ownership is OwnershipMode.MANAGED_KEYS:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                    managed = {key: payload.get(key) for key in spec.managed_keys}
+                    actual = _digest(
+                        (
+                            json.dumps(
+                                managed,
+                                ensure_ascii=False,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            )
+                            + "\n"
+                        ).encode()
+                    )
+                elif spec.ownership is OwnershipMode.MANAGED_SECTION:
+                    block = _section(path.read_text(encoding="utf-8"))
+                    actual = _digest(block[1].encode()) if block else None
+                elif spec.ownership is OwnershipMode.MANAGED_LINE:
+                    lines = path.read_text(encoding="utf-8").splitlines()
+                    actual = _digest(b".memlayer/\n") if lines.count(".memlayer/") == 1 else None
+                else:
+                    actual = _digest(path.read_bytes())
+            except (OSError, UnicodeError, json.JSONDecodeError, ConnectorConflict):
+                actual = None
+            if actual != record.content_sha256:
+                findings.append(
+                    ConnectorConflictItem(
+                        "managed_artifact_drift",
+                        str(relative),
+                        "managed content does not match the connection manifest",
+                    )
+                )
+        return tuple(findings)
+
     def plan_connect(self) -> ConnectorPlan:
         conflicts: list[ConnectorConflictItem] = []
         actions: list[ConnectorAction] = []
@@ -220,7 +284,38 @@ class ConnectorService:
         if tuple(sorted(self._observed().items())) != plan.observed:
             raise ConnectorConflict("stale connect plan")
         identity = plan.connector_identity or uuid4()
-        changed: list[Path] = []
+        snapshots: dict[Path, tuple[bytes | None, int | None]] = {}
+
+        def capture(path: Path, *, read_existing: bool = True) -> None:
+            if path in snapshots:
+                return
+            if path.exists():
+                snapshots[path] = (
+                    path.read_bytes() if read_existing else None,
+                    path.stat().st_mode & 0o777,
+                )
+            else:
+                snapshots[path] = (None, None)
+
+        def restore() -> None:
+            for path, (content, mode) in reversed(tuple(snapshots.items())):
+                if content is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    _write_atomic(path, content, mode)
+            for path in sorted(
+                {item.parent for item in snapshots},
+                key=lambda item: len(item.parts),
+                reverse=True,
+            ):
+                current = path
+                while current != self.root and current.is_relative_to(self.root):
+                    try:
+                        current.rmdir()
+                    except OSError:
+                        break
+                    current = current.parent
+
         try:
             for action in plan.actions:
                 relative = PurePosixPath(action.path)
@@ -228,10 +323,12 @@ class ConnectorService:
                 path = self._path(relative)
                 if spec.ownership is OwnershipMode.USER_OWNED:
                     if not path.exists():
+                        capture(path, read_existing=False)
                         _write_atomic(path, b"", 0o600)
                     continue
                 if action.kind in {"preserve", "adopt"}:
                     continue
+                capture(path)
                 if spec.ownership is OwnershipMode.MANAGED_SECTION:
                     section = render_artifact(spec, self.context).decode().strip()
                     if path.exists():
@@ -254,11 +351,20 @@ class ConnectorService:
                         _write_atomic(path, render_artifact(spec, self.context))
                 elif spec.ownership is OwnershipMode.WHOLE_FILE:
                     _write_atomic(path, render_artifact(spec, self.context), 0o755 if spec.executable else None)
-                changed.append(path)
             records: list[ManifestRecord] = []
             for relative, spec in self.registry.items():
                 path = self._path(relative)
-                created = any(action.path == str(relative) and action.kind in {"create", "update_managed_section"} for action in plan.actions)
+                created = any(
+                    action.path == str(relative)
+                    and action.kind
+                    in {
+                        "create",
+                        "update_managed_section",
+                        "update_managed_keys",
+                        "upgrade",
+                    }
+                    for action in plan.actions
+                )
                 if spec.ownership is OwnershipMode.USER_OWNED:
                     digest = None
                 elif spec.ownership is OwnershipMode.MANAGED_KEYS:
@@ -279,9 +385,11 @@ class ConnectorService:
                     digest = _digest(path.read_bytes())
                 records.append(ManifestRecord(path=str(relative), ownership=spec.ownership, created_by_connector=created, content_sha256=digest))
             manifest = ConnectionManifest(schema_version=1, agent="codex", project_root=str(self.root), connector_identity=identity, project_id=None, root_pack_version=1, installed_at=datetime.now(timezone.utc), managed_files=records)
+            capture(self.manifest_path)
             write_manifest_atomic(self.manifest_path, manifest)
             return manifest
-        except Exception:
+        except BaseException:
+            restore()
             raise
 
     def plan_disconnect(self) -> ConnectorPlan:
@@ -296,7 +404,21 @@ class ConnectorService:
         for record in manifest.managed_files:
             spec = self.registry[PurePosixPath(record.path)]
             path = self._path(PurePosixPath(record.path))
-            if spec.ownership is OwnershipMode.USER_OWNED or not record.created_by_connector:
+            if spec.ownership in {
+                OwnershipMode.USER_OWNED,
+                OwnershipMode.CREATE_IF_ABSENT,
+                OwnershipMode.MANAGED_LINE,
+            }:
+                actions.append(
+                    ConnectorAction(
+                        "preserve",
+                        record.path,
+                        spec.ownership,
+                        "ownership contract requires preservation",
+                    )
+                )
+                continue
+            if not record.created_by_connector:
                 actions.append(ConnectorAction("preserve", record.path, spec.ownership, "not connector-owned"))
                 continue
             if not path.exists():
@@ -304,34 +426,55 @@ class ConnectorService:
                 continue
             if spec.ownership is OwnershipMode.WHOLE_FILE:
                 actual = _digest(path.read_bytes())
-                if actual != record.content_sha256:
+                if actual != record.content_sha256 or actual != spec.expected_sha256:
                     conflicts.append(ConnectorConflictItem("modified_managed_file", record.path, "hash differs from manifest"))
                 else:
                     actions.append(ConnectorAction("remove", record.path, spec.ownership, "unchanged connector-created file"))
             elif spec.ownership is OwnershipMode.MANAGED_SECTION:
                 block = _section(path.read_text(encoding="utf-8"))
-                if not block or _digest(block[1].encode()) != record.content_sha256:
+                if (
+                    not block
+                    or _digest(block[1].encode()) != record.content_sha256
+                    or record.content_sha256 != spec.expected_sha256
+                ):
                     conflicts.append(ConnectorConflictItem("modified_managed_section", record.path, "managed section hash differs"))
                 else:
                     actions.append(ConnectorAction("remove", record.path, spec.ownership, "remove unchanged managed section"))
-            elif spec.ownership is OwnershipMode.MANAGED_LINE:
-                text = path.read_text(encoding="utf-8")
-                if text.splitlines().count(".memlayer/") != 1:
-                    conflicts.append(ConnectorConflictItem("modified_managed_line", record.path, "managed line changed"))
-                else:
-                    actions.append(ConnectorAction("remove", record.path, spec.ownership, "remove connector-added line"))
             elif spec.ownership is OwnershipMode.MANAGED_KEYS:
-                actions.append(ConnectorAction("remove", record.path, spec.ownership, "remove connector keys while preserving unknown keys"))
-            elif spec.ownership is OwnershipMode.CREATE_IF_ABSENT:
-                if _digest(path.read_bytes()) == record.content_sha256 and (spec.path.name != "memlayer.offline.queue.jsonl" or path.read_text(encoding="utf-8").strip() == ""):
+                try:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                    managed = {key: payload.get(key) for key in spec.managed_keys}
+                    actual = _digest(
+                        (
+                            json.dumps(
+                                managed,
+                                ensure_ascii=False,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            )
+                            + "\n"
+                        ).encode()
+                    )
+                except (OSError, UnicodeError, json.JSONDecodeError):
+                    actual = None
+                if actual == record.content_sha256:
                     actions.append(ConnectorAction("remove", record.path, spec.ownership, "unchanged initial runtime file"))
                 else:
-                    actions.append(ConnectorAction("preserve", record.path, spec.ownership, "runtime state changed"))
+                    conflicts.append(
+                        ConnectorConflictItem(
+                            "modified_managed_keys",
+                            record.path,
+                            "managed config keys differ from manifest",
+                        )
+                    )
         return ConnectorPlan("disconnect", str(self.root), tuple(actions), tuple(conflicts), manifest.connector_identity, tuple(sorted(self._observed().items())), manifest)
 
     def apply_disconnect(self, plan: ConnectorPlan) -> None:
         if plan.operation != "disconnect" or not plan.ready or not plan.manifest:
             raise ConnectorConflict("disconnect plan is not ready")
+        fresh = self.plan_disconnect()
+        if not fresh.ready or fresh.actions != plan.actions:
+            raise ConnectorConflict("stale disconnect plan")
         for action in plan.actions:
             if action.kind != "remove":
                 continue
@@ -348,10 +491,6 @@ class ConnectorService:
                 cleaned = text.replace(block[1], "", 1)
                 data = (cleaned.strip() + "\n").encode() if cleaned.strip() else b""
                 _write_atomic(path, data)
-            elif spec.ownership is OwnershipMode.MANAGED_LINE:
-                lines = path.read_text(encoding="utf-8").splitlines()
-                lines.remove(".memlayer/")
-                _write_atomic(path, ("\n".join(lines).rstrip() + "\n" if lines else "").encode())
             elif spec.ownership is OwnershipMode.MANAGED_KEYS:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 for key in spec.managed_keys:

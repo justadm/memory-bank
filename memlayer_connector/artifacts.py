@@ -17,6 +17,8 @@ FORMATTED_TEMPLATES = {
     "MEMLAYER.md.tmpl",
     "env.memlayer.example.tmpl",
 }
+MANAGED_SECTION_START = "<!-- MEMLAYER_ROOT_PACK:START -->"
+MANAGED_SECTION_END = "<!-- MEMLAYER_ROOT_PACK:END -->"
 
 
 class OwnershipMode(str, Enum):
@@ -79,6 +81,8 @@ def _specs() -> tuple[ArtifactSpec, ...]:
                 "project_name",
                 "project_root",
                 "connector_identity",
+                "project_id",
+                "tenant_id",
                 "preferred_url",
                 "local_fallback_url",
                 "human_preferred_url",
@@ -156,7 +160,14 @@ def artifact_registry(agent: str, root_pack_version: int, context: RenderContext
             raise ValueError(f"duplicate artifact path: {spec.path}")
         expected = None
         if spec.ownership is not OwnershipMode.USER_OWNED:
-            expected = "sha256:" + hashlib.sha256(render_artifact(spec, context)).hexdigest()
+            rendered = render_artifact(spec, context)
+            if spec.ownership is OwnershipMode.MANAGED_SECTION:
+                rendered = (
+                    f"{MANAGED_SECTION_START}\n".encode()
+                    + rendered.strip()
+                    + f"\n{MANAGED_SECTION_END}".encode()
+                )
+            expected = "sha256:" + hashlib.sha256(rendered).hexdigest()
         result[spec.path] = replace(spec, expected_sha256=expected)
     return result
 

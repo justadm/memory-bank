@@ -28,6 +28,28 @@ def test_write_scope_is_authorized_not_verified(tmp_path: Path):
     config = json.loads(config_path.read_text())
     config["project_id"] = str(manifest.project_id)
     config_path.write_text(json.dumps(config), encoding="utf-8")
+    from memlayer_connector.service import _digest
+
+    config_spec = next(
+        spec
+        for path, spec in service.registry.items()
+        if str(path) == ".memlayer/memlayer.config.json"
+    )
+    managed = {key: config.get(key) for key in config_spec.managed_keys}
+    for record in manifest.managed_files:
+        if record.path == ".memlayer/memlayer.config.json":
+            record.content_sha256 = _digest(
+                (
+                    json.dumps(
+                        managed,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                    + "\n"
+                ).encode()
+            )
+    write_manifest_atomic(service.manifest_path, manifest)
 
     report = DoctorService(tmp_path, FakeApi()).check()
 
@@ -51,3 +73,14 @@ def test_doctor_reports_queue_and_stale_snapshot_without_secrets(tmp_path: Path)
     assert any(item["code"] == "stale_snapshot" for item in output["findings"])
     assert "abc" not in serialized
     assert "private" not in serialized
+
+
+def test_doctor_does_not_report_local_connected_when_managed_file_drifted(tmp_path: Path):
+    service = ConnectorService(tmp_path)
+    service.apply_connect(service.plan_connect())
+    (tmp_path / ".agents/skills/memlayer/SKILL.md").write_text("modified\n", encoding="utf-8")
+
+    output = DoctorService(tmp_path, FakeApi()).check().as_dict()
+
+    assert output["local_connected"] is False
+    assert any(item["code"] == "managed_artifact_drift" for item in output["findings"])
