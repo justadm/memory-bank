@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from app.models.memory_entry import MemoryEntry
 from app.models.project import Project
 from app.models.project_connector_identity import ProjectConnectorIdentity
+from app.repositories.memory_repository import MemoryRepository
 
 
 class ProjectRepository:
@@ -23,10 +25,16 @@ class ProjectRepository:
     def list(self) -> list[Project]:
         return list(self.db.scalars(select(Project).order_by(Project.created_at.desc())))
 
-    def list_with_entry_counts(self) -> list[tuple[Project, int]]:
+    def list_with_entry_counts(self, *, at: datetime | None = None) -> list[tuple[Project, int]]:
         rows = self.db.execute(
             select(Project, func.count(MemoryEntry.id))
-            .outerjoin(MemoryEntry, MemoryEntry.project_id == Project.id)
+            .outerjoin(
+                MemoryEntry,
+                and_(
+                    MemoryEntry.project_id == Project.id,
+                    MemoryRepository.current_predicate(at),
+                ),
+            )
             .group_by(Project.id)
             .order_by(Project.created_at.desc())
         ).all()
@@ -65,7 +73,9 @@ class ProjectRepository:
 
     def has_memory_entries(self, project_id: uuid.UUID) -> bool:
         return self.db.scalar(
-            select(MemoryEntry.id).where(MemoryEntry.project_id == project_id).limit(1)
+            select(Project.id)
+            .where(Project.id == project_id, Project.memory_entries.any())
+            .limit(1)
         ) is not None
 
     def delete(self, project: Project) -> None:

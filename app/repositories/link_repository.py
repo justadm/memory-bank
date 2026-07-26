@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.enums import MemoryLinkType
 from app.models.memory_entry import MemoryEntry
 from app.models.memory_link import MemoryLink
+from app.repositories.memory_repository import MemoryRepository
 
 
 class LinkRepository:
@@ -76,6 +77,13 @@ class LinkRepository:
                         visited.add(next_id)
                         queue.append((next_id, current_depth + 1))
 
-        nodes = list(self.db.scalars(select(MemoryEntry).where(MemoryEntry.id.in_(visited))))
+        nodes = list(
+            self.db.scalars(
+                select(MemoryEntry).where(
+                    MemoryEntry.id.in_(visited),
+                    MemoryRepository.current_predicate(),
+                )
+            )
+        )
         edges = list(self.db.scalars(select(MemoryLink).where(MemoryLink.id.in_(edge_ids))))
         return nodes, edges

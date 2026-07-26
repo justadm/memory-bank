@@ -10,6 +10,7 @@ from app.models.memory_entry import MemoryEntry
 from app.models.memory_link import MemoryLink
 from app.models.project import Project
 from app.models.task_log import TaskLog
+from app.repositories.memory_repository import MemoryRepository
 
 
 class MetricsRepository:
@@ -17,17 +18,20 @@ class MetricsRepository:
         self.db = db
 
     def memory_overview(self, *, project_id: uuid.UUID | None = None, tenant_ids: set[str] | None = None) -> dict:
+        now = datetime.now(timezone.utc)
+        current = MemoryRepository.current_predicate(now)
+        historical = MemoryRepository.historical_predicate(now)
         stmt = select(
-            func.count(MemoryEntry.id),
-            func.count(MemoryEntry.id).filter(MemoryEntry.archived.is_(False)),
-            func.count(MemoryEntry.id).filter(MemoryEntry.archived.is_(True)),
+            func.count(MemoryEntry.id).filter(historical),
+            func.count(MemoryEntry.id).filter(current),
+            func.count(MemoryEntry.id).filter(historical, MemoryEntry.archived.is_(True)),
             (
                 func.count(MemoryEntry.id).filter(
-                    MemoryEntry.archived.is_(False),
+                    current,
                     MemoryEntry.usage_count > 0,
                 )
                 / cast(
-                    func.nullif(func.count(MemoryEntry.id).filter(MemoryEntry.archived.is_(False)), 0),
+                    func.nullif(func.count(MemoryEntry.id).filter(current), 0),
                     Float,
                 )
             ),
@@ -43,9 +47,13 @@ class MetricsRepository:
             select(func.count(func.distinct(MemoryEntry.id)))
             .select_from(MemoryEntry)
             .outerjoin(MemoryLink, or_(MemoryLink.from_entry_id == MemoryEntry.id, MemoryLink.to_entry_id == MemoryEntry.id))
-            .where(MemoryEntry.archived.is_(False), MemoryLink.id.is_(None))
+            .where(MemoryRepository.current_predicate(now), MemoryLink.id.is_(None))
         )
-        active_stmt = select(func.count(MemoryEntry.id)).select_from(MemoryEntry).where(MemoryEntry.archived.is_(False))
+        active_stmt = (
+            select(func.count(MemoryEntry.id))
+            .select_from(MemoryEntry)
+            .where(MemoryRepository.current_predicate(now))
+        )
         if tenant_ids is not None:
             orphan_stmt = orphan_stmt.join(Project, Project.id == MemoryEntry.project_id).where(
                 self._project_tenant_clause(tenant_ids)
@@ -70,13 +78,22 @@ class MetricsRepository:
         }
 
     def graph_overview(self, *, project_id: uuid.UUID | None = None, tenant_ids: set[str] | None = None) -> dict:
+        now = datetime.now(timezone.utc)
         stmt = select(
             func.count(MemoryLink.id),
             func.avg(MemoryLink.strength),
         )
         if project_id or tenant_ids is not None:
-            from_entries = select(MemoryEntry.id).select_from(MemoryEntry)
-            to_entries = select(MemoryEntry.id).select_from(MemoryEntry)
+            from_entries = (
+                select(MemoryEntry.id)
+                .select_from(MemoryEntry)
+                .where(MemoryRepository.current_predicate(now))
+            )
+            to_entries = (
+                select(MemoryEntry.id)
+                .select_from(MemoryEntry)
+                .where(MemoryRepository.current_predicate(now))
+            )
             if tenant_ids is not None:
                 from_entries = from_entries.join(Project, Project.id == MemoryEntry.project_id).where(
                     self._project_tenant_clause(tenant_ids)
@@ -167,7 +184,14 @@ class MetricsRepository:
 
     def recent_activity_overview(self, *, window_hours: int = 24, tenant_ids: set[str] | None = None) -> dict:
         threshold = datetime.now(timezone.utc) - timedelta(hours=window_hours)
-        memory_stmt = select(func.count(MemoryEntry.id)).select_from(MemoryEntry).where(MemoryEntry.created_at >= threshold)
+        memory_stmt = (
+            select(func.count(MemoryEntry.id))
+            .select_from(MemoryEntry)
+            .where(
+                MemoryRepository.current_predicate(),
+                MemoryEntry.created_at >= threshold,
+            )
+        )
         if tenant_ids is not None:
             memory_stmt = memory_stmt.join(Project, Project.id == MemoryEntry.project_id).where(
                 self._project_tenant_clause(tenant_ids)
@@ -280,12 +304,7 @@ class MetricsRepository:
         }
 
     def _memory_entries(self, *, project_id: uuid.UUID | None = None, tenant_ids: set[str] | None = None) -> list[MemoryEntry]:
-        now = datetime.now(timezone.utc)
-        stmt = select(MemoryEntry).where(
-            MemoryEntry.valid_from <= now,
-            or_(MemoryEntry.valid_to.is_(None), MemoryEntry.valid_to > now),
-            MemoryEntry.archived.is_(False),
-        )
+        stmt = select(MemoryEntry).where(MemoryRepository.current_predicate())
         if project_id:
             stmt = stmt.where(MemoryEntry.project_id == project_id)
         if tenant_ids is not None:

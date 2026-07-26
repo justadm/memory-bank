@@ -1,0 +1,173 @@
+{
+  "queries": [
+    {
+      "classification": "exact-id-view",
+      "key": "app/repositories/link_repository.py:LinkRepository.get_graph:362373232e97224019c760e1e8962478bbb4dfac53a81b3bf84e2cbc7934156a",
+      "owner": "LinkRepository.get_graph",
+      "required_guard": "exact_id"
+    },
+    {
+      "classification": "historical-view",
+      "key": "app/repositories/memory_repository.py:MemoryRepository._relaxed_text_search:63bc0c009646c1858e77c6b606b12d541912cbd7e7511b48fb4a1da9305b4604",
+      "owner": "MemoryRepository._relaxed_text_search",
+      "required_guard": "historical_predicate"
+    },
+    {
+      "classification": "historical-view",
+      "key": "app/repositories/memory_repository.py:MemoryRepository._relaxed_text_search:d4629d1ec024609a698042b2b312395fcf2622238df6d2f6b0befb86182f53a5",
+      "owner": "MemoryRepository._relaxed_text_search",
+      "required_guard": "historical_predicate"
+    },
+    {
+      "classification": "current-view",
+      "key": "app/repositories/memory_repository.py:MemoryRepository.archive_stale:01a6246be21396a1d431f9e87b3df10fcc51963081ae40fe5c53a534bdf81ec2",
+      "owner": "MemoryRepository.archive_stale",
+      "required_guard": "current_predicate"
+    },
+    {
+      "classification": "current-view",
+      "key": "app/repositories/memory_repository.py:MemoryRepository.find_import_match:f210520a48c55f6cfa7f0b163694a7543e5a01dc43e7ea98f832cf450146fb5f",
+      "owner": "MemoryRepository.find_import_match",
+      "required_guard": "current_predicate"
+    },
+    {
+      "classification": "exact-id-view",
+      "key": "app/repositories/memory_repository.py:MemoryRepository.get:bb5006f154546f13776d958e61420a1ff02547dc65b89f82f60795bf8791dfbd",
+      "owner": "MemoryRepository.get",
+      "required_guard": "exact_id"
+    },
+    {
+      "classification": "historical-view",
+      "key": "app/repositories/memory_repository.py:MemoryRepository.list:2b3023eddb6d815efd9608949d8fc1ad3a9c9bd6c51a089d6a450f4d9dd072bf",
+      "owner": "MemoryRepository.list",
+      "required_guard": "historical_predicate"
+    },
+    {
+      "classification": "current-view",
+      "key": "app/repositories/memory_repository.py:MemoryRepository.list_decision_conflicts:320f82f90231a3f2395e4b0b6a111f2e7cb5344c7b3ee703e705637ea87ffae3",
+      "owner": "MemoryRepository.list_decision_conflicts",
+      "required_guard": "current_predicate"
+    },
+    {
+      "classification": "current-view",
+      "key": "app/repositories/memory_repository.py:MemoryRepository.list_import_conflicts:af52614a247b3f2daece6cda09ae64c27b640e5ae5432c35e106d49bf2fe7495",
+      "owner": "MemoryRepository.list_import_conflicts",
+      "required_guard": "current_predicate"
+    },
+    {
+      "classification": "current-view",
+      "key": "app/repositories/memory_repository.py:MemoryRepository.list_import_project_summaries:508e45d227c2c4e5b360b41534eee291f8acdcdf8de29e361c78612c6b032bb8",
+      "owner": "MemoryRepository.list_import_project_summaries",
+      "required_guard": "current_predicate"
+    },
+    {
+      "classification": "current-view",
+      "key": "app/repositories/memory_repository.py:MemoryRepository.list_import_project_summaries:760ce47135dad9d24a9b11721ad17364fb352d67abe5a4da8f86ba7812201f54",
+      "owner": "MemoryRepository.list_import_project_summaries",
+      "required_guard": "current_predicate"
+    },
+    {
+      "classification": "current-view",
+      "key": "app/repositories/memory_repository.py:MemoryRepository.list_quality_review_required:af52614a247b3f2daece6cda09ae64c27b640e5ae5432c35e106d49bf2fe7495",
+      "owner": "MemoryRepository.list_quality_review_required",
+      "required_guard": "current_predicate"
+    },
+    {
+      "classification": "current-view",
+      "key": "app/repositories/memory_repository.py:MemoryRepository.list_review_overdue:af52614a247b3f2daece6cda09ae64c27b640e5ae5432c35e106d49bf2fe7495",
+      "owner": "MemoryRepository.list_review_overdue",
+      "required_guard": "current_predicate"
+    },
+    {
+      "classification": "historical-view",
+      "key": "app/repositories/memory_repository.py:MemoryRepository.search:9f07d9578028f83ba8dd451edd6daf8323b09b3a5819c2be2b60248673bb5d6c",
+      "owner": "MemoryRepository.search",
+      "required_guard": "historical_predicate"
+    },
+    {
+      "classification": "operational-row-update",
+      "key": "app/repositories/memory_repository.py:MemoryRepository.sync_search_vector:6e43927c32c2b12f0254a000418db2670e4c8d9612e95ef0161932f57621a95e",
+      "owner": "MemoryRepository.sync_search_vector",
+      "required_guard": "operational_allowlist"
+    },
+    {
+      "classification": "operational-row-update",
+      "key": "app/repositories/memory_repository.py:MemoryRepository.sync_search_vector:b7512edd62da9f9cb8c36b97f1ddf328e9800b34be2151a49d6d4423ec34f9e2",
+      "owner": "MemoryRepository.sync_search_vector",
+      "required_guard": "operational_allowlist"
+    },
+    {
+      "classification": "current-view",
+      "key": "app/repositories/metrics_repository.py:MetricsRepository._memory_entries:ee4dc75ef55abd09c85899ab9d5af9fe45569419542587c4ae1873465170cae3",
+      "owner": "MetricsRepository._memory_entries",
+      "required_guard": "current_predicate"
+    },
+    {
+      "classification": "current-view",
+      "key": "app/repositories/metrics_repository.py:MetricsRepository.graph_overview:a245f4a62ad349266d17abc2db7c48c56c3ec7e3a18ea609e5dba438243d345c",
+      "owner": "MetricsRepository.graph_overview",
+      "required_guard": "current_predicate"
+    },
+    {
+      "classification": "current-view",
+      "key": "app/repositories/metrics_repository.py:MetricsRepository.graph_overview:bae5b89cb708704c82079e2411d6ea311392c65b3aa21f6d7352004c3a8e567a",
+      "owner": "MetricsRepository.graph_overview",
+      "required_guard": "current_predicate"
+    },
+    {
+      "classification": "current-view",
+      "key": "app/repositories/metrics_repository.py:MetricsRepository.graph_overview:db9f5a1b1194431d34cfdb1e1107431779687ae0274a3f0819e8fdc0e71922cd",
+      "owner": "MetricsRepository.graph_overview",
+      "required_guard": "current_predicate"
+    },
+    {
+      "classification": "historical-view",
+      "key": "app/repositories/metrics_repository.py:MetricsRepository.memory_overview:0f2017e4eeae52a9f08ae4fbe33e657fa2fe23ce0f8670b286b99ccaab508382",
+      "owner": "MetricsRepository.memory_overview",
+      "required_guard": "historical_predicate"
+    },
+    {
+      "classification": "historical-view",
+      "key": "app/repositories/metrics_repository.py:MetricsRepository.memory_overview:d7ed813e3d0b5c79513a39556b9fb57a3bf79135e3f2194caed8a1bf05074d6a",
+      "owner": "MetricsRepository.memory_overview",
+      "required_guard": "historical_predicate"
+    },
+    {
+      "classification": "historical-view",
+      "key": "app/repositories/metrics_repository.py:MetricsRepository.memory_overview:e8ece8437db7540ec853e8a7440dbf9a130c504f5a5344951e076fccd4a7abb6",
+      "owner": "MetricsRepository.memory_overview",
+      "required_guard": "historical_predicate"
+    },
+    {
+      "classification": "current-view",
+      "key": "app/repositories/metrics_repository.py:MetricsRepository.recent_activity_overview:faf5d7f2a77ba781e457c991b81886bcd472366e87309eb2ab04e6be3dc73a07",
+      "owner": "MetricsRepository.recent_activity_overview",
+      "required_guard": "current_predicate"
+    },
+    {
+      "classification": "current-view",
+      "key": "app/repositories/project_repository.py:ProjectRepository.list_with_entry_counts:58194bc485c0c6cc93d48ef0a0ed2c56ba353fbd18b5542c0b0e535f24382d78",
+      "owner": "ProjectRepository.list_with_entry_counts",
+      "required_guard": "current_predicate"
+    },
+    {
+      "classification": "exact-id-view",
+      "key": "app/services/memory_revision_service.py:MemoryRevisionService._successor:1e8c7ecd5c7b39a6923c0072bed65e9820a2843ba38d4c0b09c33b0251eea0df",
+      "owner": "MemoryRevisionService._successor",
+      "required_guard": "exact_id"
+    },
+    {
+      "classification": "exact-id-view",
+      "key": "app/services/memory_revision_service.py:MemoryRevisionService.history:5f7857ce68d9c77e4f94240e39d58b7540abb8ef5dd35c1cc0aa2c75d135d11e",
+      "owner": "MemoryRevisionService.history",
+      "required_guard": "exact_id"
+    },
+    {
+      "classification": "exact-id-view",
+      "key": "app/services/memory_revision_service.py:MemoryRevisionService.history:c68f956a9139eea88f4e0a563ea7b22b6a067ffb02d7c3028e827f8f95bf00cc",
+      "owner": "MemoryRevisionService.history",
+      "required_guard": "exact_id"
+    }
+  ],
+  "schema_version": 1
+}
