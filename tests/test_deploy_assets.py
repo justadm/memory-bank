@@ -18,3 +18,15 @@ def test_basic_auth_helper_has_expected_targets():
     assert "chmod 640" in helper
     assert "/etc/nginx/.htpasswd-memlayer-admin" in helper
     assert "/etc/nginx/snippets/memlayer_adm_basic_auth.conf" in helper
+
+
+def test_docker_build_context_excludes_production_backups():
+    patterns = {
+        line.strip()
+        for line in (ROOT / ".dockerignore").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+    assert "backups/" in patterns

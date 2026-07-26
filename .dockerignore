@@ -3,6 +3,7 @@
 .env
 .env.*
 !.env.example
+backups/
 .pytest_cache
 .venv
 .venv313
