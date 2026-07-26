@@ -1,5 +1,8 @@
 .git
 .gitignore
+.env
+.env.*
+!.env.example
 .pytest_cache
 .venv
 .venv313
@@ -8,4 +11,3 @@ __pycache__
 *.pyo
 *.db
 htmlcov
-
