@@ -181,9 +181,13 @@ def run_guarded_migration_drill(
                     check=True,
                     timeout=120,
                 )
-            except BaseException:
+            except BaseException as cleanup_error:
                 if primary_error is None:
                     raise
+                raise ExceptionGroup(
+                    "migration drill and cleanup both failed",
+                    [primary_error, cleanup_error],
+                ) from primary_error
 
 
 def _parser() -> argparse.ArgumentParser:

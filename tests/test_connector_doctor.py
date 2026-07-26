@@ -18,6 +18,14 @@ class FakeApi:
         return {"id": project_id, "content": "private payload"}
 
 
+class UnreachableApi:
+    def health(self):
+        raise OSError("offline")
+
+    def auth_status(self):
+        raise OSError("offline")
+
+
 def test_write_scope_is_authorized_not_verified(tmp_path: Path):
     service = ConnectorService(tmp_path)
     manifest = service.apply_connect(service.plan_connect())
@@ -60,10 +68,52 @@ def test_write_scope_is_authorized_not_verified(tmp_path: Path):
     assert report.live_write_verified == "unknown"
 
 
+def test_live_identity_requires_authenticated_project_read_back(tmp_path: Path):
+    service = ConnectorService(tmp_path)
+    manifest = service.apply_connect(service.plan_connect())
+    manifest.project_id = UUID("d8399b69-82ff-46ec-8e03-1930f1c84735")
+    from memlayer_connector.manifest import write_manifest_atomic
+    from memlayer_connector.service import _digest
+
+    config_path = tmp_path / ".memlayer/memlayer.config.json"
+    config = json.loads(config_path.read_text())
+    config["project_id"] = str(manifest.project_id)
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    config_spec = next(
+        spec
+        for path, spec in service.registry.items()
+        if str(path) == ".memlayer/memlayer.config.json"
+    )
+    managed = {key: config.get(key) for key in config_spec.managed_keys}
+    for record in manifest.managed_files:
+        if record.path == ".memlayer/memlayer.config.json":
+            record.content_sha256 = _digest(
+                (
+                    json.dumps(
+                        managed,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                    + "\n"
+                ).encode()
+            )
+    write_manifest_atomic(service.manifest_path, manifest)
+
+    report = DoctorService(tmp_path, UnreachableApi()).check()
+
+    assert report.local_connected is True
+    assert report.live_identity_ready is False
+    assert report.live_read_verified is False
+
+
 def test_doctor_reports_queue_and_stale_snapshot_without_secrets(tmp_path: Path):
     service = ConnectorService(tmp_path)
     service.apply_connect(service.plan_connect())
-    (tmp_path / ".memlayer/memlayer.offline.queue.jsonl").write_text('{"secret":"abc"}\n', encoding="utf-8")
+    (tmp_path / ".memlayer/memlayer.offline.queue.jsonl").write_text(
+        '{"endpoint":"/memory","payload":{"content":"abc"}}\n',
+        encoding="utf-8",
+    )
     (tmp_path / ".memlayer/memlayer.snapshot.json").write_text('{"generated_at":"2000-01-01T00:00:00+00:00", "content":"private"}', encoding="utf-8")
 
     output = DoctorService(tmp_path, FakeApi()).check().as_dict()
@@ -79,7 +129,8 @@ def test_doctor_counts_only_valid_queue_records_and_reports_invalid_lines(tmp_pa
     service = ConnectorService(tmp_path)
     service.apply_connect(service.plan_connect())
     (tmp_path / ".memlayer/memlayer.offline.queue.jsonl").write_text(
-        '{"valid":true}\nnot-json\n["not", "an", "object"]\n',
+        '{"endpoint":"/memory","payload":{"type":"note"}}\n'
+        'not-json\n["not", "an", "object"]\n{}\n',
         encoding="utf-8",
     )
 
@@ -92,6 +143,7 @@ def test_doctor_counts_only_valid_queue_records_and_reports_invalid_lines(tmp_pa
     assert [item["path"] for item in invalid] == [
         ".memlayer/memlayer.offline.queue.jsonl:2",
         ".memlayer/memlayer.offline.queue.jsonl:3",
+        ".memlayer/memlayer.offline.queue.jsonl:4",
     ]
 
 

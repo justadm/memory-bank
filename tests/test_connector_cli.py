@@ -98,3 +98,46 @@ def test_registration_persistence_rolls_back_config_when_manifest_write_fails(
 
     assert config_path.read_bytes() == config_before
     assert service.manifest_path.read_bytes() == manifest_before
+
+
+def test_registration_rollback_reports_every_unresolved_path(
+    tmp_path: Path,
+    monkeypatch,
+):
+    service = ConnectorService(tmp_path)
+    manifest = service.apply_connect(service.plan_connect())
+    config_path = tmp_path / ".memlayer/memlayer.config.json"
+    manifest_before = service.manifest_path.read_bytes()
+    real_write_atomic = connector_cli._write_atomic
+    config_writes = 0
+
+    def fail_config_rollback(path, payload, mode=None):
+        nonlocal config_writes
+        if path == config_path:
+            config_writes += 1
+            if config_writes == 2:
+                raise OSError("synthetic config rollback failure")
+        return real_write_atomic(path, payload, mode)
+
+    def fail_manifest_write(*args, **kwargs):
+        raise OSError("synthetic manifest failure")
+
+    monkeypatch.setattr(connector_cli, "_write_atomic", fail_config_rollback)
+    monkeypatch.setattr(
+        connector_cli,
+        "write_manifest_atomic",
+        fail_manifest_write,
+    )
+
+    with pytest.raises(
+        connector_cli.ConnectorConflict,
+        match="rollback is incomplete",
+    ) as exc_info:
+        connector_cli._persist_registration(
+            service,
+            manifest,
+            {"project_id": "d8399b69-82ff-46ec-8e03-1930f1c84735"},
+        )
+
+    assert str(config_path) in str(exc_info.value)
+    assert service.manifest_path.read_bytes() == manifest_before

@@ -114,18 +114,34 @@ def _persist_registration(service: ConnectorService, manifest: Any, resolved: di
     try:
         _write_atomic(config_path, config_bytes)
         write_manifest_atomic(service.manifest_path, manifest)
-    except BaseException:
-        if config_before is None:
-            config_path.unlink(missing_ok=True)
-        else:
-            _write_atomic(config_path, config_before, config_mode)
-        if manifest_before is None:
-            service.manifest_path.unlink(missing_ok=True)
-        else:
-            _write_atomic(
-                service.manifest_path,
-                manifest_before,
-                manifest_mode,
+    except BaseException as primary_error:
+        rollback_errors: list[tuple[str, BaseException]] = []
+        try:
+            if config_before is None:
+                config_path.unlink(missing_ok=True)
+            else:
+                _write_atomic(config_path, config_before, config_mode)
+        except BaseException as exc:
+            rollback_errors.append((str(config_path), exc))
+        try:
+            if manifest_before is None:
+                service.manifest_path.unlink(missing_ok=True)
+            else:
+                _write_atomic(
+                    service.manifest_path,
+                    manifest_before,
+                    manifest_mode,
+                )
+        except BaseException as exc:
+            rollback_errors.append((str(service.manifest_path), exc))
+        if rollback_errors:
+            unresolved = ", ".join(path for path, _ in rollback_errors)
+            raise ConnectorConflict(
+                "registration persistence failed and rollback is incomplete; "
+                f"inspect: {unresolved}"
+            ) from ExceptionGroup(
+                "registration persistence and rollback failures",
+                [primary_error, *(error for _, error in rollback_errors)],
             )
         raise
 

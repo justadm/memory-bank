@@ -106,7 +106,11 @@ class DoctorService:
                 validate_manifest_identity(manifest, config=config)
             except ManifestConflict:
                 findings.append(DoctorFinding("identity_mismatch", ".memlayer/memlayer.config.json"))
-        live_identity_ready = bool(manifest and manifest.project_id and not any(item.code == "identity_mismatch" for item in findings))
+        local_identity_ready = bool(
+            manifest
+            and manifest.project_id
+            and not any(item.code == "identity_mismatch" for item in findings)
+        )
 
         queue_pending = 0
         if queue_path.exists():
@@ -121,7 +125,12 @@ class DoctorService:
                         item = json.loads(line)
                     except json.JSONDecodeError:
                         item = None
-                    if not isinstance(item, dict):
+                    if (
+                        not isinstance(item, dict)
+                        or not isinstance(item.get("endpoint"), str)
+                        or not item["endpoint"].startswith("/")
+                        or not isinstance(item.get("payload"), dict)
+                    ):
                         findings.append(
                             DoctorFinding(
                                 "invalid_queue_entry",
@@ -170,7 +179,7 @@ class DoctorService:
                 live_write_authorized = "write" in scopes or "admin" in scopes
             except Exception:
                 findings.append(DoctorFinding("auth_unavailable"))
-            if live_identity_ready and live_read_authorized:
+            if local_identity_ready and live_read_authorized:
                 try:
                     project = client.get_project(str(manifest.project_id))
                     live_read_verified = str(project.get("id")) == str(manifest.project_id)
@@ -178,7 +187,7 @@ class DoctorService:
                         findings.append(DoctorFinding("project_read_mismatch"))
                 except Exception:
                     findings.append(DoctorFinding("project_read_failed"))
-            elif live_identity_ready:
+            elif local_identity_ready:
                 findings.append(DoctorFinding("read_not_authorized"))
         finally:
             if owns_client:
@@ -201,6 +210,7 @@ class DoctorService:
                 write_check.get("read_back_at"),
             )
         )
+        live_identity_ready = local_identity_ready and live_read_verified
         if successful_receipt and live_read_verified:
             live_write_verified: Literal["true", "false", "unknown"] = "true"
         elif _fresh(write_check.get("attempted_at")) and write_check.get("status") == "failed":

@@ -161,6 +161,35 @@ def test_runner_always_attempts_cleanup(tmp_path: Path, failure: BaseException) 
     ]
 
 
+def test_runner_reports_primary_and_cleanup_failures(tmp_path: Path) -> None:
+    calls = []
+
+    def fail_both(command, **kwargs):
+        calls.append(command)
+        if "up" in command:
+            raise subprocess.CalledProcessError(1, command)
+        raise subprocess.CalledProcessError(2, command)
+
+    with pytest.raises(ExceptionGroup) as exc_info:
+        run_guarded_migration_drill(
+            repo_root=REPO_ROOT,
+            target="20260725_0005",
+            fixture_profile="connector",
+            run_command=fail_both,
+            parent_environment={"PATH": "/usr/bin"},
+            temporary_parent=tmp_path,
+        )
+
+    assert len(exc_info.value.exceptions) == 2
+    assert calls[-1][-5:] == [
+        "down",
+        "--volumes",
+        "--remove-orphans",
+        "--rmi",
+        "local",
+    ]
+
+
 def test_runner_rejects_target_profile_mismatch_before_compose(tmp_path: Path) -> None:
     with pytest.raises(MigrationDrillError, match="target"):
         run_guarded_migration_drill(
