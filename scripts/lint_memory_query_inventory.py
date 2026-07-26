@@ -62,6 +62,39 @@ def _references_memory_entry(node: ast.AST) -> bool:
 def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
     model_aliases = {"MemoryEntry"}
     module_aliases: set[str] = set()
+    package_aliases: set[str] = set()
+
+    def dotted_parts(node: ast.AST) -> tuple[str, ...]:
+        if isinstance(node, ast.Name):
+            return (node.id,)
+        if isinstance(node, ast.Attribute):
+            parent = dotted_parts(node.value)
+            return (*parent, node.attr) if parent else ()
+        return ()
+
+    def is_package_reference(node: ast.AST) -> bool:
+        return isinstance(node, ast.Name) and node.id in package_aliases
+
+    def is_module_reference(node: ast.AST) -> bool:
+        if isinstance(node, ast.Name) and node.id in module_aliases:
+            return True
+        parts = dotted_parts(node)
+        return (
+            len(parts) >= 2
+            and parts[0] in package_aliases
+            and parts[1:] in {("models",), ("models", "memory_entry")}
+        )
+
+    def is_model_reference(node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Name)
+            and node.id in model_aliases
+        ) or (
+            isinstance(node, ast.Attribute)
+            and node.attr == "MemoryEntry"
+            and is_module_reference(node.value)
+        )
+
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
             if node.module == "app.models.memory_entry":
@@ -74,12 +107,20 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
                         model_aliases.add(imported.asname or imported.name)
                     elif imported.name == "memory_entry":
                         module_aliases.add(imported.asname or imported.name)
+            elif node.module == "app":
+                for imported in node.names:
+                    if imported.name == "models":
+                        module_aliases.add(imported.asname or imported.name)
         elif isinstance(node, ast.Import):
             for imported in node.names:
                 if imported.name == "app.models.memory_entry" and imported.asname:
                     module_aliases.add(imported.asname)
                 elif imported.name == "app.models" and imported.asname:
                     module_aliases.add(imported.asname)
+                elif imported.name in {"app.models", "app.models.memory_entry"}:
+                    package_aliases.add("app")
+                elif imported.name == "app":
+                    package_aliases.add(imported.asname or "app")
 
     changed = True
     while changed:
@@ -88,21 +129,26 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
             if not isinstance(node, (ast.Assign, ast.AnnAssign)):
                 continue
             value = node.value
-            is_model_reference = (
-                isinstance(value, ast.Name)
-                and value.id in model_aliases
-            ) or (
-                isinstance(value, ast.Attribute)
-                and value.attr == "MemoryEntry"
-                and isinstance(value.value, ast.Name)
-                and value.value.id in module_aliases
-            )
-            if not is_model_reference:
+            if value is None:
                 continue
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             for target in targets:
-                if isinstance(target, ast.Name) and target.id not in model_aliases:
+                if not isinstance(target, ast.Name):
+                    continue
+                if is_model_reference(value) and target.id not in model_aliases:
                     model_aliases.add(target.id)
+                    changed = True
+                elif (
+                    is_module_reference(value)
+                    and target.id not in module_aliases
+                ):
+                    module_aliases.add(target.id)
+                    changed = True
+                elif (
+                    is_package_reference(value)
+                    and target.id not in package_aliases
+                ):
+                    package_aliases.add(target.id)
                     changed = True
 
     class AliasNormalizer(ast.NodeTransformer):
@@ -120,11 +166,7 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
 
         def visit_Attribute(self, node: ast.Attribute):
             node = self.generic_visit(node)
-            if (
-                node.attr == "MemoryEntry"
-                and isinstance(node.value, ast.Name)
-                and node.value.id in module_aliases
-            ):
+            if is_model_reference(node):
                 return ast.copy_location(
                     ast.Name(id="MemoryEntry", ctx=node.ctx),
                     node,
