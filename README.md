@@ -134,6 +134,23 @@ Machine-readable contracts for risky agent work live in [docs/revision-evidence-
 - `revision_pass.v0` — pre-action gate before deploys, reimports, cleanup, data writes, and key/scope changes
 - `post_action_evidence.v0` — read-back record after an action, including what changed, what did not change, verification, and privacy checks
 
+## Codex connector and temporal memory
+
+The project-local Codex connector is dry-run by default and never imports a
+repository as part of `connect`:
+
+```bash
+./memlayer connect codex --project-root /path/to/project
+./memlayer doctor --project-root /path/to/project
+```
+
+Memory entries now expose provenance, evidence confidence, validity intervals,
+linear revision history, restore, historical `as_of` reads, and a signed
+project-scoped sequence change feed. Semantic `PATCH /memory/{id}` remains a
+deprecated compatibility path and creates an immutable revision. Operational
+metadata is server-owned. See [docs/API.md](docs/API.md) and the sanitized
+[local evidence](docs/examples/temporal-memory-local-evidence.md).
+
 ## Verification
 
 Run the test suite:

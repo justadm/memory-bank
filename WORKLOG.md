@@ -184,3 +184,17 @@
 - `git diff --check` passed before the final checkpoint.
 - Added temporal schema, privacy-safe provenance evidence, current/as-of predicates, signed sequence change feed, immutable revision/history/restore APIs, compatibility headers, and SDK methods; sanitized evidence is in `docs/examples/temporal-memory-dogfood.md`.
 - Final isolated verification after temporal work: `163 passed`; no production or deployment actions performed.
+
+## 2026-07-26 - Local connector and temporal implementation completion
+
+- Completed the guarded disposable PostgreSQL runner and mechanically enforced
+  current-memory query inventory before continuing implementation.
+- Hardened connector manifest integrity, rollback, disconnect preservation,
+  registration savepoints/read-back receipts, doctor drift detection, and
+  explicit onboarding connector mode.
+- Completed temporal backfill semantics, provenance privacy boundaries,
+  sequence cursors, immutable revision/link inheritance, restore guards,
+  semantic PATCH/import compatibility, lifecycle/compaction/admin caller
+  migration, temporal metrics, SDK parameters, and console lineage.
+- Verification evidence is intentionally local and sanitized. No MemLayer API
+  write, push, production migration, deployment, or rollout was performed.

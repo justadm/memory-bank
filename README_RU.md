@@ -168,6 +168,24 @@ CLI importer теперь тоже понимает новую hidden-layout с�
 - `revision_pass.v0` — pre-action gate перед deploy, reimport, cleanup, data write и изменением ключей/скоупов
 - `post_action_evidence.v0` — post-action read-back запись: что изменилось, что не менялось, чем проверено и как соблюдена privacy-гигиена
 
+## Codex Connector и Temporal Memory
+
+Локальный Codex Connector работает в dry-run по умолчанию и не импортирует
+репозиторий во время `connect`:
+
+```bash
+./memlayer connect codex --project-root /path/to/project
+./memlayer doctor --project-root /path/to/project
+```
+
+Записи памяти содержат provenance, evidence confidence, интервалы действия,
+линейную историю ревизий, restore, исторические `as_of`-чтения и подписанный
+project-scoped change feed по sequence. Семантический
+`PATCH /memory/{id}` оставлен только как deprecated compatibility path и
+создаёт неизменяемую ревизию. Операционные metadata принадлежат серверу.
+Контракты: [docs/API.md](docs/API.md), локальные доказательства:
+[temporal-memory-local-evidence.md](docs/examples/temporal-memory-local-evidence.md).
+
 ## Runtime Smoke
 
 Для быстрого operational smoke-check теперь есть отдельный сценарий `health -> import -> search -> relevant`:
