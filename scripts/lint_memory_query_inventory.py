@@ -125,14 +125,26 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
             and is_typing_module_reference(node.value)
         )
 
+    def cast_value(node: ast.AST) -> ast.AST | None:
+        if not isinstance(node, ast.Call) or not is_cast_reference(node.func):
+            return None
+        if len(node.args) == 2:
+            return node.args[1]
+        if len(node.args) > 1:
+            return None
+        return next(
+            (
+                keyword.value
+                for keyword in node.keywords
+                if keyword.arg == "val"
+            ),
+            None,
+        )
+
     def unwrap_transparent_call(node: ast.AST) -> ast.AST:
         current = node
-        while (
-            isinstance(current, ast.Call)
-            and is_cast_reference(current.func)
-            and len(current.args) == 2
-        ):
-            current = current.args[1]
+        while (value := cast_value(current)) is not None:
+            current = value
         return current
 
     for node in ast.walk(tree):
@@ -141,7 +153,8 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
                 relative_module = node.module or ""
                 for imported in node.names:
                     if (
-                        relative_module in {"models", "models.memory_entry"}
+                        relative_module
+                        in {"models", "models.memory_entry", "memory_entry"}
                         and imported.name == "MemoryEntry"
                     ):
                         model_aliases.add(imported.asname or imported.name)
@@ -155,6 +168,11 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
                         and imported.name in {"models", "memory_entry"}
                     ):
                         module_aliases.add(imported.asname or imported.name)
+                    elif (
+                        relative_module == ""
+                        and imported.name == "MemoryEntry"
+                    ):
+                        model_aliases.add(imported.asname or imported.name)
                 continue
             if node.module in {"typing", "typing_extensions"}:
                 for imported in node.names:

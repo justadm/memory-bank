@@ -460,6 +460,89 @@ def test_inventory_detects_relative_child_and_typed_aliases(
     assert "missing inventory row" in findings[0]
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
+from .memory_entry import MemoryEntry as Entry
+from sqlalchemy import select
+
+def lookup(db):
+    return db.scalar(select(Entry))
+""",
+        """
+from ..memory_entry import MemoryEntry as Entry
+from sqlalchemy import select
+
+def lookup(db):
+    return db.scalar(select(Entry))
+""",
+        """
+from . import MemoryEntry as Entry
+from sqlalchemy import select
+
+def lookup(db):
+    return db.scalar(select(Entry))
+""",
+        """
+from app.models import MemoryEntry
+from typing import Any, Callable, cast
+
+def lookup(db):
+    query_for = cast(typ=Callable[..., Any], val=db.query)
+    return query_for(MemoryEntry)
+""",
+        """
+from app.models import MemoryEntry
+from typing import Any, Callable, cast
+
+def lookup(db):
+    query_for = cast(Callable[..., Any], val=db.query)
+    return query_for(MemoryEntry)
+""",
+        """
+from app.models import MemoryEntry
+import typing
+
+def lookup(db):
+    return typing.cast(
+        typ=typing.Any,
+        val=db.query,
+    )(MemoryEntry)
+""",
+        """
+from app.models import MemoryEntry
+import typing_extensions
+
+def lookup(db):
+    return typing_extensions.cast(
+        typ=typing_extensions.Any,
+        val=db.query,
+    )(MemoryEntry)
+""",
+    ],
+)
+def test_inventory_detects_relative_model_and_keyword_cast_aliases(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    app_root = tmp_path / "app"
+    app_root.mkdir()
+    (app_root / "sample.py").write_text(source)
+    inventory_path = tmp_path / "inventory.json"
+    inventory_path.write_text(
+        json.dumps({"schema_version": 1, "queries": []})
+    )
+
+    findings = check_inventory(
+        app_root=app_root,
+        inventory_path=inventory_path,
+    )
+
+    assert len(findings) == 1
+    assert "missing inventory row" in findings[0]
+
+
 def test_current_view_requires_central_predicate_call(tmp_path: Path) -> None:
     app_root = tmp_path / "app"
     app_root.mkdir()
