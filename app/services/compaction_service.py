@@ -10,6 +10,9 @@ from app.models.memory_entry import MemoryEntry
 from app.models.memory_link import MemoryLink
 from app.repositories.link_repository import LinkRepository
 from app.repositories.memory_repository import MemoryRepository
+from app.repositories.project_repository import ProjectRepository
+from app.schemas.memory import MemoryCreate
+from app.services.memory_service import MemoryService
 
 
 @dataclass
@@ -56,18 +59,24 @@ class CompactionService:
             raise ValueError("At least two valid entries are required for compaction")
 
         summary_payload = self._build_summary(items)
-        summary_entry = MemoryEntry(
-            type=MemoryType.note,
-            title=summary_payload["title"],
-            content=summary_payload["content"],
-            source_agent="memlayer-compaction",
-            project_id=items[0].project_id,
-            importance=summary_payload["importance"],
-            metadata_=summary_payload["metadata"],
-            search_vector=None if self.memory_repository.is_postgresql() else f"{summary_payload['title']} {summary_payload['content']}",
+        memory_service = MemoryService(
+            self.memory_repository,
+            ProjectRepository(self.memory_repository.db),
+            self.link_repository,
         )
-        created = self.memory_repository.create(summary_entry)
-        self.memory_repository.sync_search_vector(created, f"{created.title or ''} {created.content}".strip())
+        created = memory_service.create_memory(
+            MemoryCreate(
+                type=MemoryType.note,
+                title=summary_payload["title"],
+                content=summary_payload["content"],
+                source_agent="memlayer-compaction",
+                project_id=items[0].project_id,
+                importance=summary_payload["importance"],
+                metadata=summary_payload["metadata"],
+            ),
+            operation_source="api",
+            enforce_quality_gate=False,
+        )
 
         linked_ids: list[uuid.UUID] = []
         archived_ids: list[uuid.UUID] = []
@@ -85,14 +94,18 @@ class CompactionService:
                     )
                 )
             linked_ids.append(item.id)
-            metadata = dict(item.metadata_ or {})
-            metadata["compacted_into_entry_id"] = str(created.id)
-            metadata["compaction_applied_at"] = datetime.now(timezone.utc).isoformat()
-            item.metadata_ = metadata
+            clock = datetime.now(timezone.utc)
+            memory_service.update_operational_fields(
+                item.id,
+                metadata_patch={
+                    "compacted_into_entry_id": str(created.id),
+                    "compaction_applied_at": clock.isoformat(),
+                },
+                operation="compaction_linkage",
+            )
             if archive_originals:
-                item.archived = True
+                memory_service.archive_memory(item.id, now=clock)
                 archived_ids.append(item.id)
-            self.memory_repository.db.add(item)
 
         self.memory_repository.db.flush()
         self.memory_repository.db.refresh(created)

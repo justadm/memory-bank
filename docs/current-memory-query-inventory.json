@@ -7,10 +7,10 @@
       "required_guard": "exact_id"
     },
     {
-      "classification": "historical-view",
+      "classification": "current-view",
       "key": "app/repositories/memory_repository.py:MemoryRepository._relaxed_text_search:63bc0c009646c1858e77c6b606b12d541912cbd7e7511b48fb4a1da9305b4604",
       "owner": "MemoryRepository._relaxed_text_search",
-      "required_guard": "historical_predicate"
+      "required_guard": "current_predicate"
     },
     {
       "classification": "historical-view",
@@ -34,6 +34,18 @@
       "classification": "exact-id-view",
       "key": "app/repositories/memory_repository.py:MemoryRepository.get:bb5006f154546f13776d958e61420a1ff02547dc65b89f82f60795bf8791dfbd",
       "owner": "MemoryRepository.get",
+      "required_guard": "exact_id"
+    },
+    {
+      "classification": "exact-id-view",
+      "key": "app/repositories/memory_repository.py:MemoryRepository.get_for_update:fd7b557e4a46dc1904938b3c5c9938ab12778cd75673e537f700153b16bb8580",
+      "owner": "MemoryRepository.get_for_update",
+      "required_guard": "exact_id"
+    },
+    {
+      "classification": "exact-id-view",
+      "key": "app/repositories/memory_repository.py:MemoryRepository.get_successor:e448b4e56b3fd81b138cc5851db0afa4fc4c142558ed992c97fbceb1ff12345b",
+      "owner": "MemoryRepository.get_successor",
       "required_guard": "exact_id"
     },
     {
@@ -121,22 +133,40 @@
       "required_guard": "current_predicate"
     },
     {
-      "classification": "historical-view",
+      "classification": "current-view",
       "key": "app/repositories/metrics_repository.py:MetricsRepository.memory_overview:0f2017e4eeae52a9f08ae4fbe33e657fa2fe23ce0f8670b286b99ccaab508382",
       "owner": "MetricsRepository.memory_overview",
-      "required_guard": "historical_predicate"
+      "required_guard": "current_predicate"
+    },
+    {
+      "classification": "current-view",
+      "key": "app/repositories/metrics_repository.py:MetricsRepository.memory_overview:2a1ab915dd20d745ddc341584e99a4924bd0935162e16756f1c76037913385c6",
+      "owner": "MetricsRepository.memory_overview",
+      "required_guard": "current_predicate"
+    },
+    {
+      "classification": "current-view",
+      "key": "app/repositories/metrics_repository.py:MetricsRepository.memory_overview:92f0b982e218c1e471c1306a3952eb4b557e9434211b6547e4a0b4b671f79396",
+      "owner": "MetricsRepository.memory_overview",
+      "required_guard": "current_predicate"
     },
     {
       "classification": "historical-view",
+      "key": "app/repositories/metrics_repository.py:MetricsRepository.memory_overview:9a8d31100ecc6643cfee2c23249d4b2938558d487c2d77f4f5f6c88710fd2895",
+      "owner": "MetricsRepository.memory_overview",
+      "required_guard": "historical_rows_predicate"
+    },
+    {
+      "classification": "historical-view",
+      "key": "app/repositories/metrics_repository.py:MetricsRepository.memory_overview:c93a974542bc7b5122b95838f096bbcada4b15f7e7e55e677a148dc9e3041ec6",
+      "owner": "MetricsRepository.memory_overview",
+      "required_guard": "historical_rows_predicate"
+    },
+    {
+      "classification": "current-view",
       "key": "app/repositories/metrics_repository.py:MetricsRepository.memory_overview:d7ed813e3d0b5c79513a39556b9fb57a3bf79135e3f2194caed8a1bf05074d6a",
       "owner": "MetricsRepository.memory_overview",
-      "required_guard": "historical_predicate"
-    },
-    {
-      "classification": "historical-view",
-      "key": "app/repositories/metrics_repository.py:MetricsRepository.memory_overview:e8ece8437db7540ec853e8a7440dbf9a130c504f5a5344951e076fccd4a7abb6",
-      "owner": "MetricsRepository.memory_overview",
-      "required_guard": "historical_predicate"
+      "required_guard": "current_predicate"
     },
     {
       "classification": "current-view",
@@ -149,12 +179,6 @@
       "key": "app/repositories/project_repository.py:ProjectRepository.list_with_entry_counts:58194bc485c0c6cc93d48ef0a0ed2c56ba353fbd18b5542c0b0e535f24382d78",
       "owner": "ProjectRepository.list_with_entry_counts",
       "required_guard": "current_predicate"
-    },
-    {
-      "classification": "exact-id-view",
-      "key": "app/services/memory_revision_service.py:MemoryRevisionService._successor:1e8c7ecd5c7b39a6923c0072bed65e9820a2843ba38d4c0b09c33b0251eea0df",
-      "owner": "MemoryRevisionService._successor",
-      "required_guard": "exact_id"
     },
     {
       "classification": "exact-id-view",

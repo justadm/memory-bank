@@ -53,3 +53,43 @@ def test_actor_is_safe_and_not_an_api_key():
     assert actor.startswith("principal-")
     assert "never-expose" not in actor
     assert ValidationEvidence.model_validate(evidence()).contains_sensitive_data is False
+
+
+def test_redacted_marker_does_not_bypass_remaining_sensitive_text():
+    assert scan_privacy_safe("[REDACTED] token=still-secret") is False
+
+
+def test_provenance_is_normalized_and_generic_api_cannot_claim_imported():
+    with pytest.raises(HTTPException):
+        MemoryEvidenceService.validate_provenance(
+            "imported",
+            principal=principal("import", "admin"),
+            metadata={},
+            operation_source="api",
+        )
+
+    assert (
+        MemoryEvidenceService.validate_provenance(
+            "imported",
+            principal=principal("import"),
+            metadata={},
+            operation_source="import",
+        )
+        == []
+    )
+
+
+def test_generic_api_rejects_all_service_owned_metadata():
+    for key in (
+        "quality_review_required",
+        "requires_review",
+        "decision_conflicts",
+        "review_history",
+    ):
+        with pytest.raises(HTTPException):
+            MemoryEvidenceService.validate_provenance(
+                "unspecified",
+                principal=principal("write"),
+                metadata={key: True},
+                operation_source="api",
+            )

@@ -184,3 +184,49 @@ def test_sdk_resolve_project_sends_connector_identity():
         "tenant_id": "tenant-a",
     }})]
     client.close()
+
+
+def test_sdk_temporal_methods_and_as_of_parameters():
+    client = MemoryBankClient("http://example.test")
+    calls = []
+
+    def request(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        return {"ok": True}
+
+    client._request = request
+    client.add_memory(
+        type="note",
+        content="observed",
+        provenance="observed",
+        confidence=0.8,
+    )
+    client.list_memory(project_id="project-1", as_of="2026-07-25T10:00:00Z")
+    client.search_memory(
+        "architecture",
+        project_id="project-1",
+        as_of="2026-07-25T10:00:00Z",
+    )
+    client.get_relevant_memory(
+        query="architecture",
+        agent_id="codex",
+        project_id="project-1",
+        as_of="2026-07-25T10:00:00Z",
+    )
+    client.revise_memory("memory-1", changes={"content": "after"}, reason="verified")
+    client.memory_history("memory-1")
+    client.restore_memory("memory-1", reason="restore")
+    client.memory_changes(project_id="project-1", after_sequence=0)
+
+    assert calls[0][2]["json"]["provenance"] == "observed"
+    assert calls[0][2]["json"]["confidence"] == 0.8
+    assert calls[1][2]["params"]["as_of"] == "2026-07-25T10:00:00Z"
+    assert calls[2][2]["params"]["as_of"] == "2026-07-25T10:00:00Z"
+    assert calls[3][2]["json"]["as_of"] == "2026-07-25T10:00:00Z"
+    assert [path for _, path, _ in calls[4:]] == [
+        "/memory/memory-1/revise",
+        "/memory/memory-1/history",
+        "/memory/memory-1/restore",
+        "/memory/changes",
+    ]
+    client.close()

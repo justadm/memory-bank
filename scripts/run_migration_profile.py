@@ -4,8 +4,10 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import threading
 import uuid
-from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -157,6 +159,303 @@ def _assert_temporal_state(
         } <= index_names
 
 
+def _assert_temporal_runtime_constraints(
+    engine: sa.Engine,
+    *,
+    project_id: uuid.UUID,
+) -> None:
+    now = datetime.now(timezone.utc)
+    original_id = uuid.uuid4()
+    first_successor_id = uuid.uuid4()
+    second_successor_id = uuid.uuid4()
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO memory_entries (
+                    id, type, title, content, source_agent, project_id, importance,
+                    usage_count, created_at, updated_at, last_used_at, archived,
+                    metadata, search_vector, provenance, confidence, valid_from,
+                    valid_to, history_available, supersedes_id
+                )
+                VALUES (
+                    :id, 'note', 'runtime-original', 'synthetic runtime fixture',
+                    'migration-drill', :project_id, 3, 0, :now, :now, NULL, TRUE,
+                    '{}'::jsonb, NULL, 'observed', 0.9, :valid_from, :valid_to,
+                    TRUE, NULL
+                )
+                """
+            ),
+            {
+                "id": original_id,
+                "project_id": project_id,
+                "now": now,
+                "valid_from": now - timedelta(minutes=2),
+                "valid_to": now - timedelta(minutes=1),
+            },
+        )
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO memory_entries (
+                    id, type, title, content, source_agent, project_id, importance,
+                    usage_count, created_at, updated_at, last_used_at, archived,
+                    metadata, search_vector, provenance, confidence, valid_from,
+                    valid_to, history_available, supersedes_id
+                )
+                VALUES (
+                    :id, 'note', 'runtime-successor', 'synthetic runtime fixture',
+                    'migration-drill', :project_id, 3, 0, :now, :now, NULL, FALSE,
+                    '{}'::jsonb, NULL, 'observed', 0.9, :now, NULL, TRUE, :previous
+                )
+                """
+            ),
+            {
+                "id": first_successor_id,
+                "project_id": project_id,
+                "now": now,
+                "previous": original_id,
+            },
+        )
+        try:
+            with connection.begin_nested():
+                connection.execute(
+                    sa.text(
+                        """
+                        INSERT INTO memory_entries (
+                            id, type, title, content, source_agent, project_id,
+                            importance, usage_count, created_at, updated_at,
+                            last_used_at, archived, metadata, search_vector,
+                            provenance, confidence, valid_from, valid_to,
+                            history_available, supersedes_id
+                        )
+                        VALUES (
+                            :id, 'note', 'runtime-race', 'synthetic runtime fixture',
+                            'migration-drill', :project_id, 3, 0, :now, :now, NULL,
+                            FALSE, '{}'::jsonb, NULL, 'observed', 0.9, :now, NULL,
+                            TRUE, :previous
+                        )
+                        """
+                    ),
+                    {
+                        "id": second_successor_id,
+                        "project_id": project_id,
+                        "now": now,
+                        "previous": original_id,
+                    },
+                )
+        except sa.exc.IntegrityError:
+            pass
+        else:
+            raise AssertionError("single-successor race constraint did not fail closed")
+
+        feed_epoch = connection.scalar(
+            sa.text(
+                "SELECT feed_epoch FROM memory_change_feed_states WHERE project_id = :project_id"
+            ),
+            {"project_id": project_id},
+        )
+        for sequence, occurred_at in (
+            (1, now + timedelta(minutes=1)),
+            (2, now - timedelta(minutes=1)),
+        ):
+            connection.execute(
+                sa.text(
+                    """
+                    INSERT INTO memory_change_events (
+                        id, project_id, sequence, feed_epoch, event_kind, occurred_at,
+                        normalized_tenant_key, entry_id, previous_entry_id, actor, reason
+                    )
+                    VALUES (
+                        :id, :project_id, :sequence, :feed_epoch, 'revised',
+                        :occurred_at, '__global__', :entry_id, :previous_entry_id,
+                        'migration-drill', 'synthetic'
+                    )
+                    """
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "project_id": project_id,
+                    "sequence": sequence,
+                    "feed_epoch": feed_epoch,
+                    "occurred_at": occurred_at,
+                    "entry_id": first_successor_id,
+                    "previous_entry_id": original_id,
+                },
+            )
+        connection.execute(
+            sa.text(
+                "UPDATE memory_change_feed_states SET sequence = 2 WHERE project_id = :project_id"
+            ),
+            {"project_id": project_id},
+        )
+        ordered = list(
+            connection.scalars(
+                sa.text(
+                    """
+                    SELECT sequence FROM memory_change_events
+                    WHERE project_id = :project_id AND feed_epoch = :feed_epoch
+                    ORDER BY sequence
+                    """
+                ),
+                {"project_id": project_id, "feed_epoch": feed_epoch},
+            )
+        )
+        assert ordered == [1, 2]
+
+    _assert_concurrent_temporal_writes(
+        engine,
+        project_id=project_id,
+        feed_entry_id=first_successor_id,
+    )
+
+
+def _assert_concurrent_temporal_writes(
+    engine: sa.Engine,
+    *,
+    project_id: uuid.UUID,
+    feed_entry_id: uuid.UUID,
+) -> None:
+    now = datetime.now(timezone.utc)
+    predecessor_id = uuid.uuid4()
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                """
+                INSERT INTO memory_entries (
+                    id, type, title, content, source_agent, project_id, importance,
+                    usage_count, created_at, updated_at, last_used_at, archived,
+                    metadata, search_vector, provenance, confidence, valid_from,
+                    valid_to, history_available, supersedes_id
+                )
+                VALUES (
+                    :id, 'note', 'concurrent-predecessor', 'synthetic runtime fixture',
+                    'migration-drill', :project_id, 3, 0, :now, :now, NULL, TRUE,
+                    '{}'::jsonb, NULL, 'observed', 0.9, :valid_from, :valid_to,
+                    TRUE, NULL
+                )
+                """
+            ),
+            {
+                "id": predecessor_id,
+                "project_id": project_id,
+                "now": now,
+                "valid_from": now - timedelta(minutes=2),
+                "valid_to": now - timedelta(minutes=1),
+            },
+        )
+
+    revision_barrier = threading.Barrier(2)
+
+    def insert_successor(worker: int) -> str:
+        try:
+            with engine.begin() as connection:
+                revision_barrier.wait(timeout=10)
+                connection.execute(
+                    sa.text(
+                        """
+                        INSERT INTO memory_entries (
+                            id, type, title, content, source_agent, project_id,
+                            importance, usage_count, created_at, updated_at,
+                            last_used_at, archived, metadata, search_vector,
+                            provenance, confidence, valid_from, valid_to,
+                            history_available, supersedes_id
+                        )
+                        VALUES (
+                            :id, 'note', :title, 'synthetic concurrent fixture',
+                            'migration-drill', :project_id, 3, 0, :now, :now, NULL,
+                            FALSE, '{}'::jsonb, NULL, 'observed', 0.9, :now, NULL,
+                            TRUE, :previous
+                        )
+                        """
+                    ),
+                    {
+                        "id": uuid.uuid4(),
+                        "title": f"concurrent-successor-{worker}",
+                        "project_id": project_id,
+                        "now": now + timedelta(seconds=worker),
+                        "previous": predecessor_id,
+                    },
+                )
+            return "committed"
+        except sa.exc.IntegrityError:
+            return "conflict"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        revision_results = list(executor.map(insert_successor, (1, 2)))
+    if sorted(revision_results) != ["committed", "conflict"]:
+        raise AssertionError(
+            f"concurrent single-successor race did not fail closed: {revision_results}"
+        )
+
+    sequence_barrier = threading.Barrier(2)
+
+    def allocate_event(worker: int) -> int:
+        with engine.begin() as connection:
+            sequence_barrier.wait(timeout=10)
+            sequence = connection.scalar(
+                sa.text(
+                    """
+                    UPDATE memory_change_feed_states
+                    SET sequence = sequence + 1
+                    WHERE project_id = :project_id
+                    RETURNING sequence
+                    """
+                ),
+                {"project_id": project_id},
+            )
+            feed_epoch = connection.scalar(
+                sa.text(
+                    """
+                    SELECT feed_epoch FROM memory_change_feed_states
+                    WHERE project_id = :project_id
+                    """
+                ),
+                {"project_id": project_id},
+            )
+            connection.execute(
+                sa.text(
+                    """
+                    INSERT INTO memory_change_events (
+                        id, project_id, sequence, feed_epoch, event_kind, occurred_at,
+                        normalized_tenant_key, entry_id, previous_entry_id, actor, reason
+                    )
+                    VALUES (
+                        :id, :project_id, :sequence, :feed_epoch, 'revised', :occurred_at,
+                        '__global__', :entry_id, NULL, 'migration-drill', :reason
+                    )
+                    """
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "project_id": project_id,
+                    "sequence": sequence,
+                    "feed_epoch": feed_epoch,
+                    "occurred_at": now - timedelta(minutes=worker),
+                    "entry_id": feed_entry_id,
+                    "reason": f"concurrent-worker-{worker}",
+                },
+            )
+            return int(sequence)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        allocated = list(executor.map(allocate_event, (1, 2)))
+    if sorted(allocated) != [3, 4]:
+        raise AssertionError(f"concurrent feed allocation failed: {allocated}")
+    with engine.connect() as connection:
+        sequence = connection.scalar(
+            sa.text(
+                """
+                SELECT sequence FROM memory_change_feed_states
+                WHERE project_id = :project_id
+                """
+            ),
+            {"project_id": project_id},
+        )
+        if sequence != 4:
+            raise AssertionError(f"unexpected feed high watermark: {sequence}")
+
+
 def _assert_temporal_profile(config: Config, engine: sa.Engine, target: str) -> None:
     command.upgrade(config, "20260429_0004")
     _assert_revision(engine, "20260429_0004")
@@ -169,6 +468,7 @@ def _assert_temporal_profile(config: Config, engine: sa.Engine, target: str) -> 
         active_id=active_id,
         archived_id=archived_id,
     )
+    _assert_temporal_runtime_constraints(engine, project_id=project_id)
     command.downgrade(config, "20260429_0004")
     _assert_revision(engine, "20260429_0004")
     command.upgrade(config, target)

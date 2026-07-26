@@ -1,6 +1,10 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+LOCAL_CURSOR_SIGNING_KEY = "memory-bank-local-cursor-secret"
 
 
 class Settings(BaseSettings):
@@ -14,7 +18,7 @@ class Settings(BaseSettings):
     auto_link_min_similarity: float = 0.35
     auto_link_search_limit: int = 20
     auto_link_max_links: int = 5
-    cursor_secret: str = "memory-bank-local-cursor-secret"
+    memory_change_cursor_signing_key: str = LOCAL_CURSOR_SIGNING_KEY
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -22,6 +26,17 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def validate_production_cursor_key(self) -> "Settings":
+        if (
+            self.app_env.lower() == "production"
+            and self.memory_change_cursor_signing_key == LOCAL_CURSOR_SIGNING_KEY
+        ):
+            raise ValueError(
+                "MEMORY_CHANGE_CURSOR_SIGNING_KEY must be set to a non-default value in production"
+            )
+        return self
 
 
 @lru_cache

@@ -24,7 +24,9 @@ EXACT_ID_OWNER_ALLOWLIST = {
     "LinkRepository.get_graph",
     "LinkRepository.traverse",
     "MemoryRepository.get",
-    "MemoryRevisionService._successor",
+    "MemoryRepository.get_for_update",
+    "MemoryRepository.get_successor",
+    "MemoryService.get_memory",
     "MemoryRevisionService.history",
 }
 
@@ -77,7 +79,12 @@ def _function_guard_calls(node: ast.FunctionDef | ast.AsyncFunctionDef) -> froze
         for child in ast.walk(node)
         if isinstance(child, ast.Call)
         for name in [_call_name(child)]
-        if name in {"current_predicate", "historical_predicate"}
+        if name
+        in {
+            "current_predicate",
+            "historical_predicate",
+            "historical_rows_predicate",
+        }
     )
 
 
@@ -218,9 +225,12 @@ def check_inventory(*, app_root: Path, inventory_path: Path) -> list[str]:
             elif "current_predicate" not in query.guard_calls:
                 findings.append(f"{key}: current-view owner does not call current_predicate")
         elif classification == "historical-view":
-            if required_guard != "historical_predicate":
+            if required_guard not in {
+                "historical_predicate",
+                "historical_rows_predicate",
+            }:
                 findings.append(f"{key}: historical-view required_guard mismatch")
-            elif "historical_predicate" not in query.guard_calls:
+            elif required_guard not in query.guard_calls:
                 findings.append(f"{key}: historical-view owner does not call historical_predicate")
         elif classification == "exact-id-view":
             if required_guard != "exact_id":
@@ -247,8 +257,16 @@ def _suggest_row(query: DetectedQuery, existing: dict | None) -> dict:
         classification, guard = "operational-row-update", "operational_allowlist"
     elif query.owner in EXACT_ID_OWNER_ALLOWLIST and query.exact_id_lookup:
         classification, guard = "exact-id-view", "exact_id"
-    elif "historical_predicate" in query.guard_calls:
-        classification, guard = "historical-view", "historical_predicate"
+    elif {
+        "historical_predicate",
+        "historical_rows_predicate",
+    }.intersection(query.guard_calls):
+        classification = "historical-view"
+        guard = (
+            "historical_predicate"
+            if "historical_predicate" in query.guard_calls
+            else "historical_rows_predicate"
+        )
     else:
         classification, guard = "current-view", "current_predicate"
     return {

@@ -14,6 +14,7 @@ from app.repositories.link_repository import LinkRepository
 from app.repositories.memory_repository import MemoryRepository
 from app.repositories.project_repository import ProjectRepository
 from app.services.auto_link_service import AutoLinkService
+from app.services.memory_service import MemoryService
 
 
 @dataclass(frozen=True)
@@ -101,6 +102,11 @@ class MemoryHygieneService:
             return
 
         entries = self.memory_repository.list(archived=False)
+        memory_service = MemoryService(
+            self.memory_repository,
+            self.project_repository,
+            self.link_repository,
+        )
         for entry in entries:
             if entry.project_id is not None:
                 continue
@@ -120,14 +126,11 @@ class MemoryHygieneService:
             if dry_run:
                 continue
 
-            entry.project_id = project_path.project.id
-            metadata = dict(entry.metadata_ or {})
-            metadata["project_id_hygiene"] = {
-                "assigned_by": "source_path",
-                "project_name": project_path.project.name,
-                "evidence": evidence,
-            }
-            entry.metadata_ = metadata
+            memory_service.assign_initial_project_scope(
+                entry.id,
+                project_id=project_path.project.id,
+                evidence=evidence,
+            )
 
     def _relink(
         self,

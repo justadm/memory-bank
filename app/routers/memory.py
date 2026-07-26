@@ -111,7 +111,7 @@ def search_memory(
 def get_memory_changes(
     project_id: uuid.UUID,
     cursor: str | None = None,
-    after_sequence: int | None = None,
+    after_sequence: int | None = Query(default=None, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     service: MemoryService = Depends(get_memory_service),
     principal=Depends(require_read_access),

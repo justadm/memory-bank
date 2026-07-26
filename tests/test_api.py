@@ -9,6 +9,18 @@ from app.models.memory_entry import MemoryEntry
 from app.models.memory_link import MemoryLink
 
 
+def _set_service_metadata(
+    db_session: Session,
+    entry_id: str,
+    **patch,
+) -> MemoryEntry:
+    entry = db_session.get(MemoryEntry, uuid.UUID(entry_id))
+    entry.metadata_ = {**(entry.metadata_ or {}), **patch}
+    db_session.add(entry)
+    db_session.commit()
+    return entry
+
+
 def test_create_project(client):
     response = client.post("/projects", json={"name": "Memory Bank MVP", "description": "Simple memory layer"})
     assert response.status_code == 201
@@ -255,10 +267,13 @@ def test_update_memory_entry(client):
     assert response.status_code == 200
     assert response.json()["title"] == "Updated"
     assert response.json()["content"] == "Updated content"
+    assert response.json()["id"] != created["id"]
+    assert response.headers["Deprecation"] == "true"
 
     detail = client.get(f"/memory/{created['id']}")
     assert detail.status_code == 200
-    assert "Updated content" in (detail.json().get("content") or "")
+    assert detail.json()["content"] == "draft"
+    assert detail.json()["successor_id"] == response.json()["id"]
 
 
 def test_archive_memory_entry(client):
@@ -276,14 +291,23 @@ def test_lifecycle_run_dry_run_reports_candidates(client, db_session: Session):
             "type": "decision",
             "title": "Switch to MongoDB instead",
             "content": "Switch the same runtime to MongoDB instead of PostgreSQL for future work.",
-            "project_id": project["id"],
-            "metadata": {
-                "evidence": ["proposal.md"],
-                "requires_review": True,
-                "decision_conflicts": [{"conflicts_with_entry_id": str(uuid.uuid4()), "reason": "Direction conflict"}],
+                "project_id": project["id"],
+                "metadata": {
+                    "evidence": ["proposal.md"],
+                },
             },
-        },
-    ).json()
+        ).json()
+    _set_service_metadata(
+        db_session,
+        review_entry["id"],
+        requires_review=True,
+        decision_conflicts=[
+            {
+                "conflicts_with_entry_id": str(uuid.uuid4()),
+                "reason": "Direction conflict",
+            }
+        ],
+    )
     stale_note = client.post(
         "/memory",
         json={
@@ -337,14 +361,23 @@ def test_lifecycle_run_applies_archive_review_and_link_cleanup(client, db_sessio
             "type": "decision",
             "title": "Switch to Django instead",
             "content": "Switch the same service to Django instead of FastAPI for future work.",
-            "project_id": project["id"],
-            "metadata": {
-                "evidence": ["proposal.md"],
-                "requires_review": True,
-                "decision_conflicts": [{"conflicts_with_entry_id": str(uuid.uuid4()), "reason": "Direction conflict"}],
+                "project_id": project["id"],
+                "metadata": {
+                    "evidence": ["proposal.md"],
+                },
             },
-        },
-    ).json()
+        ).json()
+    _set_service_metadata(
+        db_session,
+        review_entry["id"],
+        requires_review=True,
+        decision_conflicts=[
+            {
+                "conflicts_with_entry_id": str(uuid.uuid4()),
+                "reason": "Direction conflict",
+            }
+        ],
+    )
     stale_note = client.post(
         "/memory",
         json={
@@ -718,9 +751,14 @@ def test_admin_review_queues_summary(client, db_session: Session):
             "title": "Imported file",
             "content": "Imported artifact that needs quality review.",
             "project_id": project["id"],
-            "metadata": {"quality_review_required": True},
+            "metadata": {},
         },
     ).json()
+    _set_service_metadata(
+        db_session,
+        import_candidate["id"],
+        quality_review_required=True,
+    )
     review_overdue = client.post(
         "/memory",
         json={
@@ -770,7 +808,7 @@ def test_admin_review_queues_summary(client, db_session: Session):
     assert any(set(cluster["entry_ids"]) == set(compaction_ids) for cluster in body["compaction_candidates"])
 
 
-def test_quality_review_resolution_approve(client):
+def test_quality_review_resolution_approve(client, db_session):
     project = client.post("/projects", json={"name": "Quality Review Resolve"}).json()
     created = client.post(
         "/memory",
@@ -779,9 +817,14 @@ def test_quality_review_resolution_approve(client):
             "title": "Imported file",
             "content": "Imported artifact that needs quality review.",
             "project_id": project["id"],
-            "metadata": {"quality_review_required": True},
+            "metadata": {},
         },
     ).json()
+    _set_service_metadata(
+        db_session,
+        created["id"],
+        quality_review_required=True,
+    )
 
     response = client.post(
         "/admin/quality-review/resolve",
@@ -800,7 +843,7 @@ def test_quality_review_resolution_approve(client):
     assert detail["metadata"]["review_history"]
 
 
-def test_quality_review_resolution_false_positive_and_archive(client):
+def test_quality_review_resolution_false_positive_and_archive(client, db_session):
     project = client.post("/projects", json={"name": "Quality False Positive"}).json()
     false_positive = client.post(
         "/memory",
@@ -809,7 +852,7 @@ def test_quality_review_resolution_false_positive_and_archive(client):
             "title": "Primary database decision",
             "content": "The application runtime uses PostgreSQL as the main database service.",
             "project_id": project["id"],
-            "metadata": {"quality_review_required": True},
+            "metadata": {},
         },
     ).json()
     archive_candidate = client.post(
@@ -818,9 +861,19 @@ def test_quality_review_resolution_false_positive_and_archive(client):
             "type": "note",
             "content": "operational note",
             "project_id": project["id"],
-            "metadata": {"quality_review_required": True},
+            "metadata": {},
         },
     ).json()
+    _set_service_metadata(
+        db_session,
+        false_positive["id"],
+        quality_review_required=True,
+    )
+    _set_service_metadata(
+        db_session,
+        archive_candidate["id"],
+        quality_review_required=True,
+    )
 
     false_positive_response = client.post(
         "/admin/quality-review/resolve",
@@ -1234,7 +1287,7 @@ def test_evaluation_batch_endpoint(client):
     assert body["summary"]["used_memory_rate"] == 0.5
 
 
-def test_metrics_overview_endpoint(client):
+def test_metrics_overview_endpoint(client, db_session):
     project = client.post("/projects", json={"name": "Metrics Project"}).json()
     first = client.post(
         "/memory",
@@ -1255,9 +1308,14 @@ def test_metrics_overview_endpoint(client):
             "title": "Imported file",
             "content": "Imported artifact that needs quality review.",
             "project_id": project["id"],
-            "metadata": {"quality_review_required": True},
+            "metadata": {},
         },
     ).json()
+    _set_service_metadata(
+        db_session,
+        review_item["id"],
+        quality_review_required=True,
+    )
     client.post(
         "/task-logs",
         json={
@@ -1824,7 +1882,14 @@ def test_import_project_scan_reuses_existing_project_by_source_path(client, tmp_
     body = second.json()
     assert body["project"]["id"] == first_project_id
     assert body["entries_updated"] >= 1
-    assert body["import_event_id"] == first.json()["import_event_id"]
+    assert body["import_event_id"] != first.json()["import_event_id"]
+    event_history = client.get(
+        f"/memory/{first.json()['import_event_id']}/history"
+    ).json()["items"]
+    assert [item["id"] for item in event_history] == [
+        first.json()["import_event_id"],
+        body["import_event_id"],
+    ]
 
     summary = client.get("/admin/imports/summary", params={"limit": 10})
     assert summary.status_code == 200

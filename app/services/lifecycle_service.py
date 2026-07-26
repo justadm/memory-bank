@@ -8,6 +8,8 @@ from app.models.enums import MemoryType
 from app.models.memory_entry import MemoryEntry
 from app.repositories.link_repository import LinkRepository
 from app.repositories.memory_repository import MemoryRepository
+from app.repositories.project_repository import ProjectRepository
+from app.services.memory_service import MemoryService
 
 
 @dataclass
@@ -93,6 +95,11 @@ class LifecycleService:
         )
 
         if not dry_run:
+            memory_service = MemoryService(
+                self.memory_repository,
+                ProjectRepository(self.memory_repository.db),
+                self.link_repository,
+            )
             for entry in quality_decay_candidates:
                 metadata = dict(entry.metadata_ or {})
                 quality = dict(metadata.get("quality", {}))
@@ -100,20 +107,25 @@ class LifecycleService:
                 quality["score"] = round(max(0.0, current_score - decay_amount), 3)
                 quality["decayed_at"] = now.isoformat()
                 metadata["quality"] = quality
-                entry.metadata_ = metadata
-                self.memory_repository.db.add(entry)
+                memory_service.update_operational_fields(
+                    entry.id,
+                    metadata_patch={"quality": quality},
+                    operation="lifecycle_quality_decay",
+                )
 
             for entry in review_overdue_candidates:
                 metadata = dict(entry.metadata_ or {})
                 metadata["review_overdue"] = True
-                entry.metadata_ = metadata
-                self.memory_repository.db.add(entry)
+                memory_service.update_operational_fields(
+                    entry.id,
+                    metadata_patch={"review_overdue": True},
+                    operation="lifecycle_review_overdue",
+                )
 
             archive_ids = {entry.id for entry in archive_candidates}
             for entry in entries:
                 if entry.id in archive_ids:
-                    entry.archived = True
-                    self.memory_repository.db.add(entry)
+                    memory_service.archive_memory(entry.id, now=now)
 
             for link in weak_links:
                 self.link_repository.delete(link)

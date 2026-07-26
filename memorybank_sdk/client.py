@@ -136,6 +136,8 @@ class MemoryBankClient:
         project_id: str | None = None,
         importance: int = 3,
         metadata: dict[str, Any] | None = None,
+        provenance: str = "unspecified",
+        confidence: float | None = None,
     ) -> dict[str, Any]:
         return self._request(
             "POST",
@@ -148,6 +150,8 @@ class MemoryBankClient:
                 "project_id": project_id,
                 "importance": importance,
                 "metadata": metadata or {},
+                "provenance": provenance,
+                "confidence": confidence,
             },
         )
 
@@ -198,6 +202,7 @@ class MemoryBankClient:
         project_id: str | None = None,
         memory_type: str | None = None,
         archived: bool | None = None,
+        as_of: str | None = None,
     ) -> dict[str, Any]:
         params: dict[str, Any] = {}
         if project_id:
@@ -206,6 +211,8 @@ class MemoryBankClient:
             params["type"] = memory_type
         if archived is not None:
             params["archived"] = str(archived).lower()
+        if as_of is not None:
+            params["as_of"] = as_of
         return self._request("GET", "/memory", params=params)
 
     def update_memory(self, memory_id: str, **patch: Any) -> dict[str, Any]:
@@ -223,10 +230,13 @@ class MemoryBankClient:
         limit: int = 10,
         scope: SearchScope = "project",
         mode: Literal["lexical", "semantic", "hybrid"] = "hybrid",
+        as_of: str | None = None,
     ) -> dict[str, Any]:
         params: dict[str, Any] = {"query": query, "limit": limit, "scope": scope, "mode": mode}
         if project_id:
             params["project_id"] = project_id
+        if as_of is not None:
+            params["as_of"] = as_of
         return self._request("GET", "/memory/search", params=params)
 
     def get_relevant_memory(
@@ -240,6 +250,7 @@ class MemoryBankClient:
         scope: SearchScope = "project",
         search_mode: Literal["lexical", "semantic", "hybrid"] = "hybrid",
         metadata: dict[str, Any] | None = None,
+        as_of: str | None = None,
     ) -> dict[str, Any]:
         return self._request(
             "POST",
@@ -253,6 +264,7 @@ class MemoryBankClient:
                 "limit": limit,
                 "search_mode": search_mode,
                 "metadata": metadata or {},
+                "as_of": as_of,
             },
         )
 

@@ -4,8 +4,10 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import Float, case, cast, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
+from app.models.enums import MemoryProvenance
+from app.models.memory_change_feed import MemoryChangeFeedState
 from app.models.memory_entry import MemoryEntry
 from app.models.memory_link import MemoryLink
 from app.models.project import Project
@@ -20,11 +22,14 @@ class MetricsRepository:
     def memory_overview(self, *, project_id: uuid.UUID | None = None, tenant_ids: set[str] | None = None) -> dict:
         now = datetime.now(timezone.utc)
         current = MemoryRepository.current_predicate(now)
-        historical = MemoryRepository.historical_predicate(now)
+        historical_available = MemoryRepository.historical_rows_predicate()
         stmt = select(
-            func.count(MemoryEntry.id).filter(historical),
+            func.count(MemoryEntry.id).filter(historical_available),
             func.count(MemoryEntry.id).filter(current),
-            func.count(MemoryEntry.id).filter(historical, MemoryEntry.archived.is_(True)),
+            func.count(MemoryEntry.id).filter(
+                historical_available,
+                MemoryEntry.archived.is_(True),
+            ),
             (
                 func.count(MemoryEntry.id).filter(
                     current,
@@ -69,12 +74,78 @@ class MetricsRepository:
         active_count = int(self.db.scalar(active_stmt) or 0)
         orphan_rate = (orphan_count / active_count) if active_count else 0.0
 
+        provenance_stmt = (
+            select(MemoryEntry.provenance, func.count(MemoryEntry.id))
+            .where(MemoryRepository.historical_rows_predicate())
+            .group_by(MemoryEntry.provenance)
+        )
+        if tenant_ids is not None:
+            provenance_stmt = provenance_stmt.join(
+                Project,
+                Project.id == MemoryEntry.project_id,
+            ).where(self._project_tenant_clause(tenant_ids))
+        if project_id:
+            provenance_stmt = provenance_stmt.where(MemoryEntry.project_id == project_id)
+        provenance_distribution = {
+            provenance.value if hasattr(provenance, "value") else str(provenance): int(count)
+            for provenance, count in self.db.execute(provenance_stmt)
+        }
+        missing_provenance_stmt = select(func.count(MemoryEntry.id)).where(
+            current,
+            MemoryEntry.provenance == MemoryProvenance.unspecified,
+        )
+        if tenant_ids is not None:
+            missing_provenance_stmt = missing_provenance_stmt.join(
+                Project,
+                Project.id == MemoryEntry.project_id,
+            ).where(self._project_tenant_clause(tenant_ids))
+        if project_id:
+            missing_provenance_stmt = missing_provenance_stmt.where(
+                MemoryEntry.project_id == project_id
+            )
+        missing_provenance = int(self.db.scalar(missing_provenance_stmt) or 0)
+
+        successor = aliased(MemoryEntry)
+        stale_stmt = select(func.count(MemoryEntry.id)).where(
+            current,
+            select(successor.id)
+            .where(successor.supersedes_id == MemoryEntry.id)
+            .exists(),
+        )
+        if tenant_ids is not None:
+            stale_stmt = stale_stmt.join(Project, Project.id == MemoryEntry.project_id).where(
+                self._project_tenant_clause(tenant_ids)
+            )
+        if project_id:
+            stale_stmt = stale_stmt.where(MemoryEntry.project_id == project_id)
+        stale_revision_conflicts = int(self.db.scalar(stale_stmt) or 0)
+
+        feed_stmt = select(func.max(MemoryChangeFeedState.sequence))
+        if project_id:
+            feed_stmt = feed_stmt.where(MemoryChangeFeedState.project_id == project_id)
+        elif tenant_ids is not None:
+            feed_stmt = feed_stmt.join(
+                Project,
+                Project.id == MemoryChangeFeedState.project_id,
+            ).where(self._project_tenant_clause(tenant_ids))
+        feed_high_watermark = int(self.db.scalar(feed_stmt) or 0)
+
         return {
             "total_entries": int(total_entries or 0),
             "active_entries": int(active_entries or 0),
             "archived_entries": int(archived_entries or 0),
             "reuse_rate": float(reuse_rate or 0.0),
             "orphan_rate": float(orphan_rate),
+            "provenance_distribution": provenance_distribution,
+            "current_revision_count": int(active_entries or 0),
+            "historical_revision_count": int(total_entries or 0),
+            "missing_provenance_rate": (
+                missing_provenance / int(active_entries)
+                if active_entries
+                else 0.0
+            ),
+            "stale_revision_conflicts": stale_revision_conflicts,
+            "feed_high_watermark": feed_high_watermark,
         }
 
     def graph_overview(self, *, project_id: uuid.UUID | None = None, tenant_ids: set[str] | None = None) -> dict:

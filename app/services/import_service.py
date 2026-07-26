@@ -99,20 +99,14 @@ class ImportService:
                 entries_skipped += 1
                 continue
             if existing and payload.existing_entry_mode == "update":
-                updated = self.memory_service.update_memory(
-                    existing.id,
-                    MemoryUpdate(
-                        title=title,
-                        content=content,
-                        source_agent=item.source_agent,
-                        project_id=project.id,
-                        importance=item.importance,
-                        metadata=metadata,
-                        archived=False,
-                    ),
+                updated = self._update_import_memory(
+                    existing=existing,
+                    title=title,
+                    content=content,
+                    source_agent=item.source_agent,
+                    importance=item.importance,
+                    metadata=metadata,
                     principal=principal,
-                    operation_source="import",
-                    enforce_quality_gate=False,
                 )
                 entry_refs[item.ref] = updated.id
                 if updated.metadata_.get("quality_review_required"):
@@ -198,20 +192,14 @@ class ImportService:
             )
         if existing:
             metadata = self._build_import_event_metadata(payload=payload, previous_metadata=existing.metadata_)
-            return self.memory_service.update_memory(
-                existing.id,
-                MemoryUpdate(
-                    title=title,
-                    content=content,
-                    source_agent=payload.import_event.source_agent,
-                    project_id=project.id,
-                    importance=payload.import_event.importance,
-                    metadata=metadata,
-                    archived=False,
-                ),
+            return self._update_import_memory(
+                existing=existing,
+                title=title,
+                content=content,
+                source_agent=payload.import_event.source_agent,
+                importance=payload.import_event.importance,
+                metadata=metadata,
                 principal=principal,
-                operation_source="import",
-                enforce_quality_gate=False,
             )
 
         return self.memory_service.create_memory(
@@ -228,6 +216,63 @@ class ImportService:
             operation_source="import",
             enforce_quality_gate=False,
         )
+
+    def _update_import_memory(
+        self,
+        *,
+        existing,
+        title: str | None,
+        content: str,
+        source_agent: str,
+        importance: int,
+        metadata: dict,
+        principal: AuthPrincipal | None,
+    ):
+        operational_keys = {
+            "import_runs_count",
+            "last_imported_at",
+            "import_history",
+        }
+        metadata_patch = {
+            key: value for key, value in metadata.items() if key not in operational_keys
+        }
+        semantic_changes = {
+            key: value
+            for key, value in {
+                "title": title,
+                "content": content,
+                "source_agent": source_agent,
+                "importance": importance,
+            }.items()
+            if getattr(existing, key) != value
+        }
+        semantic_metadata_changed = any(
+            (existing.metadata_ or {}).get(key) != value
+            for key, value in metadata_patch.items()
+        )
+        current = existing
+        if semantic_changes or semantic_metadata_changed:
+            current = self.memory_service.update_memory(
+                existing.id,
+                MemoryUpdate(
+                    **semantic_changes,
+                    metadata=metadata_patch,
+                ),
+                principal=principal,
+                operation_source="import",
+                enforce_quality_gate=False,
+            )
+        operational_patch = {
+            key: metadata[key] for key in operational_keys if key in metadata
+        }
+        if operational_patch:
+            current = self.memory_service.update_operational_fields(
+                current.id,
+                metadata_patch=operational_patch,
+                operation="import_run_accounting",
+                principal=principal,
+            )
+        return current
 
     def _find_active_import_event(
         self,

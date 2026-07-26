@@ -560,6 +560,7 @@ const state = {
   memorySearchResults: [],
   memoryGraph: null,
   memoryLinks: null,
+  memoryHistory: [],
   projectFocus: null,
   selectedProjectId: "",
   selectedMemoryId: "",
@@ -990,15 +991,18 @@ async function loadMemoryData() {
 
   if (state.selectedMemoryId) {
     const graphDepth = Math.max(1, Number.parseInt(state.forms.memoryGraphDepth || "2", 10) || 2);
-    const [graph, links] = await Promise.all([
+    const [graph, links, history] = await Promise.all([
       apiRequest(`/memory/${encodeURIComponent(state.selectedMemoryId)}/graph?depth=${graphDepth}`),
-      apiRequest(`/memory/${encodeURIComponent(state.selectedMemoryId)}/links`)
+      apiRequest(`/memory/${encodeURIComponent(state.selectedMemoryId)}/links`),
+      apiRequest(`/memory/${encodeURIComponent(state.selectedMemoryId)}/history`).catch(() => ({ items: [] }))
     ]);
     state.memoryGraph = graph;
     state.memoryLinks = links;
+    state.memoryHistory = history.items || [];
   } else {
     state.memoryGraph = null;
     state.memoryLinks = null;
+    state.memoryHistory = [];
   }
 }
 
@@ -1794,6 +1798,13 @@ function renderMemoryView() {
             <div class="metric-row"><span class="metric-name">${escapeHtml(columnLabel("importance"))}</span><span class="metric-value">${escapeHtml(formatNumber(selectedEntry.importance))}</span></div>
             <div class="metric-row"><span class="metric-name">${escapeHtml(columnLabel("usage_count"))}</span><span class="metric-value">${escapeHtml(formatNumber(selectedEntry.usage_count))}</span></div>
             <div class="metric-row"><span class="metric-name">${escapeHtml(columnLabel("archived"))}</span><span class="metric-value">${renderStatusChip(Boolean(selectedEntry.archived))}</span></div>
+            <div class="metric-row"><span class="metric-name">Current revision</span><span class="metric-value">${renderStatusChip(Boolean(selectedEntry.is_current))}</span></div>
+            <div class="metric-row"><span class="metric-name">Provenance</span><span class="metric-value">${escapeHtml(selectedEntry.provenance || "unspecified")}</span></div>
+            <div class="metric-row"><span class="metric-name">Evidence confidence</span><span class="metric-value">${escapeHtml(selectedEntry.confidence == null ? "n/a" : String(selectedEntry.confidence))}</span></div>
+            <div class="metric-row"><span class="metric-name">Valid from</span><span class="metric-value">${escapeHtml(formatDate(selectedEntry.valid_from))}</span></div>
+            <div class="metric-row"><span class="metric-name">Valid to</span><span class="metric-value">${escapeHtml(selectedEntry.valid_to ? formatDate(selectedEntry.valid_to) : "current")}</span></div>
+            <div class="metric-row"><span class="metric-name">Predecessor</span><span class="metric-value mono">${escapeHtml(selectedEntry.supersedes_id || "none")}</span></div>
+            <div class="metric-row"><span class="metric-name">Successor</span><span class="metric-value mono">${escapeHtml(selectedEntry.successor_id || "none")}</span></div>
             <div class="metric-row"><span class="metric-name">${escapeHtml(columnLabel("updated_at"))}</span><span class="metric-value">${escapeHtml(formatDate(selectedEntry.updated_at))}</span></div>
           </div>
           <div class="panel" style="margin-top:18px; padding:16px;">
@@ -1808,7 +1819,20 @@ function renderMemoryView() {
               <div class="mono">${escapeHtml(JSON.stringify(selectedEntry.metadata, null, 2))}</div>
             </div>`
               : ""
-          }`
+          }
+          <div class="panel" style="margin-top:18px; padding:16px;">
+            <div class="summary-kicker">Revision history</div>
+            ${
+              state.memoryHistory.length
+                ? state.memoryHistory
+                    .map(
+                      (item) =>
+                        `<button class="secondary-button" type="button" data-action="select-memory" data-id="${escapeHtml(item.id)}">${escapeHtml(formatDate(item.valid_from))} · ${escapeHtml(item.provenance || "unspecified")}</button>`
+                    )
+                    .join(" ")
+                : `<div class="empty-state">${escapeHtml(t("empty"))}</div>`
+            }
+          </div>`
             : `<div class="empty-state">${escapeHtml(t("noSelection"))}</div>`
         }
       </article>
@@ -2794,6 +2818,11 @@ function attachEvents() {
       }
       if (action === "archive-selected-memory") {
         await archiveSelectedMemory();
+      }
+      if (action === "select-memory") {
+        state.selectedMemoryId = target.dataset.id || "";
+        await loadMemoryData();
+        render();
       }
       if (action === "delete-link") {
         await deleteLink(target.dataset.linkId);

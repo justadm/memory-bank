@@ -12,6 +12,7 @@ from app.repositories.metrics_repository import MetricsRepository
 from app.repositories.project_repository import ProjectRepository
 from app.security import AuthPrincipal
 from app.services.compaction_service import CompactionService
+from app.services.memory_service import MemoryService
 
 
 class AdminObservabilityService:
@@ -27,6 +28,11 @@ class AdminObservabilityService:
         self.memory_repository = memory_repository
         self.compaction_service = CompactionService(memory_repository, link_repository)
         self.project_repository = project_repository
+        self.memory_service = MemoryService(
+            memory_repository,
+            project_repository,
+            link_repository,
+        )
         self.settings = settings
 
     def get_summary(self, *, principal: AuthPrincipal | None = None) -> dict:
@@ -247,17 +253,16 @@ class AdminObservabilityService:
             "conflicts_with_entry_id": str(conflicts_with_entry_id),
         }
 
+        archive_entry = False
         if action == "supersede":
             old_metadata["decision_status"] = "superseded"
             old_metadata["deprecated_by_entry_id"] = str(entry_id)
-            old_metadata["valid_until"] = now
             old_metadata["review_status"] = "superseded"
             old_metadata["requires_review"] = False
             old_metadata.pop("decision_conflicts", None)
 
             entry_metadata["decision_status"] = "active"
             entry_metadata["supersedes_entry_id"] = str(conflicts_with_entry_id)
-            entry_metadata["valid_from"] = entry_metadata.get("valid_from") or now
             entry_metadata["review_status"] = "approved"
             entry_metadata["requires_review"] = False
             entry_metadata.pop("decision_conflicts", None)
@@ -266,7 +271,7 @@ class AdminObservabilityService:
             entry_metadata["review_status"] = "rejected"
             entry_metadata["requires_review"] = False
             entry_metadata.pop("decision_conflicts", None)
-            entry.archived = True
+            archive_entry = True
         elif action == "keep_both":
             entry_metadata["review_status"] = "approved"
             entry_metadata["requires_review"] = False
@@ -280,14 +285,43 @@ class AdminObservabilityService:
         history = list(entry_metadata.get("review_history", []))
         history.append(review_record)
         entry_metadata["review_history"] = history[-20:]
-        entry.metadata_ = entry_metadata
-        old_entry.metadata_ = old_metadata
-
-        self.memory_repository.db.add(entry)
-        self.memory_repository.db.add(old_entry)
-        self.memory_repository.db.flush()
-        self.memory_repository.db.refresh(entry)
-        self.memory_repository.db.refresh(old_entry)
+        self.memory_service.update_operational_fields(
+            entry.id,
+            metadata_patch={
+                key: entry_metadata.get(key)
+                for key in {
+                    "decision_status",
+                    "review_status",
+                    "requires_review",
+                    "decision_conflicts",
+                    "supersedes_entry_id",
+                    "review_history",
+                }
+                if key in entry_metadata or key in {"decision_conflicts"}
+            },
+            operation="decision_conflict_resolution",
+            principal=principal,
+        )
+        self.memory_service.update_operational_fields(
+            old_entry.id,
+            metadata_patch={
+                key: old_metadata.get(key)
+                for key in {
+                    "decision_status",
+                    "review_status",
+                    "requires_review",
+                    "decision_conflicts",
+                    "deprecated_by_entry_id",
+                }
+                if key in old_metadata or key in {"decision_conflicts"}
+            },
+            operation="decision_conflict_resolution",
+            principal=principal,
+        )
+        if action == "supersede":
+            self.memory_service.archive_memory(old_entry.id, principal=principal)
+        if archive_entry:
+            self.memory_service.archive_memory(entry.id, principal=principal)
         return {
             "status": "resolved",
             "action": action,
@@ -322,6 +356,7 @@ class AdminObservabilityService:
         }
 
         quality = dict(metadata.get("quality", {}))
+        archive_entry = False
         if action == "approve":
             metadata["review_status"] = "approved"
             metadata["quality_review_required"] = False
@@ -337,7 +372,7 @@ class AdminObservabilityService:
             metadata["review_status"] = "archived"
             metadata["quality_review_required"] = False
             metadata["review_overdue"] = False
-            entry.archived = True
+            archive_entry = True
         elif action == "needs_changes":
             metadata["review_status"] = "needs_changes"
             metadata["quality_review_required"] = True
@@ -350,10 +385,24 @@ class AdminObservabilityService:
         history.append(review_record)
         metadata["review_history"] = history[-20:]
         metadata["quality"] = quality
-        entry.metadata_ = metadata
-        self.memory_repository.db.add(entry)
-        self.memory_repository.db.flush()
-        self.memory_repository.db.refresh(entry)
+        self.memory_service.update_operational_fields(
+            entry.id,
+            metadata_patch={
+                key: metadata.get(key)
+                for key in {
+                    "review_status",
+                    "quality_review_required",
+                    "review_overdue",
+                    "quality",
+                    "review_history",
+                }
+                if key in metadata
+            },
+            operation="quality_review_resolution",
+            principal=principal,
+        )
+        if archive_entry:
+            self.memory_service.archive_memory(entry.id, principal=principal)
         return {"status": "resolved", "action": action, "entry_id": entry.id}
 
     def get_runtime_self_check(

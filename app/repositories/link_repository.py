@@ -1,6 +1,6 @@
 import uuid
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -52,6 +52,49 @@ class LinkRepository:
             self.db.scalars(select(MemoryLink).where(MemoryLink.to_entry_id == entry_id).order_by(MemoryLink.created_at))
         )
         return outgoing, incoming
+
+    def inherit_for_revision(
+        self,
+        *,
+        previous_entry_id: uuid.UUID,
+        revision_entry_id: uuid.UUID,
+        inherited_at: datetime,
+    ) -> list[MemoryLink]:
+        outgoing, incoming = self.get_for_entry(previous_entry_id)
+        created: list[MemoryLink] = []
+        seen: set[tuple[uuid.UUID, uuid.UUID, MemoryLinkType]] = set()
+        for original, outgoing_side in [
+            *((item, True) for item in outgoing),
+            *((item, False) for item in incoming),
+        ]:
+            from_id = revision_entry_id if outgoing_side else original.from_entry_id
+            to_id = original.to_entry_id if outgoing_side else revision_entry_id
+            if from_id == to_id:
+                continue
+            key = (from_id, to_id, original.type)
+            if key in seen or self.find_by_pair(*key):
+                continue
+            seen.add(key)
+            metadata = dict(original.metadata_ or {})
+            metadata.update(
+                {
+                    "inherited_from_link_id": str(original.id),
+                    "inherited_at": inherited_at.astimezone(timezone.utc).isoformat(),
+                    "revision_id": str(revision_entry_id),
+                }
+            )
+            link = MemoryLink(
+                from_entry_id=from_id,
+                to_entry_id=to_id,
+                type=original.type,
+                strength=original.strength,
+                created_by_agent=original.created_by_agent,
+                metadata_=metadata,
+            )
+            self.db.add(link)
+            created.append(link)
+        self.db.flush()
+        return created
 
     def get_graph(self, entry_id: uuid.UUID, depth: int) -> tuple[list[MemoryEntry], list[MemoryLink]]:
         visited = {entry_id}

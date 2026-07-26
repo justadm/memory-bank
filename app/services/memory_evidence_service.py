@@ -28,11 +28,15 @@ SERVICE_OWNED_METADATA_KEYS = frozenset(
         "deprecated_by_entry_id",
     }
 )
-LEGACY_COMPATIBILITY_METADATA_KEYS = frozenset({"quality_review_required", "requires_review", "decision_conflicts"})
 
 _FORBIDDEN = re.compile(
     r"(?i)(authorization\s*:\s*bearer|x-api-key\s*:|-----begin .*private key-----|\b(?:sk|ghp|gho|xoxb|xoxp)-[a-z0-9_-]{8,}|\b(?:password|passwd|secret|token)\s*[:=]|\b(?:stdout|stderr|response_body|raw_output|customer_payload)\b)"
 )
+_SAFE_REDACTED_ASSIGNMENT = re.compile(
+    r"(?i)\b(?:api[_-]?key|password|passwd|secret|token)\s*[:=]\s*\[REDACTED\]"
+)
+
+
 def scan_privacy_safe(value: Any) -> bool:
     if isinstance(value, dict):
         for key, item in value.items():
@@ -46,27 +50,41 @@ def scan_privacy_safe(value: Any) -> bool:
     if value is None:
         return True
     text = str(value)
-    if "[REDACTED]" in text:
-        return True
-    return not _FORBIDDEN.search(text)
+    return not _FORBIDDEN.search(_SAFE_REDACTED_ASSIGNMENT.sub("[REDACTED]", text))
 
 
 class MemoryEvidenceService:
     @staticmethod
     def validate_provenance(
-        provenance: MemoryProvenance,
+        provenance: MemoryProvenance | str,
         *,
         principal: AuthPrincipal,
         metadata: dict[str, Any],
         operation_source: str = "api",
     ) -> list[dict[str, Any]]:
-        forbidden_metadata = (SERVICE_OWNED_METADATA_KEYS - LEGACY_COMPATIBILITY_METADATA_KEYS).intersection(metadata)
+        try:
+            provenance = MemoryProvenance(provenance)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="invalid provenance",
+            ) from exc
+        forbidden_metadata = SERVICE_OWNED_METADATA_KEYS.intersection(metadata)
         if operation_source == "api" and forbidden_metadata:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="service-owned metadata is not client writable")
         if not scan_privacy_safe(metadata):
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="metadata contains sensitive evidence")
-        if provenance is MemoryProvenance.imported and operation_source != "import" and not ({"import", "admin"} & principal.scopes):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="imported provenance requires import scope")
+        if provenance is MemoryProvenance.imported:
+            if operation_source != "import":
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="imported provenance is reserved for import operations",
+                )
+            if not ({"import", "admin"} & principal.scopes):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="imported provenance requires import scope",
+                )
         if provenance is MemoryProvenance.validated:
             if not ({"validate", "admin"} & principal.scopes):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="validated provenance requires validate scope")

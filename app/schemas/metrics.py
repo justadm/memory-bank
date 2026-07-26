@@ -12,6 +12,9 @@ class MemoryMetricsResponse(BaseModel):
     provenance_distribution: dict[str, int] = {}
     current_revision_count: int = 0
     historical_revision_count: int = 0
+    missing_provenance_rate: float = 0.0
+    stale_revision_conflicts: int = 0
+    feed_high_watermark: int = 0
 
 
 class GraphMetricsResponse(BaseModel):

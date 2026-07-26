@@ -16,7 +16,12 @@ from app.repositories.memory_repository import MemoryRepository
 from app.repositories.project_repository import ProjectRepository
 from app.security import AuthPrincipal, ensure_tenant_access, resolve_tenant_for_create
 from app.schemas.links import LinkCreate
-from app.schemas.memory import MemoryCreate, MemoryRelevantRequest, MemoryUpdate
+from app.schemas.memory import (
+    MemoryCreate,
+    MemoryRelevantRequest,
+    MemoryReviseRequest,
+    MemoryUpdate,
+)
 from app.schemas.projects import ProjectCreate, ProjectUpdate
 from app.services.auto_link_service import AutoLinkService
 from app.services.decision_authority_service import DecisionAuthorityService
@@ -24,6 +29,7 @@ from app.services.graph_service import GraphService
 from app.services.memory_quality_service import MemoryQualityService
 from app.services.memory_evidence_service import MemoryEvidenceService
 from app.services.memory_change_service import MemoryChangeService
+from app.services.memory_revision_service import MemoryRevisionService
 from app.services.search_service import SearchService
 
 
@@ -191,6 +197,8 @@ class MemoryService:
                     event_kind=MemoryChangeEventKind.created,
                     principal=principal,
                 )
+        created.is_current = True
+        created.successor_id = None
         return created
 
     def update_operational_fields(
@@ -233,11 +241,60 @@ class MemoryService:
         self.memory_repository.db.flush()
         return entry
 
+    def assign_initial_project_scope(
+        self,
+        entry_id: uuid.UUID,
+        *,
+        project_id: uuid.UUID,
+        evidence: str,
+    ) -> MemoryEntry:
+        entry = self.memory_repository.get_for_update(entry_id)
+        if not entry:
+            raise HTTPException(status_code=404, detail="Memory entry not found")
+        if (
+            entry.project_id is not None
+            or entry.archived
+            or entry.valid_to is not None
+            or entry.supersedes_id is not None
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "initial_project_scope_not_assignable"},
+            )
+        project = self.project_repository.get(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if not MemoryEvidenceService.validate_reason(evidence):
+            raise HTTPException(status_code=422, detail="invalid project assignment evidence")
+        entry.project_id = project.id
+        metadata = dict(entry.metadata_ or {})
+        metadata["project_id_hygiene"] = {
+            "assigned_by": "source_path",
+            "project_name": project.name,
+            "evidence": evidence,
+        }
+        entry.metadata_ = metadata
+        self.memory_repository.db.add(entry)
+        self.memory_repository.db.flush()
+        MemoryChangeService(self.memory_repository.db).emit(
+            project=project,
+            entry_id=entry.id,
+            event_kind=MemoryChangeEventKind.created,
+            principal=None,
+            reason="initial project scope assigned from sanitized source-path evidence",
+        )
+        return entry
+
     def get_memory(self, entry_id: uuid.UUID, *, principal: AuthPrincipal | None = None) -> MemoryEntry:
         entry = self.memory_repository.get(entry_id)
         if not entry:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory entry not found")
         self._ensure_entry_access(entry, principal)
+        successor = self.memory_repository.get_successor(entry.id)
+        entry.successor_id = successor.id if successor else None
+        entry.is_current = (
+            successor is None and entry.valid_to is None and not entry.archived
+        )
         return entry
 
     def list_memory(
@@ -252,7 +309,16 @@ class MemoryService:
         if project_id:
             self._validate_project(project_id, principal=principal, require_for_restricted=False)
         items = self.memory_repository.list(project_id=project_id, memory_type=memory_type, archived=archived, as_of=as_of)
-        return [item for item in items if self._can_access_entry(item, principal)]
+        visible = [item for item in items if self._can_access_entry(item, principal)]
+        for item in visible:
+            successor = self.memory_repository.get_successor(item.id)
+            item.successor_id = successor.id if successor else None
+            item.is_current = (
+                successor is None
+                and item.valid_to is None
+                and not item.archived
+            )
+        return visible
 
     def update_memory(
         self,
@@ -263,65 +329,81 @@ class MemoryService:
         enforce_quality_gate: bool = True,
         operation_source: str = "api",
     ) -> MemoryEntry:
-        entry = self.get_memory(entry_id, principal=principal)
         data = payload.model_dump(exclude_unset=True)
-        effective_principal = principal or AuthPrincipal(name="anonymous", scopes={"read", "write", "import", "admin"}, api_key="")
-        metadata_input = dict(data.get("metadata") or {}) if "metadata" in data else {}
-        provenance = data.get("provenance", entry.provenance)
-        MemoryEvidenceService.validate_provenance(
-            provenance,
-            principal=effective_principal,
-            metadata=metadata_input,
-            operation_source=operation_source,
-        )
-        if "project_id" in data:
-            self._validate_project(data["project_id"], principal=principal, require_for_restricted=principal is not None)
-        for field, value in data.items():
-            if field == "metadata":
-                setattr(entry, "metadata_", value)
-            else:
-                setattr(entry, field, value)
-        quality = self.quality_service.assess(
-            memory_type=entry.type,
-            title=entry.title,
-            content=entry.content,
-            metadata=entry.metadata_,
-            project_id=entry.project_id,
-            existing_entry_id=entry.id,
-        )
-        metadata = dict(entry.metadata_ or {})
-        metadata["quality"] = quality.as_metadata()
-        if quality.review_required:
-            metadata["quality_review_required"] = True
-        else:
-            metadata.pop("quality_review_required", None)
-        metadata = self.decision_authority_service.enrich_metadata(
-            entry_id=entry.id,
-            memory_type=entry.type,
-            project_id=entry.project_id,
-            title=entry.title,
-            content=entry.content,
-            metadata=metadata,
-        )
-        if quality.reject and enforce_quality_gate:
+        forbidden = {"project_id", "archived"}.intersection(data)
+        if forbidden and operation_source == "api":
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={"message": "Memory entry did not pass quality validation", "quality": quality.as_metadata()},
+                detail={"code": "immutable_memory_fields", "fields": sorted(forbidden)},
             )
-        entry.metadata_ = metadata
-        if "title" in data or "content" in data:
-            entry.search_vector = None if self.memory_repository.is_postgresql() else self._build_search_payload(entry.title, entry.content)
-        self.memory_repository.db.add(entry)
-        self.memory_repository.db.flush()
-        self.memory_repository.db.refresh(entry)
-        self.memory_repository.sync_search_vector(entry, self._build_search_payload(entry.title, entry.content))
-        return entry
-
-    def archive_memory(self, entry_id: uuid.UUID, *, principal: AuthPrincipal | None = None) -> MemoryEntry:
         entry = self.get_memory(entry_id, principal=principal)
+        if "project_id" in data and data["project_id"] != entry.project_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"code": "immutable_memory_fields", "fields": ["project_id"]},
+            )
+        if data.get("archived") not in {None, False}:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"code": "immutable_memory_fields", "fields": ["archived"]},
+            )
+        semantic_fields = {
+            key: value
+            for key, value in data.items()
+            if key in {"title", "content", "source_agent", "importance", "provenance", "confidence"}
+        }
+        metadata_patch = dict(data.get("metadata") or {})
+        if not semantic_fields and not metadata_patch:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"code": "empty_semantic_update"},
+            )
+        reason = (
+            "legacy PATCH compatibility"
+            if operation_source == "api"
+            else "project import semantic update"
+        )
+        successor, _, _ = MemoryRevisionService(
+            self.memory_repository,
+            self.project_repository,
+        ).revise(
+            entry_id,
+            MemoryReviseRequest(
+                changes=semantic_fields,
+                metadata_patch=metadata_patch,
+                reason=reason,
+            ),
+            principal=principal,
+            operation_source=operation_source,
+            enforce_quality_gate=enforce_quality_gate,
+        )
+        return successor
+
+    def archive_memory(
+        self,
+        entry_id: uuid.UUID,
+        *,
+        principal: AuthPrincipal | None = None,
+        now: datetime | None = None,
+    ) -> MemoryEntry:
+        entry = self.memory_repository.get_for_update(entry_id)
+        if not entry:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory entry not found")
+        self._ensure_entry_access(entry, principal)
+        successor = self.memory_repository.get_successor(entry.id)
+        if entry.archived or entry.valid_to is not None or successor is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "memory_archive_not_current",
+                    "successor_id": str(successor.id) if successor else None,
+                },
+            )
+        clock = now or datetime.now(timezone.utc)
+        if clock.tzinfo is None:
+            raise ValueError("archive clock must be timezone-aware")
         entry.archived = True
-        if entry.valid_to is None:
-            entry.valid_to = datetime.now(timezone.utc)
+        entry.valid_to = clock
         self.memory_repository.db.add(entry)
         self.memory_repository.db.flush()
         self.memory_repository.db.refresh(entry)
@@ -333,6 +415,7 @@ class MemoryService:
                     entry_id=entry.id,
                     event_kind=MemoryChangeEventKind.archived,
                     principal=principal,
+                    occurred_at=clock,
                 )
         return entry
 
@@ -417,11 +500,12 @@ class MemoryService:
         return filtered_nodes, filtered_edges
 
     def archive_stale(self, *, older_than_days: int, max_usage_count: int, max_importance: int) -> list[MemoryEntry]:
-        return self.memory_repository.archive_stale(
+        candidates = self.memory_repository.archive_stale(
             older_than_days=older_than_days,
             max_usage_count=max_usage_count,
             max_importance=max_importance,
         )
+        return [self.archive_memory(item.id) for item in candidates]
 
     def rebuild_search_vectors(self, *, project_id: uuid.UUID | None = None) -> int:
         return self.memory_repository.rebuild_search_vectors(project_id=project_id)

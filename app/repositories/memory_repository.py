@@ -30,6 +30,21 @@ class MemoryRepository:
     def get(self, entry_id: uuid.UUID) -> MemoryEntry | None:
         return self.db.get(MemoryEntry, entry_id)
 
+    def get_for_update(self, entry_id: uuid.UUID) -> MemoryEntry | None:
+        statement = (
+            select(MemoryEntry)
+            .where(MemoryEntry.id == entry_id)
+            .execution_options(populate_existing=True)
+        )
+        if self.is_postgresql():
+            statement = statement.with_for_update()
+        return self.db.scalar(statement)
+
+    def get_successor(self, entry_id: uuid.UUID) -> MemoryEntry | None:
+        return self.db.scalar(
+            select(MemoryEntry).where(MemoryEntry.supersedes_id == entry_id)
+        )
+
     @staticmethod
     def _normalize_at(at: datetime | None) -> datetime:
         value = at or datetime.now(timezone.utc)
@@ -54,6 +69,10 @@ class MemoryRepository:
             MemoryEntry.valid_from <= moment,
             or_(MemoryEntry.valid_to.is_(None), MemoryEntry.valid_to > moment),
         )
+
+    @staticmethod
+    def historical_rows_predicate():
+        return MemoryEntry.history_available.is_(True)
 
     def list(
         self,
@@ -414,9 +433,6 @@ class MemoryRepository:
             ~((MemoryEntry.type == MemoryType.decision) & (MemoryEntry.importance >= 4)),
         )
         items = list(self.db.scalars(stmt))
-        for item in items:
-            item.archived = True
-            self.db.add(item)
         return items
 
     @staticmethod

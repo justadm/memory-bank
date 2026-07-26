@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.enums import MemoryProvenance, MemoryType
 
@@ -82,10 +82,27 @@ class MemoryArchiveResponse(BaseModel):
     archived: bool
 
 
+class MemoryRevisionChanges(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, max_length=255)
+    content: str | None = Field(default=None, min_length=1)
+    source_agent: str | None = Field(default=None, max_length=100)
+    importance: int | None = Field(default=None, ge=1, le=5)
+    provenance: MemoryProvenance | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def reject_null_content(self) -> "MemoryRevisionChanges":
+        if "content" in self.model_fields_set and self.content is None:
+            raise ValueError("content cannot be null")
+        return self
+
+
 class MemoryReviseRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    changes: dict = Field(default_factory=dict)
+    changes: MemoryRevisionChanges = Field(default_factory=MemoryRevisionChanges)
     metadata_patch: dict = Field(default_factory=dict)
     reason: str = Field(min_length=1, max_length=500)
 
