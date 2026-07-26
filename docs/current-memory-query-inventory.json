@@ -7,16 +7,22 @@
       "required_guard": "exact_id"
     },
     {
-      "classification": "current-view",
+      "classification": "mixed-view",
       "key": "app/repositories/memory_repository.py:MemoryRepository._relaxed_text_search:63bc0c009646c1858e77c6b606b12d541912cbd7e7511b48fb4a1da9305b4604",
       "owner": "MemoryRepository._relaxed_text_search",
-      "required_guard": "current_predicate"
+      "required_guards": [
+        "current_predicate",
+        "historical_predicate"
+      ]
     },
     {
-      "classification": "historical-view",
+      "classification": "mixed-view",
       "key": "app/repositories/memory_repository.py:MemoryRepository._relaxed_text_search:d4629d1ec024609a698042b2b312395fcf2622238df6d2f6b0befb86182f53a5",
       "owner": "MemoryRepository._relaxed_text_search",
-      "required_guard": "historical_predicate"
+      "required_guards": [
+        "current_predicate",
+        "historical_predicate"
+      ]
     },
     {
       "classification": "current-view",
@@ -49,10 +55,13 @@
       "required_guard": "exact_id"
     },
     {
-      "classification": "historical-view",
+      "classification": "mixed-view",
       "key": "app/repositories/memory_repository.py:MemoryRepository.list:2b3023eddb6d815efd9608949d8fc1ad3a9c9bd6c51a089d6a450f4d9dd072bf",
       "owner": "MemoryRepository.list",
-      "required_guard": "historical_predicate"
+      "required_guards": [
+        "current_predicate",
+        "historical_predicate"
+      ]
     },
     {
       "classification": "current-view",
@@ -91,10 +100,13 @@
       "required_guard": "current_predicate"
     },
     {
-      "classification": "historical-view",
+      "classification": "mixed-view",
       "key": "app/repositories/memory_repository.py:MemoryRepository.search:9f07d9578028f83ba8dd451edd6daf8323b09b3a5819c2be2b60248673bb5d6c",
       "owner": "MemoryRepository.search",
-      "required_guard": "historical_predicate"
+      "required_guards": [
+        "current_predicate",
+        "historical_predicate"
+      ]
     },
     {
       "classification": "operational-row-update",
@@ -157,10 +169,13 @@
       "required_guard": "historical_rows_predicate"
     },
     {
-      "classification": "historical-view",
+      "classification": "mixed-view",
       "key": "app/repositories/metrics_repository.py:MetricsRepository.memory_overview:c93a974542bc7b5122b95838f096bbcada4b15f7e7e55e677a148dc9e3041ec6",
       "owner": "MetricsRepository.memory_overview",
-      "required_guard": "historical_rows_predicate"
+      "required_guards": [
+        "current_predicate",
+        "historical_rows_predicate"
+      ]
     },
     {
       "classification": "current-view",

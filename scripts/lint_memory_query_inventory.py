@@ -14,6 +14,7 @@ QUERY_CALLS = {"select", "query", "get", "execute", "scalars", "scalar", "update
 CLASSIFICATIONS = {
     "current-view",
     "historical-view",
+    "mixed-view",
     "exact-id-view",
     "operational-row-update",
 }
@@ -392,6 +393,18 @@ def check_inventory(*, app_root: Path, inventory_path: Path) -> list[str]:
                 findings.append(f"{key}: historical-view required_guard mismatch")
             elif required_guard not in query.guard_calls:
                 findings.append(f"{key}: historical-view owner does not call historical_predicate")
+        elif classification == "mixed-view":
+            required_guards = row.get("required_guards")
+            if (
+                not isinstance(required_guards, list)
+                or len(required_guards) < 2
+                or any(not isinstance(item, str) for item in required_guards)
+            ):
+                findings.append(f"{key}: mixed-view required_guards mismatch")
+            elif set(required_guards) != set(query.guard_calls):
+                findings.append(
+                    f"{key}: mixed-view guard coverage mismatch"
+                )
         elif classification == "exact-id-view":
             if required_guard != "exact_id":
                 findings.append(f"{key}: exact-id-view required_guard mismatch")
@@ -406,6 +419,13 @@ def check_inventory(*, app_root: Path, inventory_path: Path) -> list[str]:
 
 
 def _suggest_row(query: DetectedQuery, existing: dict | None) -> dict:
+    if len(query.guard_calls) > 1:
+        return {
+            "key": query.key,
+            "classification": "mixed-view",
+            "required_guards": sorted(query.guard_calls),
+            "owner": query.owner,
+        }
     if existing:
         return {
             "key": query.key,
