@@ -48,7 +48,21 @@ def _fresh(timestamp: Any, *, max_age: timedelta = timedelta(hours=24)) -> bool:
         return False
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
-    return datetime.now(timezone.utc) - value <= max_age
+    age = datetime.now(timezone.utc) - value
+    return -timedelta(minutes=5) <= age <= max_age
+
+
+def _ordered_timestamps(earlier: Any, later: Any) -> bool:
+    try:
+        earlier_value = datetime.fromisoformat(str(earlier).replace("Z", "+00:00"))
+        later_value = datetime.fromisoformat(str(later).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if earlier_value.tzinfo is None:
+        earlier_value = earlier_value.replace(tzinfo=timezone.utc)
+    if later_value.tzinfo is None:
+        later_value = later_value.replace(tzinfo=timezone.utc)
+    return later_value >= earlier_value
 
 
 class DoctorService:
@@ -164,6 +178,10 @@ class DoctorService:
             and bool(write_check.get("receipt_id"))
             and _fresh(write_check.get("attempted_at"))
             and _fresh(write_check.get("read_back_at"))
+            and _ordered_timestamps(
+                write_check.get("attempted_at"),
+                write_check.get("read_back_at"),
+            )
         )
         if successful_receipt and live_read_verified:
             live_write_verified: Literal["true", "false", "unknown"] = "true"

@@ -1,9 +1,9 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 
-from memlayer_connector.doctor import DoctorService
+from memlayer_connector.doctor import DoctorService, _fresh, _ordered_timestamps
 from memlayer_connector.service import ConnectorService
 
 
@@ -84,3 +84,15 @@ def test_doctor_does_not_report_local_connected_when_managed_file_drifted(tmp_pa
 
     assert output["local_connected"] is False
     assert any(item["code"] == "managed_artifact_drift" for item in output["findings"])
+
+
+def test_doctor_freshness_rejects_far_future_and_reversed_receipt_timestamps():
+    now = datetime.now(timezone.utc)
+
+    assert _fresh((now + timedelta(minutes=4)).isoformat()) is True
+    assert _fresh((now + timedelta(minutes=6)).isoformat()) is False
+    assert _ordered_timestamps(now.isoformat(), (now + timedelta(seconds=1)).isoformat())
+    assert not _ordered_timestamps(
+        now.isoformat(),
+        (now - timedelta(seconds=1)).isoformat(),
+    )
