@@ -278,3 +278,30 @@ def test_doctor_freshness_rejects_far_future_and_reversed_receipt_timestamps():
         now.isoformat(),
         (now - timedelta(seconds=1)).isoformat(),
     )
+
+
+def test_doctor_uses_project_api_url_for_implicit_client(
+    tmp_path: Path,
+    monkeypatch,
+):
+    service = ConnectorService(tmp_path)
+    service.apply_connect(service.plan_connect())
+    config_path = tmp_path / ".memlayer/memlayer.config.json"
+    config = json.loads(config_path.read_text())
+    config["api_url"] = "https://api.example.test"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_make_client(*, base_url, api_key):
+        captured["base_url"] = base_url
+        captured["api_key"] = api_key
+        return FakeApi()
+
+    monkeypatch.setattr(
+        "memlayer_connector.doctor.make_client",
+        fake_make_client,
+    )
+
+    DoctorService(tmp_path).check()
+
+    assert captured["base_url"] == config["api_url"]

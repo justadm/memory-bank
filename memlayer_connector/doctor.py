@@ -164,7 +164,10 @@ class DoctorService:
         client = self.client
         owns_client = client is None
         if client is None:
-            client = make_client(base_url=DEFAULT_MEMORYBANK_URL, api_key=api_key_from_process_environment())
+            client = make_client(
+                base_url=str(config.get("api_url") or DEFAULT_MEMORYBANK_URL),
+                api_key=api_key_from_process_environment(),
+            )
         try:
             try:
                 client.health()
