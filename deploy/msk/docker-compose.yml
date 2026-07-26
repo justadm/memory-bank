@@ -2,6 +2,8 @@ services:
   api:
     build:
       context: ../..
+      args:
+        GIT_REVISION: ${GIT_REVISION:?GIT_REVISION must be set to the exact release SHA}
     container_name: memlayer-api
     restart: unless-stopped
     ports:

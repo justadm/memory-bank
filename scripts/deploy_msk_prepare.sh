@@ -20,17 +20,22 @@ Expected next steps on msk:
   3. Create ${TARGET_DIR}/.env from:
      ${ROOT_DIR}/deploy/msk/.env.example
 
-  4. Start stack:
+  4. Build and verify the API image:
      cd ${TARGET_DIR}
-     docker compose --env-file .env -f deploy/msk/docker-compose.yml up -d --build
+     export GIT_REVISION="\$(git rev-parse HEAD)"
+     scripts/build_release_image.sh msk-api
 
-  5. Run migrations:
+  5. After release approval, promote the verified candidate and start:
+     docker tag "msk-api:\${GIT_REVISION}-candidate" msk-api:latest
+     docker compose --env-file .env -f deploy/msk/docker-compose.yml up -d --no-build
+
+  6. Run migrations:
      docker compose --env-file .env -f deploy/msk/docker-compose.yml exec -T api alembic upgrade head
 
-  6. Install nginx samples:
+  7. Install nginx samples:
      deploy/msk/nginx/api.memlayer.ru.conf
      deploy/msk/nginx/adm.memlayer.ru.conf
 
-  7. Validate local runtime:
+  8. Validate local runtime:
      curl -sS http://127.0.0.1:18120/health
 EOF
