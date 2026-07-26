@@ -317,6 +317,7 @@ class MemoryRepository:
                 limit=limit,
                 types=types,
                 include_archived=include_archived,
+                as_of=as_of,
             )
         return [(entry, self._fallback_score(entry, query)) for entry in items]
 

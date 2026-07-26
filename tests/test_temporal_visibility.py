@@ -18,10 +18,18 @@ def test_as_of_search_sees_historical_revision_but_current_search_does_not(clien
         f"/memory/{created['id']}/revise",
         json={"changes": {"content": "new architecture"}, "reason": "newer state"},
     ).json()
-    current = client.get("/memory/search", params={"project_id": project["id"], "query": "old architecture"}).json()["items"]
+    query = "old architecture decision"
+    current = client.get(
+        "/memory/search",
+        params={"project_id": project["id"], "query": query},
+    ).json()["items"]
     historical = client.get(
         "/memory/search",
-        params={"project_id": project["id"], "query": "old architecture", "as_of": created_at.isoformat()},
+        params={
+            "project_id": project["id"],
+            "query": query,
+            "as_of": created_at.isoformat(),
+        },
     ).json()["items"]
     assert all(item["id"] != created["id"] for item in current)
     assert any(item["id"] == created["id"] for item in historical)
