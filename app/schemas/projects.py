@@ -44,3 +44,11 @@ class ProjectResolveResponse(BaseModel):
     agent: str
     connector_identity: uuid.UUID
     tenant_id: str | None
+
+
+class ProjectConnectorBindingResponse(BaseModel):
+    project_id: uuid.UUID
+    agent: str
+    connector_identity: uuid.UUID
+    tenant_id: str | None
+    bound: bool

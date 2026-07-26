@@ -30,18 +30,25 @@ def test_register_requires_apply(tmp_path: Path, capsys):
 class FakeClient:
     def __init__(self):
         self.connector_identities = []
+        self.tenant_ids = []
         self.import_calls = []
         self.attempts = 0
 
     def resolve_project(self, **kwargs):
         self.connector_identities.append(kwargs["connector_identity"])
+        self.tenant_ids.append(kwargs.get("tenant_id"))
         self.attempts += 1
         if self.attempts == 1:
             raise TimeoutError("temporary")
-        return {"project_id": "d8399b69-82ff-46ec-8e03-1930f1c84735", "status": "created"}
+        return {
+            "project_id": "d8399b69-82ff-46ec-8e03-1930f1c84735",
+            "status": "created",
+            "connector_identity": kwargs["connector_identity"],
+            "tenant_id": kwargs.get("tenant_id"),
+        }
 
     def get_project(self, project_id):
-        return {"id": project_id, "name": "demo"}
+        return {"id": project_id, "name": "demo", "tenant_id": "tenant-a"}
 
     def close(self):
         pass
@@ -49,13 +56,20 @@ class FakeClient:
 
 def test_registration_retry_reuses_connector_identity(tmp_path: Path):
     fake = FakeClient()
-    result = run_connect(tmp_path, apply=True, register_project=True, client_factory=lambda **_: fake)
+    result = run_connect(
+        tmp_path,
+        apply=True,
+        register_project=True,
+        tenant_id="tenant-a",
+        client_factory=lambda **_: fake,
+    )
 
     assert fake.connector_identities == [result["connector_identity"]] * 2
     assert fake.import_calls == []
     assert result["status"] == "registered"
     config = json.loads((tmp_path / ".memlayer/memlayer.config.json").read_text())
     assert config["project_id"] == "d8399b69-82ff-46ec-8e03-1930f1c84735"
+    assert config["tenant_id"] == "tenant-a"
     assert config["last_write_check"]["status"] == "success"
     assert config["last_write_check"]["target_id"] == config["project_id"]
     assert config["last_write_check"]["receipt_id"]
@@ -68,6 +82,28 @@ def test_registration_retry_reuses_connector_identity(tmp_path: Path):
     )
     assert str(manifest.project_id) == config["project_id"]
     assert service.local_integrity_findings(manifest) == ()
+
+
+def test_registration_retry_reuses_persisted_tenant_scope(tmp_path: Path):
+    first = FakeClient()
+    run_connect(
+        tmp_path,
+        apply=True,
+        register_project=True,
+        tenant_id="tenant-a",
+        client_factory=lambda **_: first,
+    )
+
+    second = FakeClient()
+    second.attempts = 1
+    run_connect(
+        tmp_path,
+        apply=True,
+        register_project=True,
+        client_factory=lambda **_: second,
+    )
+
+    assert second.tenant_ids == ["tenant-a"]
 
 
 def test_registration_persistence_rolls_back_config_when_manifest_write_fails(
@@ -111,13 +147,13 @@ def test_registration_rollback_reports_every_unresolved_path(
     real_write_atomic = connector_cli._write_atomic
     config_writes = 0
 
-    def fail_config_rollback(path, payload, mode=None):
+    def fail_config_rollback(path, payload, mode=None, **kwargs):
         nonlocal config_writes
         if path == config_path:
             config_writes += 1
             if config_writes == 2:
                 raise OSError("synthetic config rollback failure")
-        return real_write_atomic(path, payload, mode)
+        return real_write_atomic(path, payload, mode, **kwargs)
 
     def fail_manifest_write(*args, **kwargs):
         raise OSError("synthetic manifest failure")

@@ -6,7 +6,7 @@ import pytest
 
 import memlayer_connector.service as connector_service_module
 from memlayer_connector.manifest import write_manifest_atomic
-from memlayer_connector.service import ConnectorConflict, ConnectorService
+from memlayer_connector.service import ConnectorConflict, ConnectorService, _write_atomic
 
 
 def test_matching_manifestless_pack_adopts_artifacts_and_rotates_untrusted_identity(
@@ -133,12 +133,12 @@ def test_connect_rolls_back_all_files_when_apply_fails_midway(tmp_path: Path, mo
     real_write = connector_service_module._write_atomic
     writes = 0
 
-    def fail_after_first_write(path, data, mode=None):
+    def fail_after_first_write(path, data, mode=None, **kwargs):
         nonlocal writes
         writes += 1
         if writes == 2:
             raise OSError("synthetic apply failure")
-        return real_write(path, data, mode)
+        return real_write(path, data, mode, **kwargs)
 
     monkeypatch.setattr(connector_service_module, "_write_atomic", fail_after_first_write)
 
@@ -170,12 +170,12 @@ def test_disconnect_rolls_back_all_files_when_apply_fails_midway(
     real_write = connector_service_module._write_atomic
     failed = False
 
-    def fail_on_config(path, data, mode=None):
+    def fail_on_config(path, data, mode=None, **kwargs):
         nonlocal failed
         if path.name == "memlayer.config.json" and not failed:
             failed = True
             raise OSError("synthetic disconnect failure")
-        return real_write(path, data, mode)
+        return real_write(path, data, mode, **kwargs)
 
     monkeypatch.setattr(connector_service_module, "_write_atomic", fail_on_config)
 
@@ -283,3 +283,36 @@ def test_manifestless_matching_root_adopts_project_with_new_connector_identity(
     assert manifest.project_id == project_id
     assert config["project_id"] == str(project_id)
     assert config["connector_identity"] == str(plan.connector_identity)
+
+
+def test_manifestless_modified_managed_config_is_rejected(tmp_path: Path) -> None:
+    service = ConnectorService(tmp_path)
+    service.apply_connect(service.plan_connect())
+    service.manifest_path.unlink()
+    config_path = tmp_path / ".memlayer/memlayer.config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["preferred_url"] = "https://modified.invalid"
+    config_path.write_text(json.dumps(config) + "\n", encoding="utf-8")
+
+    plan = service.plan_connect()
+
+    assert plan.ready is False
+    assert any(
+        item.code == "modified_managed_config"
+        for item in plan.conflicts
+    )
+
+
+def test_root_bound_atomic_write_rejects_symlink_parent(tmp_path: Path) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.mkdir()
+    (tmp_path / ".memlayer").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ConnectorConflict, match="symlink"):
+        _write_atomic(
+            tmp_path / ".memlayer/memlayer.config.json",
+            b'{"safe": true}\n',
+            root=tmp_path,
+        )
+
+    assert not (outside / "memlayer.config.json").exists()

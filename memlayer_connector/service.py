@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -11,6 +10,7 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from .artifacts import ArtifactSpec, OwnershipMode, RenderContext, artifact_registry, managed_values, render_artifact
+from .filesystem import RootBoundWriteError, root_identity, write_atomic_beneath
 from .manifest import ConnectionManifest, ManifestConflict, ManifestRecord, load_validated_manifest, safe_project_path, validate_manifest, validate_manifest_identity, write_manifest_atomic
 
 START = "<!-- MEMLAYER_ROOT_PACK:START -->"
@@ -57,22 +57,26 @@ def _digest(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
-def _write_atomic(path: Path, data: bytes, mode: int | None = None) -> None:
-    previous_mode = path.stat().st_mode & 0o777 if path.exists() else None
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+def _write_atomic(
+    path: Path,
+    data: bytes,
+    mode: int | None = None,
+    *,
+    root: Path | None = None,
+    expected_root_identity: tuple[int, int] | None = None,
+) -> None:
+    if root is None:
+        raise ConnectorConflict("root-bound atomic write requires project root")
     try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-        effective_mode = mode if mode is not None else previous_mode
-        if effective_mode is not None:
-            path.chmod(effective_mode)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+        write_atomic_beneath(
+            root=root,
+            path=path,
+            data=data,
+            mode=mode,
+            expected_root_identity=expected_root_identity,
+        )
+    except RootBoundWriteError as exc:
+        raise ConnectorConflict(str(exc)) from exc
 
 
 def _render_new_agents(context: RenderContext, section: bytes) -> bytes:
@@ -122,6 +126,7 @@ class ConnectorService:
         self.context = RenderContext(root.name, root, preferred_url, local_url, human_url)
         self.registry = artifact_registry("codex", 1, self.context)
         self.manifest_path = root / MANIFEST_RELATIVE
+        self.root_identity = root_identity(root)
 
     def _path(self, relative: PurePosixPath) -> Path:
         return safe_project_path(self.root, relative, self.registry)
@@ -178,6 +183,24 @@ class ConnectorService:
             return UUID(str(raw_project_id))
         except ValueError as exc:
             raise ManifestConflict("manifest-less config has invalid project_id") from exc
+
+    def _validate_manifestless_managed_config(
+        self,
+        config: dict,
+        spec: ArtifactSpec,
+    ) -> None:
+        expected = managed_values(spec, self.context)
+        for key, expected_value in expected.items():
+            if key in config and config[key] != expected_value:
+                raise ManifestConflict(
+                    f"manifest-less managed config differs at key: {key}"
+                )
+
+        raw_tenant_id = config.get("tenant_id")
+        if raw_tenant_id is not None and (
+            not isinstance(raw_tenant_id, str) or not raw_tenant_id.strip()
+        ):
+            raise ManifestConflict("manifest-less config has invalid tenant_id")
 
     def _observed(self) -> dict[str, str | None]:
         observed: dict[str, str | None] = {}
@@ -324,11 +347,30 @@ class ConnectorService:
                         actions.append(ConnectorAction("update_managed_section", str(relative), spec.ownership, "add managed ignore line"))
                 elif spec.ownership is OwnershipMode.MANAGED_KEYS:
                     try:
-                        json.loads(path.read_text(encoding="utf-8"))
+                        existing_config = json.loads(path.read_text(encoding="utf-8"))
                     except (OSError, json.JSONDecodeError):
                         conflicts.append(ConnectorConflictItem("invalid_managed_config", str(relative), "config is not a JSON object"))
                     else:
-                        actions.append(ConnectorAction("update_managed_keys", str(relative), spec.ownership, "merge connector keys and preserve unknown keys"))
+                        if not isinstance(existing_config, dict):
+                            conflicts.append(ConnectorConflictItem("invalid_managed_config", str(relative), "config is not a JSON object"))
+                        elif manifest is None:
+                            try:
+                                self._validate_manifestless_managed_config(
+                                    existing_config,
+                                    spec,
+                                )
+                            except ManifestConflict as exc:
+                                conflicts.append(
+                                    ConnectorConflictItem(
+                                        "modified_managed_config",
+                                        str(relative),
+                                        str(exc),
+                                    )
+                                )
+                            else:
+                                actions.append(ConnectorAction("update_managed_keys", str(relative), spec.ownership, "adopt matching connector keys and preserve unknown keys"))
+                        else:
+                            actions.append(ConnectorAction("update_managed_keys", str(relative), spec.ownership, "merge connector keys and preserve unknown keys"))
             except (OSError, UnicodeError, ConnectorConflict) as exc:
                 conflicts.append(ConnectorConflictItem("inventory_error", str(relative), str(exc)))
         return ConnectorPlan(
@@ -366,7 +408,13 @@ class ConnectorService:
                 if content is None:
                     path.unlink(missing_ok=True)
                 else:
-                    _write_atomic(path, content, mode)
+                    _write_atomic(
+                        path,
+                        content,
+                        mode,
+                        root=self.root,
+                        expected_root_identity=self.root_identity,
+                    )
             for path in sorted(
                 {item.parent for item in snapshots},
                 key=lambda item: len(item.parts),
@@ -388,7 +436,13 @@ class ConnectorService:
                 if spec.ownership is OwnershipMode.USER_OWNED:
                     if not path.exists():
                         capture(path, read_existing=False)
-                        _write_atomic(path, b"", 0o600)
+                        _write_atomic(
+                            path,
+                            b"",
+                            0o600,
+                            root=self.root,
+                            expected_root_identity=self.root_identity,
+                        )
                     continue
                 if action.kind in {"preserve", "adopt"}:
                     continue
@@ -402,19 +456,45 @@ class ConnectorService:
                         data = (text.rstrip() + f"\n\n{START}\n{section}\n{END}\n").encode()
                     else:
                         data = _render_new_agents(self.context, section.encode())
-                    _write_atomic(path, data)
+                    _write_atomic(
+                        path,
+                        data,
+                        root=self.root,
+                        expected_root_identity=self.root_identity,
+                    )
                 elif spec.ownership is OwnershipMode.MANAGED_LINE:
                     text = path.read_text(encoding="utf-8") if path.exists() else ""
                     data = (text.rstrip() + ("\n\n" if text.rstrip() else "") + ".memlayer/\n").encode()
-                    _write_atomic(path, data)
+                    _write_atomic(
+                        path,
+                        data,
+                        root=self.root,
+                        expected_root_identity=self.root_identity,
+                    )
                 elif spec.ownership is OwnershipMode.MANAGED_KEYS:
                     existing = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-                    _write_atomic(path, _config_bytes(path, self.context, identity, existing))
+                    _write_atomic(
+                        path,
+                        _config_bytes(path, self.context, identity, existing),
+                        root=self.root,
+                        expected_root_identity=self.root_identity,
+                    )
                 elif spec.ownership is OwnershipMode.CREATE_IF_ABSENT:
                     if not path.exists():
-                        _write_atomic(path, render_artifact(spec, self.context))
+                        _write_atomic(
+                            path,
+                            render_artifact(spec, self.context),
+                            root=self.root,
+                            expected_root_identity=self.root_identity,
+                        )
                 elif spec.ownership is OwnershipMode.WHOLE_FILE:
-                    _write_atomic(path, render_artifact(spec, self.context), 0o755 if spec.executable else None)
+                    _write_atomic(
+                        path,
+                        render_artifact(spec, self.context),
+                        0o755 if spec.executable else None,
+                        root=self.root,
+                        expected_root_identity=self.root_identity,
+                    )
             records: list[ManifestRecord] = []
             for relative, spec in self.registry.items():
                 path = self._path(relative)
@@ -450,7 +530,12 @@ class ConnectorService:
                 records.append(ManifestRecord(path=str(relative), ownership=spec.ownership, created_by_connector=created, content_sha256=digest))
             manifest = ConnectionManifest(schema_version=1, agent="codex", project_root=str(self.root), connector_identity=identity, project_id=plan.project_id, root_pack_version=1, installed_at=datetime.now(timezone.utc), managed_files=records)
             capture(self.manifest_path)
-            write_manifest_atomic(self.manifest_path, manifest)
+            write_manifest_atomic(
+                self.manifest_path,
+                manifest,
+                project_root=self.root,
+                expected_root_identity=self.root_identity,
+            )
             return manifest
         except BaseException:
             restore()
@@ -578,7 +663,13 @@ class ConnectorService:
 
         def restore() -> None:
             for path, (content, mode) in reversed(tuple(snapshots.items())):
-                _write_atomic(path, content, mode)
+                _write_atomic(
+                    path,
+                    content,
+                    mode,
+                    root=self.root,
+                    expected_root_identity=self.root_identity,
+                )
 
         try:
             for action in plan.actions:
@@ -597,13 +688,31 @@ class ConnectorService:
                         raise ConnectorConflict(f"stale disconnect plan: {action.path}")
                     cleaned = text.replace(block[1], "", 1)
                     data = (cleaned.strip() + "\n").encode() if cleaned.strip() else b""
-                    _write_atomic(path, data)
+                    _write_atomic(
+                        path,
+                        data,
+                        root=self.root,
+                        expected_root_identity=self.root_identity,
+                    )
                 elif spec.ownership is OwnershipMode.MANAGED_KEYS:
                     data = json.loads(path.read_text(encoding="utf-8"))
                     for key in spec.managed_keys:
                         data.pop(key, None)
                     if data:
-                        _write_atomic(path, (json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True) + "\n").encode())
+                        _write_atomic(
+                            path,
+                            (
+                                json.dumps(
+                                    data,
+                                    indent=2,
+                                    ensure_ascii=False,
+                                    sort_keys=True,
+                                )
+                                + "\n"
+                            ).encode(),
+                            root=self.root,
+                            expected_root_identity=self.root_identity,
+                        )
                     else:
                         path.unlink()
                 else:

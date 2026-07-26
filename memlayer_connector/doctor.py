@@ -182,11 +182,30 @@ class DoctorService:
             if local_identity_ready and live_read_authorized:
                 try:
                     project = client.get_project(str(manifest.project_id))
-                    live_read_verified = str(project.get("id")) == str(manifest.project_id)
-                    if not live_read_verified:
+                    project_matches = (
+                        str(project.get("id")) == str(manifest.project_id)
+                    )
+                    tenant_matches = project.get("tenant_id") == config.get(
+                        "tenant_id"
+                    )
+                    if not project_matches:
                         findings.append(DoctorFinding("project_read_mismatch"))
+                    elif not tenant_matches:
+                        findings.append(DoctorFinding("project_tenant_mismatch"))
+                    else:
+                        binding = client.verify_project_connector(
+                            str(manifest.project_id),
+                            agent=manifest.agent,
+                            connector_identity=str(manifest.connector_identity),
+                            tenant_id=config.get("tenant_id"),
+                        )
+                        live_read_verified = bool(binding.get("bound"))
+                        if not live_read_verified:
+                            findings.append(
+                                DoctorFinding("project_binding_mismatch")
+                            )
                 except Exception:
-                    findings.append(DoctorFinding("project_read_failed"))
+                    findings.append(DoctorFinding("project_binding_read_failed"))
             elif local_identity_ready:
                 findings.append(DoctorFinding("read_not_authorized"))
         finally:

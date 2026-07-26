@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import tempfile
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
@@ -12,6 +11,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .artifacts import ArtifactSpec, OwnershipMode
+from .filesystem import RootBoundWriteError, root_identity, write_atomic_beneath
 
 
 class ManifestConflict(ValueError):
@@ -180,11 +180,21 @@ def validate_manifest_identity(manifest: ConnectionManifest, *, config: Mapping[
         raise ManifestConflict("project_id does not match config")
 
 
-def write_manifest_atomic(path: str | Path, manifest: ConnectionManifest | Mapping[str, Any]) -> None:
+def write_manifest_atomic(
+    path: str | Path,
+    manifest: ConnectionManifest | Mapping[str, Any],
+    *,
+    project_root: str | Path | None = None,
+    expected_root_identity: tuple[int, int] | None = None,
+) -> None:
     destination = Path(path)
     if destination.name != "connection-manifest.json" or destination.parent.name != ".memlayer":
         raise ManifestConflict("manifest destination is not the connector manifest path")
-    root = destination.parent.parent.resolve()
+    root = (
+        Path(project_root).expanduser().resolve()
+        if project_root is not None
+        else destination.parent.parent.resolve()
+    )
     safe_project_path(root, ".memlayer/connection-manifest.json", {
         PurePosixPath(".memlayer/connection-manifest.json"): ArtifactSpec(
             path=PurePosixPath(".memlayer/connection-manifest.json"),
@@ -194,19 +204,16 @@ def write_manifest_atomic(path: str | Path, manifest: ConnectionManifest | Mappi
     })
     payload = manifest.model_dump(mode="json") if isinstance(manifest, ConnectionManifest) else dict(manifest)
     data = (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", dir=destination.parent)
     try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, destination)
-        directory_fd = os.open(destination.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+        write_atomic_beneath(
+            root=root,
+            path=destination,
+            data=data,
+            expected_root_identity=(
+                expected_root_identity
+                if expected_root_identity is not None
+                else root_identity(root)
+            ),
+        )
+    except RootBoundWriteError as exc:
+        raise ManifestConflict(str(exc)) from exc

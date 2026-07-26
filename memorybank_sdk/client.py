@@ -94,6 +94,26 @@ class MemoryBankClient:
     def get_project(self, project_id: str) -> dict[str, Any]:
         return self._request("GET", f"/projects/{project_id}")
 
+    def verify_project_connector(
+        self,
+        project_id: str,
+        *,
+        agent: str,
+        connector_identity: str,
+        tenant_id: str | None,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "agent": agent,
+            "connector_identity": connector_identity,
+        }
+        if tenant_id is not None:
+            params["tenant_id"] = tenant_id
+        return self._request(
+            "GET",
+            f"/projects/{project_id}/connector-binding",
+            params=params,
+        )
+
     def import_project_scan(
         self,
         *,

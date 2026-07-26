@@ -9,7 +9,11 @@ from sqlalchemy.exc import IntegrityError
 from app.models.project import Project
 from app.models.project_connector_identity import ProjectConnectorIdentity
 from app.repositories.project_repository import ProjectRepository
-from app.schemas.projects import ProjectResolveRequest, ProjectResolveResponse
+from app.schemas.projects import (
+    ProjectConnectorBindingResponse,
+    ProjectResolveRequest,
+    ProjectResolveResponse,
+)
 from app.security import AuthPrincipal, ensure_tenant_access, resolve_tenant_for_create
 
 
@@ -83,6 +87,40 @@ class ProjectConnectorService:
             raise HTTPException(status_code=409, detail={"code": "connector_identity_race"}) from exc
         assert project is not None
         return self._response(project, payload, action)
+
+    def verify_binding(
+        self,
+        *,
+        project_id: uuid.UUID,
+        agent: str,
+        connector_identity: uuid.UUID,
+        tenant_id: str | None,
+        principal: AuthPrincipal,
+    ) -> ProjectConnectorBindingResponse:
+        project = self.repository.get(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        ensure_tenant_access(principal, project.tenant_id)
+        if tenant_id is not None and tenant_id != project.tenant_id:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "project_tenant_mismatch"},
+            )
+        binding = self.repository.get_project_connector_identity(
+            project_id=project.id,
+            agent=agent,
+            normalized_tenant_key=project.tenant_id or "__global__",
+            connector_identity=connector_identity,
+        )
+        if not binding:
+            raise HTTPException(status_code=404, detail="Connector binding not found")
+        return ProjectConnectorBindingResponse(
+            project_id=project.id,
+            agent=agent,
+            connector_identity=connector_identity,
+            tenant_id=project.tenant_id,
+            bound=True,
+        )
 
     @staticmethod
     def _ensure_project_tenant(project: Project, tenant_id: str | None, principal: AuthPrincipal) -> None:

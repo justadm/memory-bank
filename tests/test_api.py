@@ -81,6 +81,32 @@ def test_project_tenant_scope_locked_after_connector_binding(client):
     assert changed.json()["detail"]["code"] == "project_tenant_scope_locked"
 
 
+def test_project_connector_binding_can_be_verified_read_only(client):
+    payload = {
+        "agent": "codex",
+        "connector_identity": "d8399b69-82ff-46ec-8e03-1930f1c84735",
+        "project_name": "binding-readback",
+    }
+    resolved = client.post("/projects/resolve", json=payload).json()
+
+    verified = client.get(
+        f"/projects/{resolved['project_id']}/connector-binding",
+        params={
+            "agent": payload["agent"],
+            "connector_identity": payload["connector_identity"],
+        },
+    )
+
+    assert verified.status_code == 200
+    assert verified.json() == {
+        "project_id": resolved["project_id"],
+        "agent": "codex",
+        "connector_identity": payload["connector_identity"],
+        "tenant_id": None,
+        "bound": True,
+    }
+
+
 def test_console_shell_served(client):
     response = client.get("/console/")
     assert response.status_code == 200

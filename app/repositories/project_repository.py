@@ -64,6 +64,25 @@ class ProjectRepository:
             statement = statement.with_for_update()
         return self.db.scalar(statement)
 
+    def get_project_connector_identity(
+        self,
+        *,
+        project_id: uuid.UUID,
+        agent: str,
+        normalized_tenant_key: str,
+        connector_identity: uuid.UUID,
+    ) -> ProjectConnectorIdentity | None:
+        return self.db.scalar(
+            select(ProjectConnectorIdentity).where(
+                ProjectConnectorIdentity.project_id == project_id,
+                ProjectConnectorIdentity.agent == agent,
+                ProjectConnectorIdentity.normalized_tenant_key
+                == normalized_tenant_key,
+                ProjectConnectorIdentity.connector_identity
+                == connector_identity,
+            )
+        )
+
     def has_connector_binding(self, project_id: uuid.UUID) -> bool:
         return self.db.scalar(
             select(ProjectConnectorIdentity.id)

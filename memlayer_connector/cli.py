@@ -76,6 +76,7 @@ def _persist_registration(service: ConnectorService, manifest: Any, resolved: di
     config = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
     config["connector_identity"] = str(manifest.connector_identity)
     config["project_id"] = str(resolved["project_id"])
+    config["tenant_id"] = resolved.get("tenant_id")
     checked_at = datetime.now(timezone.utc).isoformat()
     config["last_write_check"] = {
         "status": "success",
@@ -112,15 +113,31 @@ def _persist_registration(service: ConnectorService, manifest: Any, resolved: di
             record.content_sha256 = config_hash
             break
     try:
-        _write_atomic(config_path, config_bytes)
-        write_manifest_atomic(service.manifest_path, manifest)
+        _write_atomic(
+            config_path,
+            config_bytes,
+            root=service.root,
+            expected_root_identity=service.root_identity,
+        )
+        write_manifest_atomic(
+            service.manifest_path,
+            manifest,
+            project_root=service.root,
+            expected_root_identity=service.root_identity,
+        )
     except BaseException as primary_error:
         rollback_errors: list[tuple[str, BaseException]] = []
         try:
             if config_before is None:
                 config_path.unlink(missing_ok=True)
             else:
-                _write_atomic(config_path, config_before, config_mode)
+                _write_atomic(
+                    config_path,
+                    config_before,
+                    config_mode,
+                    root=service.root,
+                    expected_root_identity=service.root_identity,
+                )
         except BaseException as exc:
             rollback_errors.append((str(config_path), exc))
         try:
@@ -131,6 +148,8 @@ def _persist_registration(service: ConnectorService, manifest: Any, resolved: di
                     service.manifest_path,
                     manifest_before,
                     manifest_mode,
+                    root=service.root,
+                    expected_root_identity=service.root_identity,
                 )
         except BaseException as exc:
             rollback_errors.append((str(service.manifest_path), exc))
@@ -169,13 +188,28 @@ def run_connect(
     result["status"] = "applied"
     result["connector_identity"] = str(manifest.connector_identity)
     if register_project:
+        config = service._read_config()
+        configured_tenant_id = config.get("tenant_id")
+        if (
+            tenant_id is not None
+            and configured_tenant_id is not None
+            and tenant_id != configured_tenant_id
+        ):
+            raise ConnectorConflict(
+                "requested tenant_id conflicts with persisted connector scope"
+            )
+        effective_tenant_id = (
+            tenant_id
+            if tenant_id is not None
+            else configured_tenant_id
+        )
         client = (client_factory or make_client)(base_url=api_url, api_key=api_key_from_process_environment())
         try:
             resolved, project = resolve_and_verify(
                 client,
                 connector_identity=str(manifest.connector_identity),
                 project_name=Path(project_root).resolve().name,
-                tenant_id=tenant_id,
+                tenant_id=effective_tenant_id,
                 existing_project_id=existing_project_id,
             )
         finally:

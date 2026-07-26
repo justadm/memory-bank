@@ -35,6 +35,16 @@ def resolve_and_verify(
                 existing_project_id=existing_project_id,
             )
             project = client.get_project(resolved["project_id"])
+            if str(project.get("id")) != str(resolved["project_id"]):
+                raise ValueError("project registration read-back id mismatch")
+            if str(resolved.get("connector_identity")) != connector_identity:
+                raise ValueError("project registration connector identity mismatch")
+            resolved_tenant = resolved.get("tenant_id")
+            project_tenant = project.get("tenant_id")
+            if resolved_tenant != project_tenant:
+                raise ValueError("project registration tenant read-back mismatch")
+            if tenant_id is not None and resolved_tenant != tenant_id:
+                raise ValueError("project registration tenant scope mismatch")
             return resolved, project
         except TimeoutError as exc:
             last_error = exc
