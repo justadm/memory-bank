@@ -372,6 +372,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--names", default=None, help="Comma-separated child project names when using --projects-root.")
     parser.add_argument("--apply", action="store_true", help="Write pack files and call live MemLayer APIs.")
     parser.add_argument("--skip-pack", action="store_true", help="Do not install or update the .memlayer root-pack.")
+    parser.add_argument(
+        "--connector-mode",
+        action="store_true",
+        help="Install the secret-neutral Codex connector pack; import behavior remains unchanged.",
+    )
     parser.add_argument("--skip-import", action="store_true", help="Do not import or reimport the project scan.")
     parser.add_argument("--skip-snapshot", action="store_true", help="Do not refresh the local MemLayer snapshot.")
     parser.add_argument("--smoke", action="store_true", help="Run runtime smoke check after onboarding.")
@@ -413,6 +418,7 @@ def main() -> None:
         smoke_query=args.smoke_query,
         command_timeout_seconds=args.command_timeout_seconds,
         env_file=args.env_file,
+        connector_mode=args.connector_mode,
     )
 
     try:

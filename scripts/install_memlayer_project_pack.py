@@ -53,6 +53,11 @@ def parse_args() -> argparse.Namespace:
         help="Optional comma-separated list of top-level project directory names.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Preview actions without writing files.")
+    parser.add_argument(
+        "--connector-mode",
+        action="store_true",
+        help="Use the secret-neutral Codex connector artifact registry.",
+    )
     return parser.parse_args()
 
 
@@ -431,6 +436,7 @@ def main() -> None:
             args.local_url,
             args.human_url,
             dry_run=args.dry_run,
+            connector_mode=args.connector_mode,
         )
         for project_root in list_projects(projects_root, names)
     ]

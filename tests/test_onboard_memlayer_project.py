@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.onboard_memlayer_project import OnboardOptions, onboard_project, resolve_project_roots
+from scripts.onboard_memlayer_project import OnboardOptions, build_parser, onboard_project, resolve_project_roots
 
 
 class FakeMemoryBankClient:
@@ -26,6 +26,12 @@ class FakeMemoryBankClient:
             "conflicts_detected": 0,
             "quality_review_required_count": 0,
         }
+
+
+def test_parser_exposes_explicit_connector_mode() -> None:
+    args = build_parser().parse_args(["--project-root", "/tmp/example", "--connector-mode"])
+
+    assert args.connector_mode is True
 
 
 def test_resolve_project_roots_uses_only_requested_names(tmp_path: Path) -> None:

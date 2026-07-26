@@ -247,6 +247,18 @@ def test_connector_mode_does_not_seed_environment_key(tmp_path: Path, monkeypatc
     assert "must-not-be-copied" not in (project_root / ".memlayer/.env.memlayer").read_text(encoding="utf-8")
 
 
+def test_installer_parser_exposes_explicit_connector_mode(monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["install_memlayer_project_pack.py", "--names", "demo", "--connector-mode"],
+    )
+
+    from scripts.install_memlayer_project_pack import parse_args
+
+    assert parse_args().connector_mode is True
+
+
 def test_installed_api_helper_accepts_memlayer_write_api_key_alias(tmp_path: Path) -> None:
     project_root = tmp_path / "AliasKeyProject"
     project_root.mkdir()
