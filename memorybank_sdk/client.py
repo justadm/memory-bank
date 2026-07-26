@@ -48,7 +48,9 @@ class MemoryBankClient:
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         response = self._client.request(method, path, **kwargs)
         if response.status_code >= 400:
-            raise MemoryBankError(f"MemoryBank error {response.status_code}: {response.text}")
+            raise MemoryBankError(
+                f"MemoryBank request failed with status {response.status_code}"
+            )
         if response.text:
             return response.json()
         return None

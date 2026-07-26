@@ -74,6 +74,12 @@
     },
     {
       "classification": "historical-view",
+      "key": "app/repositories/memory_repository.py:MemoryRepository.list:e693e939e8473c6bf37270786bc6579c05e38ef032499c2d122cc17046868f3c",
+      "owner": "MemoryRepository.list",
+      "required_guard": "archived_closure_predicate"
+    },
+    {
+      "classification": "historical-view",
       "key": "app/repositories/memory_repository.py:MemoryRepository.list:f1bda2904b9a2a541d32f3e0a0a668759a1c9d408e81267e9cb13cbe090ffa23",
       "owner": "MemoryRepository.list",
       "required_guard": "historical_rows_predicate"

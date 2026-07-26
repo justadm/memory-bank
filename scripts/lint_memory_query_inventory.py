@@ -59,6 +59,70 @@ def _references_memory_entry(node: ast.AST) -> bool:
     )
 
 
+def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
+    model_aliases = {"MemoryEntry"}
+    module_aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if node.module == "app.models.memory_entry":
+                for imported in node.names:
+                    if imported.name == "MemoryEntry":
+                        model_aliases.add(imported.asname or imported.name)
+            elif node.module == "app.models":
+                for imported in node.names:
+                    if imported.name == "memory_entry":
+                        module_aliases.add(imported.asname or imported.name)
+        elif isinstance(node, ast.Import):
+            for imported in node.names:
+                if imported.name == "app.models.memory_entry" and imported.asname:
+                    module_aliases.add(imported.asname)
+
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+                continue
+            value = node.value
+            if not isinstance(value, ast.Name) or value.id not in model_aliases:
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id not in model_aliases:
+                    model_aliases.add(target.id)
+                    changed = True
+
+    class AliasNormalizer(ast.NodeTransformer):
+        def visit_Name(self, node: ast.Name):
+            if (
+                isinstance(node.ctx, ast.Load)
+                and node.id in model_aliases
+                and node.id != "MemoryEntry"
+            ):
+                return ast.copy_location(
+                    ast.Name(id="MemoryEntry", ctx=node.ctx),
+                    node,
+                )
+            return node
+
+        def visit_Attribute(self, node: ast.Attribute):
+            node = self.generic_visit(node)
+            if (
+                node.attr == "MemoryEntry"
+                and isinstance(node.value, ast.Name)
+                and node.value.id in module_aliases
+            ):
+                return ast.copy_location(
+                    ast.Name(id="MemoryEntry", ctx=node.ctx),
+                    node,
+                )
+            return node
+
+    normalized = AliasNormalizer().visit(tree)
+    ast.fix_missing_locations(normalized)
+    return normalized
+
+
 def _has_query_call(node: ast.AST) -> bool:
     for child in ast.walk(node):
         if not isinstance(child, ast.Call):
@@ -95,6 +159,7 @@ def _guard_calls(node: ast.AST) -> frozenset[str]:
             "current_predicate",
             "historical_predicate",
             "historical_rows_predicate",
+            "archived_closure_predicate",
         }
     )
 
@@ -148,6 +213,7 @@ def _guard_aliases(
             "current_predicate",
             "historical_predicate",
             "historical_rows_predicate",
+            "archived_closure_predicate",
         }:
             for symbol in targets:
                 guards_by_symbol[symbol] = _guard_calls(value)
@@ -297,7 +363,9 @@ def _query_statements(node: ast.AST) -> Iterable[ast.stmt]:
 
 
 def _scan_file(path: Path, *, relative_path: str) -> list[DetectedQuery]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = _normalize_memory_entry_aliases(
+        ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    )
     detected: list[DetectedQuery] = []
 
     class Visitor(ast.NodeVisitor):
@@ -419,6 +487,7 @@ def check_inventory(*, app_root: Path, inventory_path: Path) -> list[str]:
             if required_guard not in {
                 "historical_predicate",
                 "historical_rows_predicate",
+                "archived_closure_predicate",
             }:
                 findings.append(f"{key}: historical-view required_guard mismatch")
             elif required_guard not in query.guard_calls:
@@ -470,12 +539,17 @@ def _suggest_row(query: DetectedQuery, existing: dict | None) -> dict:
     elif {
         "historical_predicate",
         "historical_rows_predicate",
+        "archived_closure_predicate",
     }.intersection(query.guard_calls):
         classification = "historical-view"
-        guard = (
-            "historical_predicate"
-            if "historical_predicate" in query.guard_calls
-            else "historical_rows_predicate"
+        guard = next(
+            candidate
+            for candidate in (
+                "historical_predicate",
+                "historical_rows_predicate",
+                "archived_closure_predicate",
+            )
+            if candidate in query.guard_calls
         )
     else:
         classification, guard = "current-view", "current_predicate"

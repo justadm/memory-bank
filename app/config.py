@@ -31,7 +31,11 @@ class Settings(BaseSettings):
     def validate_production_cursor_key(self) -> "Settings":
         if (
             self.app_env.lower() == "production"
-            and self.memory_change_cursor_signing_key == LOCAL_CURSOR_SIGNING_KEY
+            and (
+                not self.memory_change_cursor_signing_key.strip()
+                or self.memory_change_cursor_signing_key
+                == LOCAL_CURSOR_SIGNING_KEY
+            )
         ):
             raise ValueError(
                 "MEMORY_CHANGE_CURSOR_SIGNING_KEY must be set to a non-default value in production"

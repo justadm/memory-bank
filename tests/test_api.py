@@ -2118,6 +2118,75 @@ def test_tenant_scoped_memory_access(client, monkeypatch):
     assert allowed.json()["title"] == "Tenant Secret"
 
 
+def test_restricted_global_search_filters_tenant_before_limit(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "AUTH_API_KEYS",
+        "tenant-a-agent:tenant-a-key:read|write:tenant-a,"
+        "tenant-b-agent:tenant-b-key:read|write:tenant-b",
+    )
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    project_a = client.post(
+        "/projects",
+        json={"name": "Tenant A Search"},
+        headers={"Authorization": "Bearer tenant-a-key"},
+    ).json()
+    project_b = client.post(
+        "/projects",
+        json={"name": "Tenant B Search"},
+        headers={"Authorization": "Bearer tenant-b-key"},
+    ).json()
+    allowed = client.post(
+        "/memory",
+        json={
+            "type": "note",
+            "content": "shared retrieval needle",
+            "project_id": project_a["id"],
+            "importance": 1,
+        },
+        headers={"Authorization": "Bearer tenant-a-key"},
+    ).json()
+    client.post(
+        "/memory",
+        json={
+            "type": "note",
+            "title": "shared retrieval needle",
+            "content": "higher-ranked foreign tenant result",
+            "project_id": project_b["id"],
+            "importance": 5,
+        },
+        headers={"Authorization": "Bearer tenant-b-key"},
+    )
+
+    search = client.get(
+        "/memory/search",
+        params={
+            "query": "shared retrieval needle",
+            "scope": "global",
+            "mode": "lexical",
+            "limit": 1,
+        },
+        headers={"Authorization": "Bearer tenant-a-key"},
+    )
+    relevant = client.post(
+        "/memory/relevant",
+        json={
+            "query": "shared retrieval needle",
+            "scope": "global",
+            "search_mode": "lexical",
+            "limit": 1,
+        },
+        headers={"Authorization": "Bearer tenant-a-key"},
+    )
+
+    assert search.status_code == 200
+    assert [item["id"] for item in search.json()["items"]] == [allowed["id"]]
+    assert relevant.status_code == 200
+    assert [item["id"] for item in relevant.json()["context"]] == [allowed["id"]]
+
+
 def test_tenant_scoped_project_update_preserves_tenant_id(client, monkeypatch):
     monkeypatch.setenv(
         "AUTH_API_KEYS",

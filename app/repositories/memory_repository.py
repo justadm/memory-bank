@@ -5,8 +5,8 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import Select, and_, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import Select, and_, exists, func, or_, select
+from sqlalchemy.orm import Session, aliased
 
 from app.models.access_log import MemoryAccessLog
 from app.models.memory_entry import MemoryEntry
@@ -75,6 +75,18 @@ class MemoryRepository:
         return MemoryEntry.history_available.is_(True)
 
     @staticmethod
+    def archived_closure_predicate():
+        successor = aliased(MemoryEntry)
+        return and_(
+            MemoryRepository.historical_rows_predicate(),
+            MemoryEntry.archived.is_(True),
+            MemoryEntry.valid_to.is_not(None),
+            ~exists(
+                select(1).where(successor.supersedes_id == MemoryEntry.id)
+            ),
+        )
+
+    @staticmethod
     def entry_is_current(
         entry: MemoryEntry,
         *,
@@ -111,18 +123,22 @@ class MemoryRepository:
             )
         elif current_only and archived is not True:
             stmt = select(MemoryEntry).where(self.current_predicate())
+        elif archived is True:
+            stmt = select(MemoryEntry).where(
+                self.archived_closure_predicate()
+            )
         else:
             stmt = select(MemoryEntry).where(
                 self.historical_rows_predicate()
             )
         stmt = stmt.order_by(MemoryEntry.created_at.desc())
-        if project_ids:
+        if project_ids is not None:
             stmt = stmt.where(MemoryEntry.project_id.in_(project_ids))
         elif project_id:
             stmt = stmt.where(MemoryEntry.project_id == project_id)
         if memory_type:
             stmt = stmt.where(MemoryEntry.type == memory_type)
-        if archived is not None:
+        if archived is not None and archived is not True:
             stmt = stmt.where(MemoryEntry.archived == archived)
         return list(self.db.scalars(stmt))
 
@@ -304,7 +320,7 @@ class MemoryRepository:
             )
         else:
             stmt = select(MemoryEntry).where(self.current_predicate())
-        if project_ids:
+        if project_ids is not None:
             stmt = stmt.where(MemoryEntry.project_id.in_(project_ids))
         elif project_id:
             stmt = stmt.where(MemoryEntry.project_id == project_id)
@@ -378,7 +394,7 @@ class MemoryRepository:
             )
         else:
             stmt = select(MemoryEntry).where(self.current_predicate())
-        if project_ids:
+        if project_ids is not None:
             stmt = stmt.where(MemoryEntry.project_id.in_(project_ids))
         elif project_id:
             stmt = stmt.where(MemoryEntry.project_id == project_id)

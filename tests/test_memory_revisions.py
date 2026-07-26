@@ -54,6 +54,44 @@ def test_archive_and_restore_create_temporal_leaf(client):
     assert [item["id"] for item in listed] == [restored.json()["id"]]
 
 
+def test_archived_list_excludes_superseded_revisions(client):
+    project = client.post(
+        "/projects",
+        json={"name": "Archive closure listing"},
+    ).json()
+    revised_source = client.post(
+        "/memory",
+        json={
+            "type": "note",
+            "content": "revision source",
+            "project_id": project["id"],
+        },
+    ).json()
+    client.post(
+        f"/memory/{revised_source['id']}/revise",
+        json={
+            "changes": {"content": "revision successor"},
+            "reason": "verified newer state",
+        },
+    )
+    archived_leaf = client.post(
+        "/memory",
+        json={
+            "type": "note",
+            "content": "explicit archive leaf",
+            "project_id": project["id"],
+        },
+    ).json()
+    client.post(f"/memory/{archived_leaf['id']}/archive")
+
+    archived = client.get(
+        "/memory",
+        params={"project_id": project["id"], "archived": True},
+    ).json()["items"]
+
+    assert [item["id"] for item in archived] == [archived_leaf["id"]]
+
+
 def test_revision_schema_rejects_identity_and_archive_changes(client):
     project = client.post("/projects", json={"name": "Immutable revision"}).json()
     entry = client.post(

@@ -53,6 +53,32 @@ def lookup(db):
     assert "missing inventory row" in findings[0]
 
 
+def test_inventory_detects_aliased_memory_entry_query(tmp_path: Path) -> None:
+    app_root = tmp_path / "app"
+    app_root.mkdir()
+    (app_root / "sample.py").write_text(
+        """
+from sqlalchemy import select
+from app.models.memory_entry import MemoryEntry as Entry
+
+def lookup(db):
+    return db.scalar(select(Entry).where(Entry.project_id == value))
+"""
+    )
+    inventory_path = tmp_path / "inventory.json"
+    inventory_path.write_text(
+        json.dumps({"schema_version": 1, "queries": []})
+    )
+
+    findings = check_inventory(
+        app_root=app_root,
+        inventory_path=inventory_path,
+    )
+
+    assert len(findings) == 1
+    assert "missing inventory row" in findings[0]
+
+
 def test_current_view_requires_central_predicate_call(tmp_path: Path) -> None:
     app_root = tmp_path / "app"
     app_root.mkdir()

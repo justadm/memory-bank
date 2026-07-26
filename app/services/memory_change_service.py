@@ -38,7 +38,12 @@ class MemoryChangeService:
 
     @staticmethod
     def tenant_key(project: Project) -> str:
-        return project.tenant_id or "__global__"
+        raw_scope = project.tenant_id or "__global__"
+        return hmac.new(
+            get_settings().memory_change_cursor_signing_key.encode(),
+            f"tenant-scope:{raw_scope}".encode(),
+            hashlib.sha256,
+        ).hexdigest()
 
     def emit(
         self,

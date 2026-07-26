@@ -481,7 +481,7 @@ class MemoryService:
         project_ids = self._resolve_scope_project_ids(project_id, scope=scope, principal=principal)
         results = self.search_service.search(
             query=query,
-            project_id=None if project_ids else project_id,
+            project_id=None if project_ids is not None else project_id,
             project_ids=project_ids,
             limit=limit,
             mode=mode,
@@ -493,7 +493,7 @@ class MemoryService:
         project_ids = self._resolve_scope_project_ids(payload.project_id, scope=payload.scope, principal=principal)
         results = self.search_service.search(
             query=payload.query,
-            project_id=None if project_ids else payload.project_id,
+            project_id=None if project_ids is not None else payload.project_id,
             project_ids=project_ids,
             limit=payload.limit,
             types=payload.types,
@@ -583,6 +583,12 @@ class MemoryService:
         principal: AuthPrincipal | None = None,
     ) -> list[uuid.UUID] | None:
         if scope == "global":
+            if principal and principal.tenant_ids is not None:
+                return [
+                    project.id
+                    for project in self.project_repository.list()
+                    if ProjectService._can_access_project(project, principal)
+                ]
             return None
         if project_id is None:
             return None

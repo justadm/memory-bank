@@ -1,5 +1,8 @@
+import httpx
+import pytest
+
 from memorybank_sdk import MemoryAwareAgent
-from memorybank_sdk.client import MemoryBankClient
+from memorybank_sdk.client import MemoryBankClient, MemoryBankError
 
 
 class FakeMemoryClient:
@@ -229,4 +232,30 @@ def test_sdk_temporal_methods_and_as_of_parameters():
         "/memory/memory-1/restore",
         "/memory/changes",
     ]
+    client.close()
+
+
+def test_sdk_error_does_not_expose_upstream_response_body():
+    secret = "Authorization: Bearer secret-token"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            502,
+            text=f"upstream failed: {secret}",
+            request=request,
+        )
+
+    client = MemoryBankClient("http://example.test")
+    client._client.close()
+    client._client = httpx.Client(
+        base_url="http://example.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(MemoryBankError) as exc_info:
+        client.health()
+
+    assert "502" in str(exc_info.value)
+    assert secret not in str(exc_info.value)
+    assert "upstream failed" not in str(exc_info.value)
     client.close()
