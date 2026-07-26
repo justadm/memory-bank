@@ -769,6 +769,115 @@ def unrelated(callables=(), manager=None):
     assert findings == []
 
 
+@pytest.mark.parametrize(
+    "function_body",
+    [
+        """
+    def q(model):
+        return model
+    return q(MemoryEntry)
+""",
+        """
+    class q:
+        def __init__(self, model):
+            self.model = model
+    return q(MemoryEntry)
+""",
+    ],
+)
+def test_query_aliases_respect_nested_definition_bindings(
+    tmp_path: Path,
+    function_body: str,
+) -> None:
+    app_root = tmp_path / "app"
+    app_root.mkdir()
+    (app_root / "sample.py").write_text(
+        f"""
+from app.models import MemoryEntry
+from sqlalchemy import select as q
+
+def unrelated():
+{function_body}
+"""
+    )
+    inventory_path = tmp_path / "inventory.json"
+    inventory_path.write_text(
+        json.dumps({"schema_version": 1, "queries": []})
+    )
+
+    findings = check_inventory(
+        app_root=app_root,
+        inventory_path=inventory_path,
+    )
+
+    assert findings == []
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "[q(MemoryEntry) for q in callables]",
+        "{q(MemoryEntry) for q in callables}",
+        "{str(index): q(MemoryEntry) for index, q in callables}",
+        "tuple(q(MemoryEntry) for q in callables)",
+    ],
+)
+def test_query_aliases_respect_comprehension_bindings(
+    tmp_path: Path,
+    expression: str,
+) -> None:
+    app_root = tmp_path / "app"
+    app_root.mkdir()
+    (app_root / "sample.py").write_text(
+        f"""
+from app.models import MemoryEntry
+from sqlalchemy import select as q
+
+def unrelated(callables):
+    return {expression}
+"""
+    )
+    inventory_path = tmp_path / "inventory.json"
+    inventory_path.write_text(
+        json.dumps({"schema_version": 1, "queries": []})
+    )
+
+    findings = check_inventory(
+        app_root=app_root,
+        inventory_path=inventory_path,
+    )
+
+    assert findings == []
+
+
+def test_comprehension_iterable_uses_outer_query_alias(
+    tmp_path: Path,
+) -> None:
+    app_root = tmp_path / "app"
+    app_root.mkdir()
+    (app_root / "sample.py").write_text(
+        """
+from app.models import MemoryEntry
+from sqlalchemy import select as q
+
+def lookup():
+    return [item for item in q(MemoryEntry)]
+"""
+    )
+    inventory_path = tmp_path / "inventory.json"
+    inventory_path.write_text(
+        json.dumps({"schema_version": 1, "queries": []})
+    )
+
+    findings = check_inventory(
+        app_root=app_root,
+        inventory_path=inventory_path,
+    )
+
+    assert len(findings) == 1
+    assert "missing inventory row" in findings[0]
+
+
 def test_current_view_requires_central_predicate_call(tmp_path: Path) -> None:
     app_root = tmp_path / "app"
     app_root.mkdir()

@@ -304,6 +304,7 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
                 node,
                 ast.ClassDef,
             ):
+                yield node
                 continue
             yield node
             stack.extend(ast.iter_child_nodes(node))
@@ -384,6 +385,12 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
                 elif isinstance(node, ast.ExceptHandler):
                     if node.name:
                         local_names.add(node.name)
+                    continue
+                elif isinstance(
+                    node,
+                    (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
+                ):
+                    local_names.add(node.name)
                     continue
                 else:
                     continue
@@ -467,6 +474,56 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
 
         def visit_Lambda(self, node: ast.Lambda):
             return self._visit_lexical_scope(node)
+
+        def _visit_comprehension(
+            self,
+            node: ast.AST,
+            *,
+            result_fields: tuple[str, ...],
+        ):
+            previous = self.query_aliases
+            aliases = dict(previous)
+            for generator in node.generators:
+                self.query_aliases = aliases
+                generator.iter = self.visit(generator.iter)
+                aliases = dict(aliases)
+                for name in target_names(generator.target):
+                    aliases.pop(name, None)
+                self.query_aliases = aliases
+                generator.target = self.visit(generator.target)
+                generator.ifs = [
+                    self.visit(condition)
+                    for condition in generator.ifs
+                ]
+            self.query_aliases = aliases
+            for field in result_fields:
+                setattr(node, field, self.visit(getattr(node, field)))
+            self.query_aliases = previous
+            return node
+
+        def visit_ListComp(self, node: ast.ListComp):
+            return self._visit_comprehension(
+                node,
+                result_fields=("elt",),
+            )
+
+        def visit_SetComp(self, node: ast.SetComp):
+            return self._visit_comprehension(
+                node,
+                result_fields=("elt",),
+            )
+
+        def visit_GeneratorExp(self, node: ast.GeneratorExp):
+            return self._visit_comprehension(
+                node,
+                result_fields=("elt",),
+            )
+
+        def visit_DictComp(self, node: ast.DictComp):
+            return self._visit_comprehension(
+                node,
+                result_fields=("key", "value"),
+            )
 
         def visit_NamedExpr(self, node: ast.NamedExpr):
             node = self.generic_visit(node)
