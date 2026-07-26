@@ -63,6 +63,7 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
     model_aliases = {"MemoryEntry"}
     module_aliases: set[str] = set()
     package_aliases: set[str] = set()
+    query_aliases = {name: name for name in QUERY_CALLS}
 
     def dotted_parts(node: ast.AST) -> tuple[str, ...]:
         if isinstance(node, ast.Name):
@@ -81,6 +82,10 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
         parts = dotted_parts(node)
         return (
             len(parts) >= 2
+            and parts[0] in module_aliases
+            and parts[1:] == ("memory_entry",)
+        ) or (
+            len(parts) >= 2
             and parts[0] in package_aliases
             and parts[1:] in {("models",), ("models", "memory_entry")}
         )
@@ -95,8 +100,38 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
             and is_module_reference(node.value)
         )
 
+    def query_reference_name(node: ast.AST) -> str | None:
+        if isinstance(node, ast.Name):
+            return query_aliases.get(node.id)
+        if isinstance(node, ast.Attribute) and node.attr in QUERY_CALLS:
+            return node.attr
+        return None
+
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
+            if node.level > 0:
+                relative_module = node.module or ""
+                for imported in node.names:
+                    if (
+                        relative_module in {"models", "models.memory_entry"}
+                        and imported.name == "MemoryEntry"
+                    ):
+                        model_aliases.add(imported.asname or imported.name)
+                    elif (
+                        relative_module == "models"
+                        and imported.name == "memory_entry"
+                    ):
+                        module_aliases.add(imported.asname or imported.name)
+                    elif (
+                        relative_module == ""
+                        and imported.name == "models"
+                    ):
+                        module_aliases.add(imported.asname or imported.name)
+                continue
+            if node.module and node.module.startswith("sqlalchemy"):
+                for imported in node.names:
+                    if imported.name in QUERY_CALLS:
+                        query_aliases[imported.asname or imported.name] = imported.name
             if node.module == "app.models.memory_entry":
                 for imported in node.names:
                     if imported.name == "MemoryEntry":
@@ -131,11 +166,15 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
             value = node.value
             if value is None:
                 continue
+            query_name = query_reference_name(value)
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             for target in targets:
                 if not isinstance(target, ast.Name):
                     continue
-                if is_model_reference(value) and target.id not in model_aliases:
+                if query_name and query_aliases.get(target.id) != query_name:
+                    query_aliases[target.id] = query_name
+                    changed = True
+                elif is_model_reference(value) and target.id not in model_aliases:
                     model_aliases.add(target.id)
                     changed = True
                 elif (
@@ -160,6 +199,16 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
             ):
                 return ast.copy_location(
                     ast.Name(id="MemoryEntry", ctx=node.ctx),
+                    node,
+                )
+            query_name = query_aliases.get(node.id)
+            if (
+                isinstance(node.ctx, ast.Load)
+                and query_name
+                and node.id != query_name
+            ):
+                return ast.copy_location(
+                    ast.Name(id=query_name, ctx=node.ctx),
                     node,
                 )
             return node

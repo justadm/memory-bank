@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.lint_memory_query_inventory import check_inventory, scan_memory_queries
 
 
@@ -232,6 +234,126 @@ def lookup(db):
     return db.scalar(select(Entry))
 """
     )
+    inventory_path = tmp_path / "inventory.json"
+    inventory_path.write_text(
+        json.dumps({"schema_version": 1, "queries": []})
+    )
+
+    findings = check_inventory(
+        app_root=app_root,
+        inventory_path=inventory_path,
+    )
+
+    assert len(findings) == 1
+    assert "missing inventory row" in findings[0]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
+import app.models as models
+from sqlalchemy import select
+
+def lookup(db):
+    return db.scalar(select(models.memory_entry.MemoryEntry))
+""",
+        """
+from .models import MemoryEntry as Entry
+from sqlalchemy import select
+
+def lookup(db):
+    return db.scalar(select(Entry))
+""",
+        """
+from . import models
+from sqlalchemy import select
+
+def lookup(db):
+    return db.scalar(select(models.MemoryEntry))
+""",
+        """
+from .models import memory_entry as memory_model
+from sqlalchemy import select
+
+def lookup(db):
+    return db.scalar(select(memory_model.MemoryEntry))
+""",
+        """
+import app.models as models
+from sqlalchemy import select
+
+memory_module = models.memory_entry
+Entry = memory_module.MemoryEntry
+
+def lookup(db):
+    return db.scalar(select(Entry))
+""",
+    ],
+)
+def test_inventory_detects_child_and_relative_module_aliases(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    app_root = tmp_path / "app"
+    app_root.mkdir()
+    (app_root / "sample.py").write_text(source)
+    inventory_path = tmp_path / "inventory.json"
+    inventory_path.write_text(
+        json.dumps({"schema_version": 1, "queries": []})
+    )
+
+    findings = check_inventory(
+        app_root=app_root,
+        inventory_path=inventory_path,
+    )
+
+    assert len(findings) == 1
+    assert "missing inventory row" in findings[0]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
+from app.models import MemoryEntry
+from sqlalchemy import select as query_select
+
+def lookup(db):
+    return query_select(MemoryEntry)
+""",
+        """
+from app.models import MemoryEntry
+from sqlalchemy import select
+
+query_select = select
+
+def lookup(db):
+    return query_select(MemoryEntry)
+""",
+        """
+from app.models import MemoryEntry
+
+def lookup(db):
+    query_for = db.query
+    return query_for(MemoryEntry)
+""",
+        """
+from app.models import MemoryEntry
+
+def lookup(db, value):
+    fetch_one = db.get
+    return fetch_one(MemoryEntry, value)
+""",
+    ],
+)
+def test_inventory_detects_static_query_callable_aliases(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    app_root = tmp_path / "app"
+    app_root.mkdir()
+    (app_root / "sample.py").write_text(source)
     inventory_path = tmp_path / "inventory.json"
     inventory_path.write_text(
         json.dumps({"schema_version": 1, "queries": []})
