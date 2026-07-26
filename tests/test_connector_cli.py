@@ -177,3 +177,41 @@ def test_registration_rollback_reports_every_unresolved_path(
 
     assert str(config_path) in str(exc_info.value)
     assert service.manifest_path.read_bytes() == manifest_before
+
+
+def test_registration_rollback_rejects_parent_symlink_swap_before_cleanup(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    service = ConnectorService(tmp_path)
+    manifest = service.apply_connect(service.plan_connect())
+    config_path = tmp_path / ".memlayer/memlayer.config.json"
+    config_path.unlink()
+    original_parent = tmp_path / ".memlayer-original"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_config = outside / config_path.name
+    outside_config.write_text("must survive\n", encoding="utf-8")
+
+    def swap_parent_then_fail(*args, **kwargs):
+        config_path.parent.rename(original_parent)
+        config_path.parent.symlink_to(outside, target_is_directory=True)
+        raise OSError("synthetic manifest failure")
+
+    monkeypatch.setattr(
+        connector_cli,
+        "write_manifest_atomic",
+        swap_parent_then_fail,
+    )
+
+    with pytest.raises(
+        connector_cli.ConnectorConflict,
+        match="rollback is incomplete",
+    ):
+        connector_cli._persist_registration(
+            service,
+            manifest,
+            {"project_id": "d8399b69-82ff-46ec-8e03-1930f1c84735"},
+        )
+
+    assert outside_config.read_text(encoding="utf-8") == "must survive\n"

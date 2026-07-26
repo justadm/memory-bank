@@ -12,7 +12,14 @@ from memorybank_sdk import DEFAULT_MEMORYBANK_URL
 from .client import api_key_from_process_environment, make_client, resolve_and_verify
 from .doctor import DoctorService
 from .manifest import write_manifest_atomic
-from .service import ConnectorConflict, ConnectorPlan, ConnectorService, _digest, _write_atomic
+from .service import (
+    ConnectorConflict,
+    ConnectorPlan,
+    ConnectorService,
+    _digest,
+    _unlink,
+    _write_atomic,
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -129,7 +136,12 @@ def _persist_registration(service: ConnectorService, manifest: Any, resolved: di
         rollback_errors: list[tuple[str, BaseException]] = []
         try:
             if config_before is None:
-                config_path.unlink(missing_ok=True)
+                _unlink(
+                    config_path,
+                    root=service.root,
+                    expected_root_identity=service.root_identity,
+                    missing_ok=True,
+                )
             else:
                 _write_atomic(
                     config_path,
@@ -142,7 +154,12 @@ def _persist_registration(service: ConnectorService, manifest: Any, resolved: di
             rollback_errors.append((str(config_path), exc))
         try:
             if manifest_before is None:
-                service.manifest_path.unlink(missing_ok=True)
+                _unlink(
+                    service.manifest_path,
+                    root=service.root,
+                    expected_root_identity=service.root_identity,
+                    missing_ok=True,
+                )
             else:
                 _write_atomic(
                     service.manifest_path,

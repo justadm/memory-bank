@@ -10,7 +10,14 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from .artifacts import ArtifactSpec, OwnershipMode, RenderContext, artifact_registry, managed_values, render_artifact
-from .filesystem import RootBoundWriteError, root_identity, write_atomic_beneath
+from .filesystem import (
+    RootBoundRemoveError,
+    RootBoundWriteError,
+    rmdir_beneath,
+    root_identity,
+    unlink_beneath,
+    write_atomic_beneath,
+)
 from .manifest import ConnectionManifest, ManifestConflict, ManifestRecord, load_validated_manifest, safe_project_path, validate_manifest, validate_manifest_identity, write_manifest_atomic
 
 START = "<!-- MEMLAYER_ROOT_PACK:START -->"
@@ -76,6 +83,42 @@ def _write_atomic(
             expected_root_identity=expected_root_identity,
         )
     except RootBoundWriteError as exc:
+        raise ConnectorConflict(str(exc)) from exc
+
+
+def _unlink(
+    path: Path,
+    *,
+    root: Path,
+    expected_root_identity: tuple[int, int] | None = None,
+    missing_ok: bool = False,
+) -> None:
+    try:
+        unlink_beneath(
+            root=root,
+            path=path,
+            expected_root_identity=expected_root_identity,
+            missing_ok=missing_ok,
+        )
+    except RootBoundRemoveError as exc:
+        raise ConnectorConflict(str(exc)) from exc
+
+
+def _rmdir(
+    path: Path,
+    *,
+    root: Path,
+    expected_root_identity: tuple[int, int] | None = None,
+    missing_ok: bool = False,
+) -> None:
+    try:
+        rmdir_beneath(
+            root=root,
+            path=path,
+            expected_root_identity=expected_root_identity,
+            missing_ok=missing_ok,
+        )
+    except RootBoundRemoveError as exc:
         raise ConnectorConflict(str(exc)) from exc
 
 
@@ -406,7 +449,12 @@ class ConnectorService:
         def restore() -> None:
             for path, (content, mode) in reversed(tuple(snapshots.items())):
                 if content is None:
-                    path.unlink(missing_ok=True)
+                    _unlink(
+                        path,
+                        root=self.root,
+                        expected_root_identity=self.root_identity,
+                        missing_ok=True,
+                    )
                 else:
                     _write_atomic(
                         path,
@@ -423,7 +471,12 @@ class ConnectorService:
                 current = path
                 while current != self.root and current.is_relative_to(self.root):
                     try:
-                        current.rmdir()
+                        _rmdir(
+                            current,
+                            root=self.root,
+                            expected_root_identity=self.root_identity,
+                            missing_ok=True,
+                        )
                     except OSError:
                         break
                     current = current.parent
@@ -714,11 +767,24 @@ class ConnectorService:
                             expected_root_identity=self.root_identity,
                         )
                     else:
-                        path.unlink()
+                        _unlink(
+                            path,
+                            root=self.root,
+                            expected_root_identity=self.root_identity,
+                        )
                 else:
-                    path.unlink()
+                    _unlink(
+                        path,
+                        root=self.root,
+                        expected_root_identity=self.root_identity,
+                    )
             capture(self.manifest_path)
-            self.manifest_path.unlink(missing_ok=True)
+            _unlink(
+                self.manifest_path,
+                root=self.root,
+                expected_root_identity=self.root_identity,
+                missing_ok=True,
+            )
         except BaseException:
             restore()
             raise

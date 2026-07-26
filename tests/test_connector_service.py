@@ -316,3 +316,78 @@ def test_root_bound_atomic_write_rejects_symlink_parent(tmp_path: Path) -> None:
         )
 
     assert not (outside / "memlayer.config.json").exists()
+
+
+def test_disconnect_rejects_parent_symlink_swap_before_unlink(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    service = ConnectorService(tmp_path)
+    service.apply_connect(service.plan_connect())
+    plan = service.plan_disconnect()
+    target = tmp_path / ".memlayer/MEMLAYER.md"
+    original_parent = tmp_path / ".memlayer-original"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_target = outside / target.name
+    outside_target.write_text("must survive\n", encoding="utf-8")
+    original_read_bytes = Path.read_bytes
+    swapped = False
+    fresh_plan_completed = False
+    original_plan_disconnect = service.plan_disconnect
+
+    def swap_parent_after_capture(path: Path) -> bytes:
+        nonlocal swapped
+        content = original_read_bytes(path)
+        if path == target and fresh_plan_completed and not swapped:
+            swapped = True
+            target.parent.rename(original_parent)
+            target.parent.symlink_to(outside, target_is_directory=True)
+        return content
+
+    def mark_fresh_plan_completed():
+        nonlocal fresh_plan_completed
+        result = original_plan_disconnect()
+        fresh_plan_completed = True
+        return result
+
+    monkeypatch.setattr(Path, "read_bytes", swap_parent_after_capture)
+    monkeypatch.setattr(service, "plan_disconnect", mark_fresh_plan_completed)
+
+    with pytest.raises(ConnectorConflict, match="symlink"):
+        service.apply_disconnect(plan)
+
+    assert outside_target.read_text(encoding="utf-8") == "must survive\n"
+
+
+def test_connect_rollback_rejects_parent_symlink_swap_before_cleanup(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    service = ConnectorService(tmp_path)
+    plan = service.plan_connect()
+    original_parent = tmp_path / ".memlayer-original"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_target = outside / "MEMLAYER.md"
+    outside_target.write_text("must survive\n", encoding="utf-8")
+    trigger = tmp_path / ".memlayer/.env.memlayer.example"
+    real_write_atomic = connector_service_module._write_atomic
+
+    def swap_parent_then_fail(path, data, mode=None, **kwargs):
+        if path == trigger:
+            path.parent.rename(original_parent)
+            path.parent.symlink_to(outside, target_is_directory=True)
+            raise OSError("synthetic apply failure")
+        return real_write_atomic(path, data, mode, **kwargs)
+
+    monkeypatch.setattr(
+        connector_service_module,
+        "_write_atomic",
+        swap_parent_then_fail,
+    )
+
+    with pytest.raises(ConnectorConflict, match="symlink"):
+        service.apply_connect(plan)
+
+    assert outside_target.read_text(encoding="utf-8") == "must survive\n"

@@ -78,6 +78,8 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
             for imported in node.names:
                 if imported.name == "app.models.memory_entry" and imported.asname:
                     module_aliases.add(imported.asname)
+                elif imported.name == "app.models" and imported.asname:
+                    module_aliases.add(imported.asname)
 
     changed = True
     while changed:
