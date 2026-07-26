@@ -70,7 +70,9 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
                         model_aliases.add(imported.asname or imported.name)
             elif node.module == "app.models":
                 for imported in node.names:
-                    if imported.name == "memory_entry":
+                    if imported.name == "MemoryEntry":
+                        model_aliases.add(imported.asname or imported.name)
+                    elif imported.name == "memory_entry":
                         module_aliases.add(imported.asname or imported.name)
         elif isinstance(node, ast.Import):
             for imported in node.names:
@@ -84,7 +86,16 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
             if not isinstance(node, (ast.Assign, ast.AnnAssign)):
                 continue
             value = node.value
-            if not isinstance(value, ast.Name) or value.id not in model_aliases:
+            is_model_reference = (
+                isinstance(value, ast.Name)
+                and value.id in model_aliases
+            ) or (
+                isinstance(value, ast.Attribute)
+                and value.attr == "MemoryEntry"
+                and isinstance(value.value, ast.Name)
+                and value.value.id in module_aliases
+            )
+            if not is_model_reference:
                 continue
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             for target in targets:
