@@ -11,3 +11,4 @@ venv/
 *.db
 dist/
 build/
+backups/

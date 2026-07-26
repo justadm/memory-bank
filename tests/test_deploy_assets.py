@@ -21,12 +21,12 @@ def test_basic_auth_helper_has_expected_targets():
 
 
 def test_docker_build_context_excludes_production_backups():
-    patterns = {
-        line.strip()
-        for line in (ROOT / ".dockerignore").read_text(
-            encoding="utf-8"
-        ).splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    }
+    def patterns(path: Path) -> set[str]:
+        return {
+            line.strip()
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        }
 
-    assert "backups/" in patterns
+    assert "backups/" in patterns(ROOT / ".dockerignore")
+    assert "backups/" in patterns(ROOT / ".gitignore")
