@@ -48,6 +48,7 @@ class MemoryChangeService:
         event_kind: MemoryChangeEventKind,
         principal: AuthPrincipal | None,
         previous_entry_id: uuid.UUID | None = None,
+        restored_from_entry_id: uuid.UUID | None = None,
         reason: str | None = None,
         occurred_at: datetime | None = None,
     ) -> MemoryChangeEvent:
@@ -68,6 +69,7 @@ class MemoryChangeService:
             normalized_tenant_key=self.tenant_key(project),
             entry_id=entry_id,
             previous_entry_id=previous_entry_id,
+            restored_from_entry_id=restored_from_entry_id,
             actor=safe_actor_id(principal or AuthPrincipal(name="system", scopes={"admin"}, api_key="")),
             reason=safe_reason,
         )

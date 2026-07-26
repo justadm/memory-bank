@@ -46,5 +46,9 @@ class MemoryChangeEvent(UUIDPrimaryKeyMixin, Base):
     normalized_tenant_key: Mapped[str] = mapped_column(String(255), nullable=False)
     entry_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     previous_entry_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    restored_from_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        nullable=True,
+    )
     actor: Mapped[str] = mapped_column(String(100), nullable=False)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)

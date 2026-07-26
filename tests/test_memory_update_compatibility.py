@@ -1,3 +1,7 @@
+import pytest
+from fastapi import HTTPException
+
+
 def test_semantic_patch_creates_revision_and_exact_compatibility_reason(client):
     project = client.post("/projects", json={"name": "PATCH compatibility"}).json()
     created = client.post(
@@ -64,7 +68,7 @@ def test_operational_update_emits_no_semantic_event(
     updated = service.update_operational_fields(
         __import__("uuid").UUID(created["id"]),
         fields={"usage_count": 4},
-        operation="test_usage_accounting",
+        operation="usage_accounting",
     )
     db_session.commit()
 
@@ -77,3 +81,27 @@ def test_operational_update_emits_no_semantic_event(
         },
     ).json()
     assert after["items"] == []
+
+
+def test_unknown_operational_update_kind_is_rejected(client, db_session):
+    from app.repositories.link_repository import LinkRepository
+    from app.repositories.memory_repository import MemoryRepository
+    from app.repositories.project_repository import ProjectRepository
+    from app.services.memory_service import MemoryService
+
+    created = client.post(
+        "/memory",
+        json={"type": "note", "content": "operational kind"},
+    ).json()
+    service = MemoryService(
+        MemoryRepository(db_session),
+        ProjectRepository(db_session),
+        LinkRepository(db_session),
+    )
+
+    with pytest.raises(HTTPException, match="operational update kind"):
+        service.update_operational_fields(
+            __import__("uuid").UUID(created["id"]),
+            fields={"usage_count": 1},
+            operation="arbitrary_caller_claim",
+        )

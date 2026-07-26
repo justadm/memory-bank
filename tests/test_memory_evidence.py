@@ -40,9 +40,12 @@ def test_validated_provenance_requires_scope_and_safe_evidence():
 
 @pytest.mark.parametrize("payload", [
     {"authorization": "Bearer secret"},
+    {"api_key": "sensitive-value"},
+    {"customer_payload": "private customer record"},
     {"raw_output": "stdout"},
     {"private_key": "-----BEGIN PRIVATE KEY-----"},
     {"password": "value"},
+    "api_key=sensitive-value",
 ])
 def test_privacy_scanner_fails_closed(payload):
     assert scan_privacy_safe(payload) is False

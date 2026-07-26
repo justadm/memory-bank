@@ -190,6 +190,8 @@ def test_restore_historical_source_closes_current_leaf(client):
         "revised",
         "restored",
     ]
+    assert changes[-1]["restored_from_entry_id"] == first["id"]
+    assert changes[-1]["previous_entry_id"] == second["id"]
 
 
 def test_legacy_archived_history_is_fail_closed(client, db_session):

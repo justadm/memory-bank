@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
+from sqlalchemy.orm import Session
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -310,6 +311,132 @@ def _assert_temporal_runtime_constraints(
     )
 
 
+def _assert_temporal_application_lifecycle(
+    engine: sa.Engine,
+    *,
+    project_id: uuid.UUID,
+) -> None:
+    from app.models.enums import MemoryProvenance
+    from app.repositories.link_repository import LinkRepository
+    from app.repositories.memory_repository import MemoryRepository
+    from app.repositories.project_repository import ProjectRepository
+    from app.schemas.memory import (
+        MemoryCreate,
+        MemoryRestoreRequest,
+        MemoryReviseRequest,
+        MemoryRevisionChanges,
+    )
+    from app.security import AuthPrincipal
+    from app.services.memory_change_service import MemoryChangeService
+    from app.services.memory_revision_service import MemoryRevisionService
+    from app.services.memory_service import MemoryService
+
+    principal = AuthPrincipal(
+        name="migration-drill",
+        scopes={"read", "write", "import", "admin", "validate"},
+        api_key="",
+    )
+    base_time = datetime.now(timezone.utc) - timedelta(minutes=5)
+    with Session(engine, expire_on_commit=False) as session:
+        memory_repository = MemoryRepository(session)
+        project_repository = ProjectRepository(session)
+        memory_service = MemoryService(
+            memory_repository,
+            project_repository,
+            LinkRepository(session),
+        )
+        revision_service = MemoryRevisionService(
+            memory_repository,
+            project_repository,
+        )
+        project = project_repository.get(project_id)
+        if project is None:
+            raise AssertionError("application lifecycle project is missing")
+
+        created = memory_service.create_memory(
+            MemoryCreate(
+                type="note",
+                title="application lifecycle",
+                content="original application lifecycle state",
+                project_id=project_id,
+                provenance=MemoryProvenance.observed,
+                confidence=0.9,
+                valid_from=base_time,
+            ),
+            principal=principal,
+            operation_source="api",
+        )
+        session.commit()
+
+        revised, _, _ = revision_service.revise(
+            created.id,
+            MemoryReviseRequest(
+                changes=MemoryRevisionChanges(
+                    content="revised application lifecycle state"
+                ),
+                reason="synthetic PostgreSQL lifecycle revision",
+            ),
+            principal=principal,
+            now=base_time + timedelta(seconds=1),
+        )
+        session.commit()
+
+        current = memory_service.search_memory(
+            query="revised application lifecycle state",
+            project_id=project_id,
+            mode="lexical",
+            principal=principal,
+        )
+        historical = memory_service.search_memory(
+            query="original application lifecycle state",
+            project_id=project_id,
+            mode="lexical",
+            principal=principal,
+            as_of=base_time + timedelta(milliseconds=500),
+        )
+        if [item.entry.id for item in current] != [revised.id]:
+            raise AssertionError("application lifecycle current search failed")
+        if [item.entry.id for item in historical] != [created.id]:
+            raise AssertionError("application lifecycle as-of search failed")
+
+        memory_service.archive_memory(
+            revised.id,
+            principal=principal,
+            now=base_time + timedelta(seconds=2),
+        )
+        session.commit()
+        restored = revision_service.restore(
+            created.id,
+            MemoryRestoreRequest(
+                reason="synthetic PostgreSQL lifecycle restore",
+            ),
+            principal=principal,
+            now=base_time + timedelta(seconds=3),
+        )
+        session.commit()
+        if restored.content != created.content or restored.supersedes_id != revised.id:
+            raise AssertionError("application lifecycle restore failed")
+
+        changes = MemoryChangeService(session).list_changes(
+            project=project,
+            principal=principal,
+            after_sequence=0,
+            limit=100,
+        )
+        lifecycle_events = [
+            item
+            for item in changes["items"]
+            if item.entry_id in {created.id, revised.id, restored.id}
+        ]
+        kinds = [item.event_kind.value for item in lifecycle_events]
+        if kinds != ["created", "revised", "archived", "restored"]:
+            raise AssertionError(
+                f"application lifecycle change feed failed: {kinds}"
+            )
+        if lifecycle_events[-1].restored_from_entry_id != created.id:
+            raise AssertionError("restore event source identity is missing")
+
+
 def _assert_concurrent_temporal_writes(
     engine: sa.Engine,
     *,
@@ -469,6 +596,7 @@ def _assert_temporal_profile(config: Config, engine: sa.Engine, target: str) -> 
         archived_id=archived_id,
     )
     _assert_temporal_runtime_constraints(engine, project_id=project_id)
+    _assert_temporal_application_lifecycle(engine, project_id=project_id)
     command.downgrade(config, "20260429_0004")
     _assert_revision(engine, "20260429_0004")
     command.upgrade(config, target)

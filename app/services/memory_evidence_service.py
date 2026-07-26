@@ -30,7 +30,7 @@ SERVICE_OWNED_METADATA_KEYS = frozenset(
 )
 
 _FORBIDDEN = re.compile(
-    r"(?i)(authorization\s*:\s*bearer|x-api-key\s*:|-----begin .*private key-----|\b(?:sk|ghp|gho|xoxb|xoxp)-[a-z0-9_-]{8,}|\b(?:password|passwd|secret|token)\s*[:=]|\b(?:stdout|stderr|response_body|raw_output|customer_payload)\b)"
+    r"(?i)(authorization\s*:\s*bearer|x-api-key\s*:|-----begin .*private key-----|\b(?:sk|ghp|gho|xoxb|xoxp)-[a-z0-9_-]{8,}|\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd|secret|token)\s*[:=]|\b(?:stdout|stderr|response_body|raw_output|customer_payload|customer_data)\b)"
 )
 _SAFE_REDACTED_ASSIGNMENT = re.compile(
     r"(?i)\b(?:api[_-]?key|password|passwd|secret|token)\s*[:=]\s*\[REDACTED\]"
@@ -40,7 +40,25 @@ _SAFE_REDACTED_ASSIGNMENT = re.compile(
 def scan_privacy_safe(value: Any) -> bool:
     if isinstance(value, dict):
         for key, item in value.items():
-            if str(key).lower() in {"authorization", "x-api-key", "password", "secret", "token", "stdout", "stderr", "raw_output", "response_body"}:
+            normalized_key = str(key).strip().lower().replace("-", "_")
+            if normalized_key in {
+                "authorization",
+                "x_api_key",
+                "api_key",
+                "access_token",
+                "refresh_token",
+                "password",
+                "passwd",
+                "secret",
+                "token",
+                "private_key",
+                "stdout",
+                "stderr",
+                "raw_output",
+                "response_body",
+                "customer_payload",
+                "customer_data",
+            }:
                 return False
             if not scan_privacy_safe(item):
                 return False

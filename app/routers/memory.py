@@ -137,6 +137,7 @@ def get_memory_changes(
                 "occurred_at": item.occurred_at,
                 "entry_id": item.entry_id,
                 "previous_entry_id": item.previous_entry_id,
+                "restored_from_entry_id": item.restored_from_entry_id,
                 "actor": item.actor,
                 "reason": item.reason,
             }

@@ -253,9 +253,10 @@ class MemoryRevisionService:
                         project=project,
                         entry_id=created.id,
                         previous_entry_id=leaf.id,
+                        restored_from_entry_id=source.id,
                         event_kind=MemoryChangeEventKind.restored,
                         principal=principal,
-                        reason=f"restored_from_entry_id={source.id}; {MemoryEvidenceService.validate_reason(payload.reason)}",
+                        reason=MemoryEvidenceService.validate_reason(payload.reason),
                         occurred_at=clock,
                     )
         except IntegrityError as exc:
@@ -277,10 +278,9 @@ class MemoryRevisionService:
     def _set_lineage(self, entry: MemoryEntry) -> MemoryEntry:
         successor = self._successor(entry.id)
         entry.successor_id = successor.id if successor else None
-        entry.is_current = (
-            successor is None
-            and entry.valid_to is None
-            and not entry.archived
+        entry.is_current = self.memory_repository.entry_is_current(
+            entry,
+            successor=successor,
         )
         return entry
 

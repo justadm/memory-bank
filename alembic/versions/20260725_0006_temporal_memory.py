@@ -130,6 +130,7 @@ def upgrade() -> None:
         sa.Column("normalized_tenant_key", sa.String(length=255), nullable=False),
         sa.Column("entry_id", sa.Uuid(), nullable=False),
         sa.Column("previous_entry_id", sa.Uuid(), nullable=True),
+        sa.Column("restored_from_entry_id", sa.Uuid(), nullable=True),
         sa.Column("actor", sa.String(length=100), nullable=False),
         sa.Column("reason", sa.Text(), nullable=True),
         sa.UniqueConstraint(

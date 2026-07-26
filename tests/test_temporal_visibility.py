@@ -107,3 +107,26 @@ def test_historical_predicate_excludes_legacy_archived_rows(db_session):
 
     assert native in visible
     assert legacy not in visible
+
+
+def test_future_dated_exact_entry_is_not_reported_current(client):
+    project = client.post("/projects", json={"name": "Future exact"}).json()
+    future = datetime.now(timezone.utc) + timedelta(days=1)
+    created = client.post(
+        "/memory",
+        json={
+            "type": "note",
+            "content": "future imported memory",
+            "project_id": project["id"],
+            "valid_from": future.isoformat(),
+        },
+    ).json()
+
+    exact = client.get(f"/memory/{created['id']}").json()
+    listed = client.get(
+        "/memory",
+        params={"project_id": project["id"]},
+    ).json()["items"]
+
+    assert exact["is_current"] is False
+    assert listed == []

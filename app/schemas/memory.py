@@ -138,6 +138,7 @@ class MemoryChangeEventResponse(BaseModel):
     occurred_at: datetime
     entry_id: uuid.UUID
     previous_entry_id: uuid.UUID | None
+    restored_from_entry_id: uuid.UUID | None
     actor: str
     reason: str | None
 

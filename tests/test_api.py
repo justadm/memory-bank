@@ -1132,10 +1132,70 @@ def test_memory_hygiene_assigns_project_ids_and_relinks(client, db_session: Sess
     assert applied.json()["links_created_count"] >= 1
 
     db_session.expire_all()
-    assert str(db_session.get(MemoryEntry, uuid.UUID(first["id"])).project_id) == project["id"]
-    assert str(db_session.get(MemoryEntry, uuid.UUID(second["id"])).project_id) == project["id"]
+    first_original = db_session.get(MemoryEntry, uuid.UUID(first["id"]))
+    second_original = db_session.get(MemoryEntry, uuid.UUID(second["id"]))
+    assert first_original.project_id is None
+    assert second_original.project_id is None
+    assert first_original.archived is True
+    assert second_original.archived is True
+    assigned = client.get("/memory", params={"project_id": project["id"]}).json()["items"]
+    assert len(assigned) == 2
+    assert {item["content"] for item in assigned} == {
+        first["content"],
+        second["content"],
+    }
+    assert all(item["id"] not in {first["id"], second["id"]} for item in assigned)
     links = db_session.query(MemoryLink).all()
     assert len(links) >= 1
+
+
+def test_project_hygiene_does_not_retroactively_change_project_history(
+    client,
+    db_session: Session,
+):
+    project = client.post(
+        "/projects",
+        json={
+            "name": "Historical scope",
+            "metadata": {"source_path": "/Users/just/projects/historical-scope"},
+        },
+    ).json()
+    entry = client.post(
+        "/memory",
+        json={
+            "type": "note",
+            "content": "project assignment evidence",
+            "metadata": {
+                "source_file": "/Users/just/projects/historical-scope/README.md"
+            },
+        },
+    ).json()
+    before_assignment = datetime.now(timezone.utc)
+
+    response = client.post(
+        "/maintenance/memory-hygiene/run",
+        json={"dry_run": False, "relink": False},
+    )
+
+    assert response.status_code == 200
+    historical = client.get(
+        "/memory",
+        params={
+            "project_id": project["id"],
+            "as_of": before_assignment.isoformat(),
+        },
+    ).json()["items"]
+    current = client.get(
+        "/memory",
+        params={"project_id": project["id"]},
+    ).json()["items"]
+    assert historical == []
+    assert len(current) == 1
+    assert current[0]["id"] != entry["id"]
+    db_session.expire_all()
+    original = db_session.get(MemoryEntry, uuid.UUID(entry["id"]))
+    assert original.project_id is None
+    assert original.archived is True
 
 
 def test_memory_hygiene_does_not_assign_project_by_name_only(client, db_session: Session):

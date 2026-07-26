@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 
 from fastapi import HTTPException, status
@@ -31,6 +32,16 @@ from app.services.memory_evidence_service import MemoryEvidenceService
 from app.services.memory_change_service import MemoryChangeService
 from app.services.memory_revision_service import MemoryRevisionService
 from app.services.search_service import SearchService
+
+
+class OperationalUpdateKind(str, Enum):
+    usage_accounting = "usage_accounting"
+    compaction_linkage = "compaction_linkage"
+    decision_conflict_resolution = "decision_conflict_resolution"
+    quality_review_resolution = "quality_review_resolution"
+    import_run_accounting = "import_run_accounting"
+    lifecycle_quality_decay = "lifecycle_quality_decay"
+    lifecycle_review_overdue = "lifecycle_review_overdue"
 
 
 class ProjectService:
@@ -197,7 +208,7 @@ class MemoryService:
                     event_kind=MemoryChangeEventKind.created,
                     principal=principal,
                 )
-        created.is_current = True
+        created.is_current = self.memory_repository.entry_is_current(created)
         created.successor_id = None
         return created
 
@@ -207,7 +218,7 @@ class MemoryService:
         *,
         fields: dict[str, object] | None = None,
         metadata_patch: dict[str, object] | None = None,
-        operation: str,
+        operation: OperationalUpdateKind | str,
         principal: AuthPrincipal | None = None,
     ) -> MemoryEntry:
         allowed_fields = {"usage_count", "last_used_at"}
@@ -229,7 +240,14 @@ class MemoryService:
             "compacted_into_entry_id",
             "compaction_applied_at",
         }
-        if not operation or set(fields or {}) - allowed_fields or set(metadata_patch or {}) - allowed_metadata:
+        try:
+            OperationalUpdateKind(operation)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="invalid operational update kind",
+            ) from exc
+        if set(fields or {}) - allowed_fields or set(metadata_patch or {}) - allowed_metadata:
             raise HTTPException(status_code=422, detail="invalid operational update")
         entry = self.get_memory(entry_id, principal=principal)
         for field, value in (fields or {}).items():
@@ -247,6 +265,7 @@ class MemoryService:
         *,
         project_id: uuid.UUID,
         evidence: str,
+        now: datetime | None = None,
     ) -> MemoryEntry:
         entry = self.memory_repository.get_for_update(entry_id)
         if not entry:
@@ -266,24 +285,53 @@ class MemoryService:
             raise HTTPException(status_code=404, detail="Project not found")
         if not MemoryEvidenceService.validate_reason(evidence):
             raise HTTPException(status_code=422, detail="invalid project assignment evidence")
-        entry.project_id = project.id
+        clock = now or datetime.now(timezone.utc)
+        if clock.tzinfo is None:
+            raise ValueError("project assignment clock must be timezone-aware")
         metadata = dict(entry.metadata_ or {})
         metadata["project_id_hygiene"] = {
             "assigned_by": "source_path",
             "project_name": project.name,
             "evidence": evidence,
         }
-        entry.metadata_ = metadata
+        entry.valid_to = clock
+        entry.archived = True
         self.memory_repository.db.add(entry)
-        self.memory_repository.db.flush()
+        assigned = MemoryEntry(
+            type=entry.type,
+            title=entry.title,
+            content=entry.content,
+            source_agent=entry.source_agent,
+            project_id=project.id,
+            importance=entry.importance,
+            metadata_=metadata,
+            provenance=entry.provenance,
+            confidence=entry.confidence,
+            valid_from=clock,
+            history_available=True,
+            search_vector=(
+                None
+                if self.memory_repository.is_postgresql()
+                else self._build_search_payload(entry.title, entry.content)
+            ),
+        )
+        created = self.memory_repository.create(assigned)
+        self.memory_repository.sync_search_vector(
+            created,
+            self._build_search_payload(created.title, created.content),
+        )
+        self.auto_link_service.link_entry(created)
         MemoryChangeService(self.memory_repository.db).emit(
             project=project,
-            entry_id=entry.id,
+            entry_id=created.id,
             event_kind=MemoryChangeEventKind.created,
             principal=None,
             reason="initial project scope assigned from sanitized source-path evidence",
+            occurred_at=clock,
         )
-        return entry
+        created.is_current = self.memory_repository.entry_is_current(created)
+        created.successor_id = None
+        return created
 
     def get_memory(self, entry_id: uuid.UUID, *, principal: AuthPrincipal | None = None) -> MemoryEntry:
         entry = self.memory_repository.get(entry_id)
@@ -292,8 +340,9 @@ class MemoryService:
         self._ensure_entry_access(entry, principal)
         successor = self.memory_repository.get_successor(entry.id)
         entry.successor_id = successor.id if successor else None
-        entry.is_current = (
-            successor is None and entry.valid_to is None and not entry.archived
+        entry.is_current = self.memory_repository.entry_is_current(
+            entry,
+            successor=successor,
         )
         return entry
 
@@ -313,10 +362,9 @@ class MemoryService:
         for item in visible:
             successor = self.memory_repository.get_successor(item.id)
             item.successor_id = successor.id if successor else None
-            item.is_current = (
-                successor is None
-                and item.valid_to is None
-                and not item.archived
+            item.is_current = self.memory_repository.entry_is_current(
+                item,
+                successor=successor,
             )
         return visible
 

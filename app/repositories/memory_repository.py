@@ -74,6 +74,27 @@ class MemoryRepository:
     def historical_rows_predicate():
         return MemoryEntry.history_available.is_(True)
 
+    @staticmethod
+    def entry_is_current(
+        entry: MemoryEntry,
+        *,
+        successor: MemoryEntry | None = None,
+        at: datetime | None = None,
+    ) -> bool:
+        moment = MemoryRepository._normalize_at(at)
+        valid_from = MemoryRepository._normalize_at(entry.valid_from)
+        valid_to = (
+            MemoryRepository._normalize_at(entry.valid_to)
+            if entry.valid_to is not None
+            else None
+        )
+        return (
+            successor is None
+            and valid_from <= moment
+            and (valid_to is None or valid_to > moment)
+            and not entry.archived
+        )
+
     def list(
         self,
         *,
