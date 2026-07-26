@@ -102,11 +102,25 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
             and is_module_reference(node.value)
         )
 
-    def query_reference_name(node: ast.AST) -> str | None:
+    def query_reference_name(
+        node: ast.AST,
+        aliases: dict[str, str],
+    ) -> str | None:
         if isinstance(node, ast.Name):
-            return query_aliases.get(node.id)
+            return aliases.get(node.id)
         if isinstance(node, ast.Attribute) and node.attr in QUERY_CALLS:
             return node.attr
+        if isinstance(node, ast.IfExp):
+            body_name = query_reference_name(
+                unwrap_transparent_call(node.body),
+                aliases,
+            )
+            else_name = query_reference_name(
+                unwrap_transparent_call(node.orelse),
+                aliases,
+            )
+            if body_name and else_name:
+                return body_name
         return None
 
     def is_typing_module_reference(node: ast.AST) -> bool:
@@ -193,10 +207,6 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
                 for imported in node.names:
                     if imported.name == "cast":
                         cast_aliases.add(imported.asname or imported.name)
-            if node.module and node.module.startswith("sqlalchemy"):
-                for imported in node.names:
-                    if imported.name in QUERY_CALLS:
-                        query_aliases[imported.asname or imported.name] = imported.name
             if node.module == "app.models.memory_entry":
                 for imported in node.names:
                     if imported.name == "MemoryEntry":
@@ -230,19 +240,25 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
     while changed:
         changed = False
         for node in ast.walk(tree):
-            if not isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
+            if not isinstance(
+                node,
+                (ast.Assign, ast.AnnAssign, ast.NamedExpr),
+            ):
                 continue
             raw_value = node.value
             if raw_value is None:
                 continue
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            targets = (
+                node.targets
+                if isinstance(node, ast.Assign)
+                else [node.target]
+            )
             for raw_target in targets:
                 for target, bound_value in assignment_bindings(
                     raw_target,
                     raw_value,
                 ):
                     value = unwrap_transparent_call(bound_value)
-                    query_name = query_reference_name(value)
                     if (
                         is_cast_reference(bound_value)
                         and target.id not in cast_aliases
@@ -254,12 +270,6 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
                         and target.id not in typing_module_aliases
                     ):
                         typing_module_aliases.add(target.id)
-                        changed = True
-                    elif (
-                        query_name
-                        and query_aliases.get(target.id) != query_name
-                    ):
-                        query_aliases[target.id] = query_name
                         changed = True
                     elif (
                         is_model_reference(value)
@@ -280,11 +290,152 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
                         package_aliases.add(target.id)
                         changed = True
 
+    lexical_scopes = (
+        ast.FunctionDef,
+        ast.AsyncFunctionDef,
+        ast.Lambda,
+    )
+
+    def own_scope_nodes(scope: ast.AST) -> Iterable[ast.AST]:
+        stack = list(ast.iter_child_nodes(scope))
+        while stack:
+            node = stack.pop()
+            if isinstance(node, lexical_scopes) or isinstance(
+                node,
+                ast.ClassDef,
+            ):
+                continue
+            yield node
+            stack.extend(ast.iter_child_nodes(node))
+
+    def direct_child_scopes(scope: ast.AST) -> Iterable[ast.AST]:
+        stack = list(ast.iter_child_nodes(scope))
+        while stack:
+            node = stack.pop()
+            if isinstance(node, lexical_scopes):
+                yield node
+                continue
+            stack.extend(ast.iter_child_nodes(node))
+
+    def argument_names(scope: ast.AST) -> set[str]:
+        if not isinstance(scope, lexical_scopes):
+            return set()
+        arguments = scope.args
+        return {
+            argument.arg
+            for argument in [
+                *arguments.posonlyargs,
+                *arguments.args,
+                *arguments.kwonlyargs,
+                *([arguments.vararg] if arguments.vararg else []),
+                *([arguments.kwarg] if arguments.kwarg else []),
+            ]
+        }
+
+    scope_query_aliases: dict[int, dict[str, str]] = {}
+
+    def collect_scope_aliases(
+        scope: ast.AST,
+        inherited: dict[str, str],
+    ) -> None:
+        aliases = dict(inherited)
+        own_nodes = list(own_scope_nodes(scope))
+
+        local_names = set(argument_names(scope))
+        if not isinstance(scope, ast.Module):
+            for node in own_nodes:
+                if isinstance(node, ast.Assign):
+                    targets = node.targets
+                elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)):
+                    targets = [node.target]
+                else:
+                    continue
+                local_names.update(
+                    child.id
+                    for target in targets
+                    for child in ast.walk(target)
+                    if isinstance(child, ast.Name)
+                )
+        for name in local_names:
+            aliases.pop(name, None)
+
+        for node in own_nodes:
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and node.module.startswith("sqlalchemy")
+            ):
+                for imported in node.names:
+                    if imported.name in QUERY_CALLS:
+                        aliases[imported.asname or imported.name] = (
+                            imported.name
+                        )
+
+        changed = True
+        while changed:
+            changed = False
+            for node in own_nodes:
+                if not isinstance(
+                    node,
+                    (ast.Assign, ast.AnnAssign, ast.NamedExpr),
+                ):
+                    continue
+                raw_value = node.value
+                if raw_value is None:
+                    continue
+                targets = (
+                    node.targets
+                    if isinstance(node, ast.Assign)
+                    else [node.target]
+                )
+                for raw_target in targets:
+                    for target, bound_value in assignment_bindings(
+                        raw_target,
+                        raw_value,
+                    ):
+                        value = unwrap_transparent_call(bound_value)
+                        query_name = query_reference_name(value, aliases)
+                        if query_name and aliases.get(target.id) != query_name:
+                            aliases[target.id] = query_name
+                            changed = True
+
+        scope_query_aliases[id(scope)] = aliases
+        for child_scope in direct_child_scopes(scope):
+            collect_scope_aliases(child_scope, aliases)
+
+    collect_scope_aliases(tree, query_aliases)
+
     class AliasNormalizer(ast.NodeTransformer):
+        def __init__(self) -> None:
+            self.query_aliases = query_aliases
+
+        def visit_Module(self, node: ast.Module):
+            previous = self.query_aliases
+            self.query_aliases = scope_query_aliases[id(node)]
+            node = self.generic_visit(node)
+            self.query_aliases = previous
+            return node
+
+        def _visit_lexical_scope(self, node: ast.AST):
+            previous = self.query_aliases
+            self.query_aliases = scope_query_aliases[id(node)]
+            node = self.generic_visit(node)
+            self.query_aliases = previous
+            return node
+
+        def visit_FunctionDef(self, node: ast.FunctionDef):
+            return self._visit_lexical_scope(node)
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef):
+            return self._visit_lexical_scope(node)
+
+        def visit_Lambda(self, node: ast.Lambda):
+            return self._visit_lexical_scope(node)
+
         def visit_NamedExpr(self, node: ast.NamedExpr):
             node = self.generic_visit(node)
             if isinstance(node.target, ast.Name):
-                query_name = query_aliases.get(node.target.id)
+                query_name = self.query_aliases.get(node.target.id)
                 if query_name:
                     return ast.copy_location(
                         ast.Name(id=query_name, ctx=ast.Load()),
@@ -309,7 +460,7 @@ def _normalize_memory_entry_aliases(tree: ast.AST) -> ast.AST:
                     ast.Name(id="MemoryEntry", ctx=node.ctx),
                     node,
                 )
-            query_name = query_aliases.get(node.id)
+            query_name = self.query_aliases.get(node.id)
             if (
                 isinstance(node.ctx, ast.Load)
                 and query_name

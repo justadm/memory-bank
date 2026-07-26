@@ -618,6 +618,87 @@ def test_inventory_fails_closed_for_keyword_and_complex_aliases(
     assert "missing inventory row" in findings[0]
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        """
+from app.models import MemoryEntry
+
+def lookup(db, flag):
+    query_for = db.query if flag else db.execute
+    return query_for(MemoryEntry)
+""",
+        """
+from app.models import MemoryEntry
+from typing import Any, cast
+
+def lookup(db, flag):
+    query_for = cast(
+        Any,
+        cast(Any, db.query) if flag else cast(Any, db.execute),
+    )
+    return query_for(MemoryEntry)
+""",
+    ],
+)
+def test_inventory_detects_conditional_query_aliases(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    app_root = tmp_path / "app"
+    app_root.mkdir()
+    (app_root / "sample.py").write_text(source)
+    inventory_path = tmp_path / "inventory.json"
+    inventory_path.write_text(
+        json.dumps({"schema_version": 1, "queries": []})
+    )
+
+    findings = check_inventory(
+        app_root=app_root,
+        inventory_path=inventory_path,
+    )
+
+    assert len(findings) == 1
+    assert "missing inventory row" in findings[0]
+
+
+@pytest.mark.parametrize(
+    "alias_statement",
+    [
+        "query_for = db.query",
+        "(query_for := db.query)",
+    ],
+)
+def test_query_aliases_do_not_leak_between_function_scopes(
+    tmp_path: Path,
+    alias_statement: str,
+) -> None:
+    app_root = tmp_path / "app"
+    app_root.mkdir()
+    (app_root / "sample.py").write_text(
+        f"""
+from app.models import MemoryEntry
+
+def establish_alias(db):
+    {alias_statement}
+
+def unrelated(query_for):
+    return query_for(MemoryEntry)
+"""
+    )
+    inventory_path = tmp_path / "inventory.json"
+    inventory_path.write_text(
+        json.dumps({"schema_version": 1, "queries": []})
+    )
+
+    findings = check_inventory(
+        app_root=app_root,
+        inventory_path=inventory_path,
+    )
+
+    assert findings == []
+
+
 def test_current_view_requires_central_predicate_call(tmp_path: Path) -> None:
     app_root = tmp_path / "app"
     app_root.mkdir()
