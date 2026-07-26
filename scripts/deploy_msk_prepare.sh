@@ -27,7 +27,7 @@ Expected next steps on msk:
 
   5. After release approval, promote the verified candidate and start:
      docker tag "msk-api:\${GIT_REVISION}-candidate" msk-api:latest
-     docker compose --env-file .env -f deploy/msk/docker-compose.yml up -d --no-build
+     docker compose --env-file .env -f deploy/msk/docker-compose.yml up -d --no-build --force-recreate --no-deps api
 
   6. Run migrations:
      docker compose --env-file .env -f deploy/msk/docker-compose.yml exec -T api alembic upgrade head

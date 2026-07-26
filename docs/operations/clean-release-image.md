@@ -29,7 +29,8 @@ After approval:
 ```bash
 REVISION="$(git rev-parse HEAD)"
 docker tag "msk-api:${REVISION}-candidate" msk-api:latest
-docker compose --env-file .env -f deploy/msk/docker-compose.yml up -d --no-build
+docker compose --env-file .env -f deploy/msk/docker-compose.yml \
+  up -d --no-build --force-recreate --no-deps api
 ```
 
 Secret rotation and deletion of older images are separate destructive/security

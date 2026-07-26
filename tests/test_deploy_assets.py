@@ -85,7 +85,9 @@ def test_standard_msk_build_propagates_and_verifies_git_revision():
         text=True,
     ).stdout
 
-    assert "GIT_REVISION: ${GIT_REVISION:?" in compose
+    assert "GIT_REVISION: ${GIT_REVISION:-}" in compose
+    assert "GIT_REVISION:-unknown" not in compose
     assert 'export GIT_REVISION="$(git rev-parse HEAD)"' in helper
     assert "scripts/build_release_image.sh msk-api" in helper
     assert 'docker tag "msk-api:${GIT_REVISION}-candidate" msk-api:latest' in helper
+    assert "up -d --no-build --force-recreate --no-deps api" in helper
