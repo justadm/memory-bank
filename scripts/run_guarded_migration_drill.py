@@ -25,6 +25,7 @@ PROFILE_TARGETS = {
     "connector": {"20260725_0005"},
     "temporal": {"20260725_0006", "head"},
 }
+MIGRATION_DRILL_GIT_REVISION = "0" * 40
 
 
 class MigrationDrillError(RuntimeError):
@@ -126,6 +127,7 @@ def run_guarded_migration_drill(
                 "POSTGRES_USER": database_user,
                 "POSTGRES_PASSWORD": database_password,
                 "DATABASE_URL": database_url,
+                "GIT_REVISION": MIGRATION_DRILL_GIT_REVISION,
                 "MIGRATION_TARGET": target,
                 "MIGRATION_FIXTURE_PROFILE": fixture_profile,
             },

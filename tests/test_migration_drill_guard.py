@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from scripts.run_guarded_migration_drill import (
+    MIGRATION_DRILL_GIT_REVISION,
     MigrationDrillError,
     build_child_environment,
     run_guarded_migration_drill,
@@ -63,6 +64,7 @@ def test_child_environment_is_allowlisted_and_disables_default_env_discovery() -
 
 def test_runner_uses_isolated_compose_context_and_synthetic_env_file(tmp_path: Path) -> None:
     calls: list[tuple[list[str], Path, dict[str, str]]] = []
+    assert MIGRATION_DRILL_GIT_REVISION == "0" * 40
 
     def fake_run(command, *, cwd, env, check, timeout):
         assert check is True
@@ -78,6 +80,7 @@ def test_runner_uses_isolated_compose_context_and_synthetic_env_file(tmp_path: P
         env_text = env_path.read_text()
         assert "MEMLAYER_REPO_ROOT=" + str(REPO_ROOT) in env_text
         assert "DATABASE_URL=postgresql+psycopg://" in env_text
+        assert f"GIT_REVISION={MIGRATION_DRILL_GIT_REVISION}" in env_text
         assert "production" not in env_text
         assert "secret-parent-value" not in env_text
         assert env == {
@@ -123,6 +126,10 @@ def test_runner_uses_isolated_compose_context_and_synthetic_env_file(tmp_path: P
         "--rmi",
         "local",
     ]
+    compose_text = (
+        REPO_ROOT / "deploy/test/docker-compose.migration.yml"
+    ).read_text(encoding="utf-8")
+    assert "GIT_REVISION: ${GIT_REVISION}" in compose_text
 
 
 @pytest.mark.parametrize(
