@@ -35,13 +35,23 @@ docker build \
   --tag "${IMAGE}" \
   "${BUILD_CONTEXT}"
 
-"${ROOT_DIR}/scripts/verify_release_image.sh" "${IMAGE}" "${REVISION}"
-
 APPROVED_IMAGE_ID="$(
   docker image inspect --format '{{.Id}}' "${IMAGE}"
 )"
 if [[ ! "${APPROVED_IMAGE_ID}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
   echo "verified image has no immutable sha256 identity" >&2
+  exit 1
+fi
+
+"${ROOT_DIR}/scripts/verify_release_image.sh" \
+  "${APPROVED_IMAGE_ID}" \
+  "${REVISION}"
+
+CANDIDATE_TAG_IMAGE_ID_AFTER="$(
+  docker image inspect --format '{{.Id}}' "${IMAGE}"
+)"
+if [[ "${CANDIDATE_TAG_IMAGE_ID_AFTER}" != "${APPROVED_IMAGE_ID}" ]]; then
+  echo "candidate tag changed during verification" >&2
   exit 1
 fi
 

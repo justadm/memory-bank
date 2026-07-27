@@ -70,6 +70,12 @@ def test_release_builder_uses_exact_clean_git_archive():
     assert "--no-cache" in content
     assert "scripts/verify_release_image.sh" in content
     assert "APPROVED_IMAGE_ID" in content
+    assert content.index('APPROVED_IMAGE_ID="$(') < content.index(
+        '"${ROOT_DIR}/scripts/verify_release_image.sh"'
+    )
+    assert '"${APPROVED_IMAGE_ID}" \\\n  "${REVISION}"' in content
+    assert "CANDIDATE_TAG_IMAGE_ID_AFTER" in content
+    assert "candidate tag changed during verification" in content
     assert not (ROOT / "deploy/msk/Dockerfile.offline-rebase").exists()
 
 

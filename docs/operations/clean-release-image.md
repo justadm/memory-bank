@@ -23,7 +23,9 @@ mandatory verifier against `msk-api:<revision>-candidate`. It never writes the
 mutable `latest` tag. The verifier fails unless the OCI revision label matches
 and both `/app/.env` and `/app/backups` are absent.
 Its final `approved_image_id=sha256:...` output is the immutable identity that
-must be recorded in the release approval.
+must be recorded in the release approval. The builder resolves that image ID
+before verification, verifies the immutable ID itself, and then confirms the
+candidate tag still resolves to the same ID before printing it.
 
 ## Rollout Boundary
 
