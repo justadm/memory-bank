@@ -31,9 +31,9 @@ Expected next steps on msk:
      scripts/rollout_release_image.sh msk-api "\${GIT_REVISION}" "\${APPROVED_IMAGE_ID}"
 
   6. Run migrations:
-     MEMLAYER_API_IMAGE="\$(docker inspect --format '{{.Image}}' memlayer-api)" \\
-       docker compose --env-file .env -f deploy/msk/docker-compose.yml \\
-       exec -T api alembic upgrade head
+     RUNNING_IMAGE_ID="\$(docker inspect --format '{{.Image}}' memlayer-api)"
+     scripts/run_release_compose.sh "\${RUNNING_IMAGE_ID}" \\
+       migrate-head
 
   7. Install nginx samples:
      deploy/msk/nginx/api.memlayer.ru.conf

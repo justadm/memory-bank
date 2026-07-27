@@ -170,22 +170,27 @@ Expected: files present; secrets visually confirmed without printing them into l
 **Files:**
 - Remote use: `/opt/memlayer/deploy/msk/docker-compose.yml`
 
-- [ ] **Step 1: Start stack**
+- [ ] **Step 1: Build and roll out an approved immutable image**
 
 Run:
 
 ```bash
-ssh msk "cd /opt/memlayer && docker compose --env-file .env -f deploy/msk/docker-compose.yml up -d --build"
+ssh msk "cd /opt/memlayer && scripts/build_release_image.sh msk-api"
+# After recording and approving the builder output:
+REVISION="<approved-40-character-git-sha>"
+APPROVED_IMAGE_ID="sha256:<approved-image-id>"
+ssh msk "cd /opt/memlayer && scripts/rollout_release_image.sh msk-api '${REVISION}' '${APPROVED_IMAGE_ID}'"
 ```
 
-Expected: `memlayer-api` and `memlayer-db` start
+Expected: the verified candidate is deployed by its approval-bound image ID,
+with a verified rollback image captured before mutation.
 
 - [ ] **Step 2: Run migrations**
 
 Run:
 
 ```bash
-ssh msk "cd /opt/memlayer && docker compose --env-file .env -f deploy/msk/docker-compose.yml exec -T api alembic upgrade head"
+ssh msk "cd /opt/memlayer && RUNNING_IMAGE_ID=\$(docker inspect --format '{{.Image}}' memlayer-api) && scripts/run_release_compose.sh \"\$RUNNING_IMAGE_ID\" migrate-head"
 ```
 
 Expected: migration reaches `head`

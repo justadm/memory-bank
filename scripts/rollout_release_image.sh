@@ -7,16 +7,13 @@ if [[ $# -ne 3 ]]; then
 fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/release_lock.sh
+source "${ROOT_DIR}/scripts/release_lock.sh"
 IMAGE_REPOSITORY="$1"
 REVISION="$2"
 APPROVED_IMAGE_ID="$3"
 CANDIDATE_IMAGE="${IMAGE_REPOSITORY}:${REVISION}-candidate"
 HEALTH_URL="${MEMLAYER_HEALTH_URL:-http://127.0.0.1:18120/health}"
-COMPOSE=(
-  docker compose
-  --env-file .env
-  -f deploy/msk/docker-compose.yml
-)
 
 if [[ ! "${REVISION}" =~ ^[0-9a-f]{40}$ ]]; then
   echo "revision must be a 40-character lowercase Git SHA" >&2
@@ -38,6 +35,108 @@ if [[ -n "$(git -C "${ROOT_DIR}" status --porcelain --untracked-files=all)" ]]; 
   exit 1
 fi
 
+ROLLBACK_TRAP_ARMED=0
+RELEASE_LOCK_DIR="$(memlayer_release_lock_path)"
+RELEASE_LOCK_TOKEN="rollout:$$:${REVISION}"
+RELEASE_LOCK_ACQUIRED=0
+
+release_rollout_lock() {
+  if [[ "${RELEASE_LOCK_ACQUIRED}" -ne 1 ]]; then
+    return
+  fi
+  memlayer_release_lock_release \
+    "${RELEASE_LOCK_DIR}" \
+    "${RELEASE_LOCK_TOKEN}" || {
+      echo "release lock ownership changed; manual cleanup is required" >&2
+      return 1
+    }
+  RELEASE_LOCK_ACQUIRED=0
+  unset MEMLAYER_RELEASE_LOCK_TOKEN
+  unset MEMLAYER_RELEASE_SUPERVISOR_PID
+}
+
+cleanup_after_exit() {
+  local exit_code="$1"
+
+  trap - EXIT HUP INT TERM
+  release_rollout_lock || exit 2
+  exit "${exit_code}"
+}
+
+cleanup_after_signal() {
+  local exit_code="$1"
+
+  trap - EXIT HUP INT TERM
+  release_rollout_lock || exit 2
+  exit "${exit_code}"
+}
+
+install_cleanup_traps() {
+  trap 'cleanup_after_exit $?' EXIT
+  trap 'cleanup_after_signal 129' HUP
+  trap 'cleanup_after_signal 130' INT
+  trap 'cleanup_after_signal 143' TERM
+}
+
+disarm_rollback_traps() {
+  ROLLBACK_TRAP_ARMED=0
+  install_cleanup_traps
+}
+
+rollback_after_exit() {
+  local exit_code="$1"
+
+  if [[ "${ROLLBACK_TRAP_ARMED}" -ne 1 ]]; then
+    exit "${exit_code}"
+  fi
+  disarm_rollback_traps
+  if ! rollback_release; then
+    release_rollout_lock || true
+    exit 2
+  fi
+  release_rollout_lock || exit 2
+  trap - EXIT HUP INT TERM
+  exit "${exit_code}"
+}
+
+rollback_after_signal() {
+  local exit_code="$1"
+
+  disarm_rollback_traps
+  if ! rollback_release; then
+    release_rollout_lock || true
+    exit 2
+  fi
+  release_rollout_lock || exit 2
+  trap - EXIT HUP INT TERM
+  exit "${exit_code}"
+}
+
+acquire_release_lock() {
+  install_cleanup_traps
+  trap '' HUP INT TERM
+  if ! memlayer_release_lock_acquire \
+    "${RELEASE_LOCK_DIR}" \
+    "${RELEASE_LOCK_TOKEN}"; then
+    install_cleanup_traps
+    echo "another release Compose operation is already active" >&2
+    return 1
+  fi
+  RELEASE_LOCK_ACQUIRED=1
+  export MEMLAYER_RELEASE_LOCK_TOKEN="${RELEASE_LOCK_TOKEN}"
+  export MEMLAYER_RELEASE_SUPERVISOR_PID="$$"
+  install_cleanup_traps
+}
+
+arm_rollback_traps() {
+  ROLLBACK_TRAP_ARMED=1
+  trap 'rollback_after_exit $?' EXIT
+  trap 'rollback_after_signal 129' HUP
+  trap 'rollback_after_signal 130' INT
+  trap 'rollback_after_signal 143' TERM
+}
+
+acquire_release_lock
 cd "${ROOT_DIR}"
 
 CANDIDATE_TAG_IMAGE_ID="$(
@@ -107,8 +206,10 @@ deploy_image() {
   local running_image_id
   local running_revision
 
-  MEMLAYER_API_IMAGE="${image_id}" \
-    "${COMPOSE[@]}" up -d --no-build --force-recreate --no-deps api || return 1
+  MEMLAYER_ROLLOUT_SUPERVISOR_PID="$$" \
+    "${ROOT_DIR}/scripts/run_release_compose.sh" \
+    "${image_id}" \
+    rollout-api || return 1
 
   running_image_id="$(
     docker inspect --format '{{.Image}}' memlayer-api
@@ -140,51 +241,11 @@ rollback_release() {
   echo "rollback completed" >&2
 }
 
-ROLLBACK_TRAP_ARMED=0
-
-disarm_rollback_traps() {
-  ROLLBACK_TRAP_ARMED=0
-  trap - EXIT HUP INT TERM
-}
-
-rollback_after_exit() {
-  local exit_code="$1"
-
-  if [[ "${ROLLBACK_TRAP_ARMED}" -ne 1 ]]; then
-    exit "${exit_code}"
-  fi
-  disarm_rollback_traps
-  if ! rollback_release; then
-    exit 2
-  fi
-  exit "${exit_code}"
-}
-
-rollback_after_signal() {
-  local exit_code="$1"
-
-  disarm_rollback_traps
-  if ! rollback_release; then
-    exit 2
-  fi
-  exit "${exit_code}"
-}
-
-arm_rollback_traps() {
-  ROLLBACK_TRAP_ARMED=1
-  trap 'rollback_after_exit $?' EXIT
-  trap 'rollback_after_signal 129' HUP
-  trap 'rollback_after_signal 130' INT
-  trap 'rollback_after_signal 143' TERM
-}
-
 arm_rollback_traps
-if ! deploy_image "${CANDIDATE_IMAGE_ID}" "${REVISION}"; then
-  disarm_rollback_traps
-  rollback_release || exit 2
-  exit 1
-fi
+deploy_image "${CANDIDATE_IMAGE_ID}" "${REVISION}"
 disarm_rollback_traps
+release_rollout_lock
+trap - EXIT HUP INT TERM
 
 echo "release rollout passed"
 echo "revision=${REVISION}"

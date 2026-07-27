@@ -62,12 +62,46 @@ currently running image, deploys by immutable image ID, reads the running image
 ID and OCI revision back from the container, checks health, and restores the
 verified rollback image on failures or termination signals.
 
+The base production Compose file intentionally defines neither `image` nor
+`build` for the API service. It cannot start or replace that service by itself.
+All approved API Compose operations must use
+`scripts/run_release_compose.sh`, which rejects mutable image references and
+creates a temporary override containing the validated immutable image ID.
+The rollout supervisor takes one fixed host-local lock before its first Docker
+inspection and holds it through candidate mutation, image/revision read-back,
+health validation, and any rollback. Migration uses the same lock. Before
+`migrate-head`, the entrypoint reads the running `memlayer-api` image ID and
+fails unless it exactly matches the approved ID supplied by the operator.
+
+### Stale release lock recovery
+
+`SIGKILL`, host loss, or a forced shell termination can leave
+`/tmp/memlayer-release-compose.lock`. Treat it as active until both conditions
+are checked:
+
+1. no `rollout_release_image.sh`, `run_release_compose.sh`, or migration
+   process is running;
+2. the PID encoded in the lock's `owner` file is not running.
+
+Only after that read-only verification, and with explicit operational approval,
+remove the `owner` file and then the empty lock directory. Never remove an
+active lock to force a rollout.
+
+### Trust boundary
+
+The release scripts enforce the canonical operator workflow; they are not an
+authorization boundary against the Unix account that already controls Docker.
+That deployment account is trusted. A hostile or compromised Docker-authorized
+process can always bypass shell wrappers with direct Docker commands. Preventing
+that requires an OS-level boundary such as a restricted service, forced command,
+or narrowly scoped privileged helper and is a separate rollout hardening step.
+
 5. After separate migration approval, run migrations against the running image:
 
 ```bash
-export MEMLAYER_API_IMAGE="$(docker inspect --format '{{.Image}}' memlayer-api)"
-docker compose --env-file .env -f deploy/msk/docker-compose.yml \
-  exec -T api alembic upgrade head
+export RUNNING_IMAGE_ID="$(docker inspect --format '{{.Image}}' memlayer-api)"
+scripts/run_release_compose.sh "${RUNNING_IMAGE_ID}" \
+  migrate-head
 ```
 
 6. Install nginx samples into:

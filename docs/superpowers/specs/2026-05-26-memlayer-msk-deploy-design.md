@@ -165,18 +165,23 @@ MEMORYBANK_URL=https://api.memlayer.ru
 
 ### Deploy Method
 
-Deploy должен быть простым и rollback-friendly:
+Этот ранний operational draft superseded текущим immutable release workflow.
+Он сохранён как историческая часть design, но команды ниже являются
+единственным поддерживаемым release path:
 
 1. обновить checkout в `/opt/memlayer`
 2. обновить `.env` при необходимости
-3. `docker compose up -d --build`
-4. применить миграции
-5. выполнить smoke checks
+3. `scripts/build_release_image.sh msk-api`
+4. записать `approved_image_id` в release approval
+5. `scripts/rollout_release_image.sh msk-api "$REVISION" "$APPROVED_IMAGE_ID"`
+6. применить отдельно одобренные миграции через
+   `scripts/run_release_compose.sh "$RUNNING_IMAGE_ID" migrate-head`
+7. выполнить smoke checks
 
 Rollback:
 
-- возврат к предыдущему commit SHA
-- повторный `docker compose up -d --build`
+- автоматический возврат к заранее проверенному immutable rollback image;
+- ручное восстановление выполняется только через тот же digest-only workflow.
 
 ### Health / Smoke
 
