@@ -510,10 +510,18 @@ def _fake_release_runtime(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
               release_image="$(
                 sed -n 's/^    image: //p' "${override_file}"
               )"
+              if [ "${FAIL_ROLLBACK_COMPOSE:-0}" = "1" ] &&
+                 [ "${release_image}" = "${FAKE_ROLLBACK_ID}" ]; then
+                exit 1
+              fi
               printf '%s' "${release_image}" >"${FAKE_STATE}"
               if [ -n "${SIGNAL_ON_CANDIDATE:-}" ] &&
                  [ "${release_image}" = "${FAKE_CANDIDATE_ID}" ]; then
                 kill "-${SIGNAL_ON_CANDIDATE}" "${MEMLAYER_ROLLOUT_SUPERVISOR_PID}"
+              fi
+              if [ -n "${SIGNAL_ON_ROLLBACK:-}" ] &&
+                 [ "${release_image}" = "${FAKE_ROLLBACK_ID}" ]; then
+                kill "-${SIGNAL_ON_ROLLBACK}" "${MEMLAYER_ROLLOUT_SUPERVISOR_PID}"
               fi
               exit 0
             fi
@@ -686,6 +694,47 @@ def test_release_lock_handoff_cannot_be_interrupted_by_handled_signal(tmp_path):
     assert not Path(env["MEMLAYER_RELEASE_LOCK_DIR"]).exists()
 
 
+def test_release_mutation_state_handoff_cannot_be_interrupted(tmp_path):
+    env, _, state_path = _fake_release_runtime(tmp_path)
+    bin_dir = Path(env["PATH"].split(os.pathsep)[0])
+    fake_mktemp = bin_dir / "mktemp"
+    fake_mktemp.write_text(
+        textwrap.dedent(
+            """\
+            #!/bin/sh
+            set -eu
+            case " $* " in
+              *" -d "*)
+                result="$(/usr/bin/mktemp "$@")"
+                kill -TERM "${MEMLAYER_RELEASE_SUPERVISOR_PID}"
+                printf '%s\\n' "${result}"
+                ;;
+              *) exec /usr/bin/mktemp "$@" ;;
+            esac
+            """
+        ),
+        encoding="utf-8",
+    )
+    fake_mktemp.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            str(ROOT / "scripts/rollout_release_image.sh"),
+            "msk-api",
+            REVISION,
+            CANDIDATE_IMAGE_ID,
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert state_path.read_text(encoding="utf-8") == CANDIDATE_IMAGE_ID
+    assert not Path(env["MEMLAYER_RELEASE_LOCK_DIR"]).exists()
+
+
 def test_release_rollout_restores_read_back_image_after_failed_health(tmp_path):
     env, _, state_path = _fake_release_runtime(tmp_path)
     env["FAIL_CANDIDATE_HEALTH"] = "1"
@@ -706,6 +755,99 @@ def test_release_rollout_restores_read_back_image_after_failed_health(tmp_path):
     assert result.returncode == 1
     assert "rollback completed" in result.stderr
     assert state_path.read_text(encoding="utf-8") == ROLLBACK_IMAGE_ID
+
+
+def test_release_rollout_does_not_rollback_before_mutation_marker(tmp_path):
+    env, log_path, state_path = _fake_release_runtime(tmp_path)
+    bin_dir = Path(env["PATH"].split(os.pathsep)[0])
+    fake_mktemp = bin_dir / "mktemp"
+    fake_mktemp.write_text(
+        textwrap.dedent(
+            """\
+            #!/bin/sh
+            set -eu
+            case " $* " in
+              *" -d "*) exec /usr/bin/mktemp "$@" ;;
+              *) exit 1 ;;
+            esac
+            """
+        ),
+        encoding="utf-8",
+    )
+    fake_mktemp.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            str(ROOT / "scripts/rollout_release_image.sh"),
+            "msk-api",
+            REVISION,
+            CANDIDATE_IMAGE_ID,
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "restoring verified rollback image" not in result.stderr
+    assert "manual recovery is required" not in result.stderr
+    assert state_path.read_text(encoding="utf-8") == ROLLBACK_IMAGE_ID
+    assert "compose " not in log_path.read_text(encoding="utf-8")
+    assert not Path(env["MEMLAYER_RELEASE_LOCK_DIR"]).exists()
+
+
+@pytest.mark.parametrize("signal_name", ["HUP", "INT", "TERM"])
+def test_release_rollout_ignores_repeated_signal_during_rollback(
+    tmp_path,
+    signal_name,
+):
+    env, _, state_path = _fake_release_runtime(tmp_path)
+    env["FAIL_CANDIDATE_HEALTH"] = "1"
+    env["SIGNAL_ON_ROLLBACK"] = signal_name
+
+    result = subprocess.run(
+        [
+            str(ROOT / "scripts/rollout_release_image.sh"),
+            "msk-api",
+            REVISION,
+            CANDIDATE_IMAGE_ID,
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "rollback completed" in result.stderr
+    assert state_path.read_text(encoding="utf-8") == ROLLBACK_IMAGE_ID
+    assert not Path(env["MEMLAYER_RELEASE_LOCK_DIR"]).exists()
+
+
+def test_release_rollout_retains_lock_after_failed_rollback(tmp_path):
+    env, _, state_path = _fake_release_runtime(tmp_path)
+    env["FAIL_CANDIDATE_HEALTH"] = "1"
+    env["FAIL_ROLLBACK_COMPOSE"] = "1"
+
+    result = subprocess.run(
+        [
+            str(ROOT / "scripts/rollout_release_image.sh"),
+            "msk-api",
+            REVISION,
+            CANDIDATE_IMAGE_ID,
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "rollback failed; manual recovery is required" in result.stderr
+    assert "release lock retained after failed rollback" in result.stderr
+    assert state_path.read_text(encoding="utf-8") == CANDIDATE_IMAGE_ID
+    assert Path(env["MEMLAYER_RELEASE_LOCK_DIR"]).exists()
 
 
 def test_release_rollout_blocks_migration_until_health_or_rollback_finishes(

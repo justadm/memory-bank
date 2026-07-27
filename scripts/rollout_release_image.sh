@@ -35,10 +35,12 @@ if [[ -n "$(git -C "${ROOT_DIR}" status --porcelain --untracked-files=all)" ]]; 
   exit 1
 fi
 
-ROLLBACK_TRAP_ARMED=0
 RELEASE_LOCK_DIR="$(memlayer_release_lock_path)"
 RELEASE_LOCK_TOKEN="rollout:$$:${REVISION}"
 RELEASE_LOCK_ACQUIRED=0
+MUTATION_STATE_DIR=""
+MUTATION_MARKER=""
+RELEASE_SUCCEEDED=0
 
 release_rollout_lock() {
   if [[ "${RELEASE_LOCK_ACQUIRED}" -ne 1 ]]; then
@@ -55,88 +57,97 @@ release_rollout_lock() {
   unset MEMLAYER_RELEASE_SUPERVISOR_PID
 }
 
-cleanup_after_exit() {
-  local exit_code="$1"
-
-  trap - EXIT HUP INT TERM
-  release_rollout_lock || exit 2
-  exit "${exit_code}"
+mutation_started() {
+  [[ -n "${MUTATION_MARKER}" && -f "${MUTATION_MARKER}" ]]
 }
 
-cleanup_after_signal() {
-  local exit_code="$1"
+cleanup_mutation_state() {
+  local cleanup_failed=0
 
-  trap - EXIT HUP INT TERM
-  release_rollout_lock || exit 2
-  exit "${exit_code}"
-}
-
-install_cleanup_traps() {
-  trap 'cleanup_after_exit $?' EXIT
-  trap 'cleanup_after_signal 129' HUP
-  trap 'cleanup_after_signal 130' INT
-  trap 'cleanup_after_signal 143' TERM
-}
-
-disarm_rollback_traps() {
-  ROLLBACK_TRAP_ARMED=0
-  install_cleanup_traps
-}
-
-rollback_after_exit() {
-  local exit_code="$1"
-
-  if [[ "${ROLLBACK_TRAP_ARMED}" -ne 1 ]]; then
-    exit "${exit_code}"
+  if [[ -n "${MUTATION_MARKER}" ]]; then
+    rm -f "${MUTATION_MARKER}" || cleanup_failed=1
   fi
-  disarm_rollback_traps
-  if ! rollback_release; then
-    release_rollout_lock || true
-    exit 2
+  if [[ -n "${MUTATION_STATE_DIR}" && -d "${MUTATION_STATE_DIR}" ]]; then
+    rmdir "${MUTATION_STATE_DIR}" || cleanup_failed=1
   fi
-  release_rollout_lock || exit 2
-  trap - EXIT HUP INT TERM
-  exit "${exit_code}"
+  MUTATION_MARKER=""
+  MUTATION_STATE_DIR=""
+  unset MEMLAYER_RELEASE_MUTATION_MARKER
+  return "${cleanup_failed}"
 }
 
-rollback_after_signal() {
+finish_after_failure() {
   local exit_code="$1"
+  local final_exit_code="${exit_code}"
+  local rollback_failed=0
 
-  disarm_rollback_traps
-  if ! rollback_release; then
-    release_rollout_lock || true
-    exit 2
+  # Rollback must not be interrupted after the mutation boundary.
+  trap - EXIT
+  trap '' HUP INT TERM
+  if [[ "${RELEASE_SUCCEEDED}" -ne 1 ]] && mutation_started; then
+    if ! rollback_release; then
+      final_exit_code=2
+      rollback_failed=1
+    fi
   fi
-  release_rollout_lock || exit 2
+  if ! cleanup_mutation_state; then
+    echo "release mutation marker cleanup failed; manual cleanup is required" >&2
+    final_exit_code=2
+  fi
+  if [[ "${rollback_failed}" -eq 1 ]]; then
+    echo "release lock retained after failed rollback" >&2
+  elif ! release_rollout_lock; then
+    final_exit_code=2
+  fi
   trap - EXIT HUP INT TERM
-  exit "${exit_code}"
+  exit "${final_exit_code}"
+}
+
+install_failure_traps() {
+  trap 'finish_after_failure $?' EXIT
+  trap 'finish_after_failure 129' HUP
+  trap 'finish_after_failure 130' INT
+  trap 'finish_after_failure 143' TERM
 }
 
 acquire_release_lock() {
-  install_cleanup_traps
+  install_failure_traps
   trap '' HUP INT TERM
   if ! memlayer_release_lock_acquire \
     "${RELEASE_LOCK_DIR}" \
     "${RELEASE_LOCK_TOKEN}"; then
-    install_cleanup_traps
+    install_failure_traps
     echo "another release Compose operation is already active" >&2
     return 1
   fi
   RELEASE_LOCK_ACQUIRED=1
   export MEMLAYER_RELEASE_LOCK_TOKEN="${RELEASE_LOCK_TOKEN}"
   export MEMLAYER_RELEASE_SUPERVISOR_PID="$$"
-  install_cleanup_traps
+  install_failure_traps
 }
 
-arm_rollback_traps() {
-  ROLLBACK_TRAP_ARMED=1
-  trap 'rollback_after_exit $?' EXIT
-  trap 'rollback_after_signal 129' HUP
-  trap 'rollback_after_signal 130' INT
-  trap 'rollback_after_signal 143' TERM
+prepare_mutation_state() {
+  trap '' HUP INT TERM
+  if ! MUTATION_STATE_DIR="$(
+    umask 077
+    mktemp -d "${TMPDIR:-/tmp}/memlayer-release-mutation.XXXXXX"
+  )"; then
+    install_failure_traps
+    echo "failed to create private release mutation state" >&2
+    return 1
+  fi
+  if [[ ! -d "${MUTATION_STATE_DIR}" || -L "${MUTATION_STATE_DIR}" ]]; then
+    install_failure_traps
+    echo "failed to create private release mutation state" >&2
+    return 1
+  fi
+  MUTATION_MARKER="${MUTATION_STATE_DIR}/started"
+  export MEMLAYER_RELEASE_MUTATION_MARKER="${MUTATION_MARKER}"
+  install_failure_traps
 }
 
 acquire_release_lock
+prepare_mutation_state
 cd "${ROOT_DIR}"
 
 CANDIDATE_TAG_IMAGE_ID="$(
@@ -207,6 +218,7 @@ deploy_image() {
   local running_revision
 
   MEMLAYER_ROLLOUT_SUPERVISOR_PID="$$" \
+    MEMLAYER_RELEASE_MUTATION_MARKER="${MUTATION_MARKER}" \
     "${ROOT_DIR}/scripts/run_release_compose.sh" \
     "${image_id}" \
     rollout-api || return 1
@@ -241,9 +253,14 @@ rollback_release() {
   echo "rollback completed" >&2
 }
 
-arm_rollback_traps
 deploy_image "${CANDIDATE_IMAGE_ID}" "${REVISION}"
-disarm_rollback_traps
+RELEASE_SUCCEEDED=1
+if ! cleanup_mutation_state; then
+  echo "release mutation marker cleanup failed; manual cleanup is required" >&2
+  release_rollout_lock || true
+  trap - EXIT HUP INT TERM
+  exit 2
+fi
 release_rollout_lock
 trap - EXIT HUP INT TERM
 

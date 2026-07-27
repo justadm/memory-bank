@@ -53,6 +53,13 @@ replace the API service directly. The entrypoint accepts only a full
 Compose override. The rollout supervisor takes a fixed host-local lock before
 its first Docker interaction and holds it across candidate verification,
 mutation, read-back, health validation, and automatic rollback.
+The Compose wrapper creates a private mutation marker immediately before the
+first candidate `compose up`. Failures before that marker use cleanup-only
+handling and do not recreate the running API. Failures after it enter rollback.
+Once rollback starts, handled `HUP`, `INT`, and `TERM` signals are ignored until
+the rollback image, revision, and health have been read back and the lock can be
+released safely. A failed rollback retains the lock and requires the documented
+manual recovery procedure before any later release or migration.
 `migrate-head` uses the same lock, reads `memlayer-api`'s current container
 image ID, and rejects any mismatch before `exec`. A test-only lock path override
 is accepted only when `MEMLAYER_RELEASE_TEST_MODE=1`; production ignores it.

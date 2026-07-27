@@ -16,6 +16,7 @@ LOCK_DIR="$(memlayer_release_lock_path)"
 LOCK_TOKEN=""
 LOCK_ACQUIRED=0
 OVERRIDE_FILE=""
+MUTATION_MARKER=""
 
 if [[ ! "${IMAGE_ID}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
   echo "image ID must be an immutable sha256 digest" >&2
@@ -48,11 +49,19 @@ trap 'exit 143' TERM
 if [[ "${OPERATION}" == "rollout-api" ]]; then
   LOCK_TOKEN="${MEMLAYER_RELEASE_LOCK_TOKEN:-}"
   SUPERVISOR_PID="${MEMLAYER_RELEASE_SUPERVISOR_PID:-}"
+  MUTATION_MARKER="${MEMLAYER_RELEASE_MUTATION_MARKER:-}"
   if [[ ! "${SUPERVISOR_PID}" =~ ^[1-9][0-9]*$ ]] ||
      [[ "${SUPERVISOR_PID}" != "${PPID}" ]] ||
      [[ "${LOCK_TOKEN}" != rollout:"${SUPERVISOR_PID}":* ]] ||
      ! memlayer_release_lock_assert_owner "${LOCK_DIR}" "${LOCK_TOKEN}"; then
     echo "rollout-api requires the active rollout supervisor lock" >&2
+    exit 1
+  fi
+  if [[ -z "${MUTATION_MARKER}" ||
+        "${MUTATION_MARKER##*/}" != "started" ||
+        ! -d "${MUTATION_MARKER%/*}" ||
+        -L "${MUTATION_MARKER%/*}" ]]; then
+    echo "rollout-api requires a private mutation marker path" >&2
     exit 1
   fi
 else
@@ -102,6 +111,21 @@ case "${OPERATION}" in
 esac
 
 cd "${ROOT_DIR}"
+if [[ "${OPERATION}" == "rollout-api" && ! -e "${MUTATION_MARKER}" ]]; then
+  if ! (
+    umask 077
+    set -o noclobber
+    : >"${MUTATION_MARKER}"
+  ) 2>/dev/null; then
+    echo "failed to mark the release mutation boundary" >&2
+    exit 1
+  fi
+fi
+if [[ "${OPERATION}" == "rollout-api" ]] &&
+   [[ ! -f "${MUTATION_MARKER}" || -L "${MUTATION_MARKER}" ]]; then
+  echo "invalid release mutation marker" >&2
+  exit 1
+fi
 docker compose \
   --env-file .env \
   -f deploy/msk/docker-compose.yml \

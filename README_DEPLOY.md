@@ -72,6 +72,12 @@ inspection and holds it through candidate mutation, image/revision read-back,
 health validation, and any rollback. Migration uses the same lock. Before
 `migrate-head`, the entrypoint reads the running `memlayer-api` image ID and
 fails unless it exactly matches the approved ID supplied by the operator.
+The Compose wrapper records the mutation boundary immediately before candidate
+replacement. Pre-boundary failures only clean up temporary state; post-boundary
+failures restore the verified rollback image. Repeated handled signals cannot
+interrupt rollback or release the lock before rollback verification finishes.
+A failed rollback retains the lock and requires manual recovery before any
+later release or migration.
 
 ### Stale release lock recovery
 
