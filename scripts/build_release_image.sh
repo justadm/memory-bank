@@ -29,6 +29,7 @@ git -C "${ROOT_DIR}" archive --format=tar "${REVISION}" \
   | tar -xf - -C "${BUILD_CONTEXT}"
 
 docker build \
+  --no-cache \
   --platform "${TARGET_PLATFORM}" \
   --build-arg "GIT_REVISION=${REVISION}" \
   --tag "${IMAGE}" \

@@ -1,9 +1,6 @@
 services:
   api:
-    build:
-      context: ../..
-      args:
-        GIT_REVISION: ${GIT_REVISION:-}
+    image: ${MEMLAYER_API_IMAGE:?set MEMLAYER_API_IMAGE to a verified sha256 image ID}
     container_name: memlayer-api
     restart: unless-stopped
     ports:

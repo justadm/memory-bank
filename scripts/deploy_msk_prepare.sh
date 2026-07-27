@@ -25,12 +25,13 @@ Expected next steps on msk:
      export GIT_REVISION="\$(git rev-parse HEAD)"
      scripts/build_release_image.sh msk-api
 
-  5. After release approval, promote the verified candidate and start:
-     docker tag "msk-api:\${GIT_REVISION}-candidate" msk-api:latest
-     docker compose --env-file .env -f deploy/msk/docker-compose.yml up -d --no-build --force-recreate --no-deps api
+  5. After release approval, deploy the verified immutable image:
+     scripts/rollout_release_image.sh msk-api "\${GIT_REVISION}"
 
   6. Run migrations:
-     docker compose --env-file .env -f deploy/msk/docker-compose.yml exec -T api alembic upgrade head
+     MEMLAYER_API_IMAGE="\$(docker inspect --format '{{.Image}}' memlayer-api)" \\
+       docker compose --env-file .env -f deploy/msk/docker-compose.yml \\
+       exec -T api alembic upgrade head
 
   7. Install nginx samples:
      deploy/msk/nginx/api.memlayer.ru.conf

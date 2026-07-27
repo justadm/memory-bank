@@ -31,28 +31,51 @@ Primary design spec:
 
 1. Put repo checkout into `/opt/memlayer`
 2. Create `/opt/memlayer/.env` from `deploy/msk/.env.example`
-3. Start stack:
+3. Build the exact committed revision through the archive-based release builder:
 
 ```bash
 cd /opt/memlayer
-docker compose --env-file .env -f deploy/msk/docker-compose.yml up -d --build
-docker compose --env-file .env -f deploy/msk/docker-compose.yml exec -T api alembic upgrade head
+export GIT_REVISION="$(git rev-parse HEAD)"
+scripts/build_release_image.sh msk-api
 ```
 
-4. Install nginx samples into:
+Do not invoke Compose with its `--build` flag for a release. That bypasses the
+clean Git archive boundary and does not provide an immutable image identity.
+
+4. After release approval, deploy the verified candidate by immutable
+`sha256` image ID:
+
+```bash
+scripts/rollout_release_image.sh msk-api "${GIT_REVISION}"
+```
+
+The rollout script creates and reads back a rollback tag for the currently
+running image, deploys by immutable image ID, reads the running image ID and OCI
+revision back from the container, checks health, and restores the verified
+rollback image if candidate verification fails.
+
+5. After separate migration approval, run migrations against the running image:
+
+```bash
+export MEMLAYER_API_IMAGE="$(docker inspect --format '{{.Image}}' memlayer-api)"
+docker compose --env-file .env -f deploy/msk/docker-compose.yml \
+  exec -T api alembic upgrade head
+```
+
+6. Install nginx samples into:
 - `/etc/nginx/sites-available/memlayer.ru`
 - `/etc/nginx/sites-available/api.memlayer.ru`
 - `/etc/nginx/sites-available/adm.memlayer.ru`
 
-5. Enable them via symlink in `/etc/nginx/sites-enabled`
-6. Run:
+7. Enable them via symlink in `/etc/nginx/sites-enabled`
+8. Run:
 
 ```bash
 sudo nginx -t
 sudo nginx -s reload
 ```
 
-7. Verify:
+9. Verify:
 
 ```bash
 curl -sS http://127.0.0.1:18120/health
