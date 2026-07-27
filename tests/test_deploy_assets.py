@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import shlex
+import shutil
 import stat
 import subprocess
 import textwrap
@@ -14,6 +15,39 @@ ROLLBACK_REVISION = "b" * 40
 CANDIDATE_IMAGE_ID = "sha256:" + ("c" * 64)
 ROLLBACK_IMAGE_ID = "sha256:" + ("d" * 64)
 OTHER_IMAGE_ID = "sha256:" + ("e" * 64)
+CANONICAL_RELEASE_LOCK = "/run/memlayer-release/compose.lock"
+
+
+def _release_test_harness(tmp_path: Path) -> tuple[Path, Path]:
+    harness_root = tmp_path / "release-harness"
+    scripts_dir = harness_root / "scripts"
+    compose_dir = harness_root / "deploy" / "msk"
+    scripts_dir.mkdir(parents=True)
+    compose_dir.mkdir(parents=True)
+
+    for name in (
+        "release_lock.sh",
+        "run_release_compose.sh",
+        "rollout_release_image.sh",
+        "verify_release_image.sh",
+    ):
+        shutil.copy2(ROOT / "scripts" / name, scripts_dir / name)
+    shutil.copy2(
+        ROOT / "deploy" / "msk" / "docker-compose.yml",
+        compose_dir / "docker-compose.yml",
+    )
+
+    runtime_dir = tmp_path / "release-runtime"
+    runtime_dir.mkdir(mode=0o700)
+    lock_dir = runtime_dir / "compose.lock"
+    lock_script = scripts_dir / "release_lock.sh"
+    content = lock_script.read_text(encoding="utf-8")
+    assert content.count(CANONICAL_RELEASE_LOCK) == 1
+    lock_script.write_text(
+        content.replace(CANONICAL_RELEASE_LOCK, str(lock_dir)),
+        encoding="utf-8",
+    )
+    return harness_root, lock_dir
 
 
 def test_basic_auth_deploy_assets_exist():
@@ -189,6 +223,7 @@ def test_release_compose_entrypoint_rejects_late_compose_override(tmp_path):
 
 
 def test_migrate_head_rejects_running_image_mismatch(tmp_path):
+    harness_root, lock_dir = _release_test_harness(tmp_path)
     fake_docker = tmp_path / "docker"
     docker_log = tmp_path / "docker.log"
     fake_docker.write_text(
@@ -210,17 +245,15 @@ def test_migrate_head_rejects_running_image_mismatch(tmp_path):
 
     result = subprocess.run(
         [
-            str(ROOT / "scripts/run_release_compose.sh"),
+            str(harness_root / "scripts/run_release_compose.sh"),
             CANDIDATE_IMAGE_ID,
             "migrate-head",
         ],
-        cwd=ROOT,
+        cwd=harness_root,
         env={
             **os.environ,
             "PATH": f"{tmp_path}:{os.environ['PATH']}",
             "FAKE_DOCKER_LOG": str(docker_log),
-            "MEMLAYER_RELEASE_TEST_MODE": "1",
-            "MEMLAYER_RELEASE_LOCK_DIR": str(tmp_path / "release.lock"),
         },
         capture_output=True,
         text=True,
@@ -231,14 +264,14 @@ def test_migrate_head_rejects_running_image_mismatch(tmp_path):
     log = docker_log.read_text(encoding="utf-8")
     assert "inspect --format {{.Image}} memlayer-api" in log
     assert "compose " not in log
-    assert not (tmp_path / "release.lock").exists()
+    assert not lock_dir.exists()
 
 
 def test_migrate_head_binds_running_image_and_holds_release_lock(tmp_path):
+    harness_root, lock_dir = _release_test_harness(tmp_path)
     fake_docker = tmp_path / "docker"
     docker_log = tmp_path / "docker.log"
     captured_override = tmp_path / "override.yml"
-    lock_dir = tmp_path / "release.lock"
     fake_docker.write_text(
         textwrap.dedent(
             f"""\
@@ -250,7 +283,7 @@ def test_migrate_head_binds_running_image_and_holds_release_lock(tmp_path):
               exit 0
             fi
             if [ "$1" = "compose" ]; then
-              test -d "${{MEMLAYER_RELEASE_LOCK_DIR}}"
+              test -d "${{TEST_RELEASE_LOCK_DIR}}"
               override_file=""
               shift
               while [ "$#" -gt 0 ]; do
@@ -272,18 +305,17 @@ def test_migrate_head_binds_running_image_and_holds_release_lock(tmp_path):
 
     result = subprocess.run(
         [
-            str(ROOT / "scripts/run_release_compose.sh"),
+            str(harness_root / "scripts/run_release_compose.sh"),
             CANDIDATE_IMAGE_ID,
             "migrate-head",
         ],
-        cwd=ROOT,
+        cwd=harness_root,
         env={
             **os.environ,
             "PATH": f"{tmp_path}:{os.environ['PATH']}",
             "FAKE_DOCKER_LOG": str(docker_log),
             "CAPTURED_OVERRIDE": str(captured_override),
-            "MEMLAYER_RELEASE_TEST_MODE": "1",
-            "MEMLAYER_RELEASE_LOCK_DIR": str(lock_dir),
+            "TEST_RELEASE_LOCK_DIR": str(lock_dir),
         },
         capture_output=True,
         text=True,
@@ -312,6 +344,7 @@ def test_migrate_head_binds_running_image_and_holds_release_lock(tmp_path):
 
 
 def test_release_compose_rejects_concurrent_operation(tmp_path):
+    harness_root, lock_dir = _release_test_harness(tmp_path)
     fake_docker = tmp_path / "docker"
     fake_docker.write_text(
         "#!/bin/sh\necho called >\"${FAKE_DOCKER_CALLED}\"\n",
@@ -319,22 +352,19 @@ def test_release_compose_rejects_concurrent_operation(tmp_path):
     )
     fake_docker.chmod(0o755)
     called = tmp_path / "docker-called"
-    lock_dir = tmp_path / "release.lock"
-    lock_dir.mkdir()
+    lock_dir.mkdir(mode=0o700)
 
     result = subprocess.run(
         [
-            str(ROOT / "scripts/run_release_compose.sh"),
+            str(harness_root / "scripts/run_release_compose.sh"),
             CANDIDATE_IMAGE_ID,
             "migrate-head",
         ],
-        cwd=ROOT,
+        cwd=harness_root,
         env={
             **os.environ,
             "PATH": f"{tmp_path}:{os.environ['PATH']}",
             "FAKE_DOCKER_CALLED": str(called),
-            "MEMLAYER_RELEASE_TEST_MODE": "1",
-            "MEMLAYER_RELEASE_LOCK_DIR": str(lock_dir),
         },
         capture_output=True,
         text=True,
@@ -346,6 +376,7 @@ def test_release_compose_rejects_concurrent_operation(tmp_path):
 
 
 def test_rollout_api_rejects_replayed_owner_token(tmp_path):
+    harness_root, lock_dir = _release_test_harness(tmp_path)
     fake_docker = tmp_path / "docker"
     fake_docker.write_text(
         "#!/bin/sh\necho called >\"${FAKE_DOCKER_CALLED}\"\n",
@@ -353,7 +384,6 @@ def test_rollout_api_rejects_replayed_owner_token(tmp_path):
     )
     fake_docker.chmod(0o755)
     called = tmp_path / "docker-called"
-    lock_dir = tmp_path / "release.lock"
     lock_dir.mkdir(mode=0o700)
     replayed_token = f"rollout:99999:{REVISION}"
     owner = lock_dir / "owner"
@@ -362,17 +392,15 @@ def test_rollout_api_rejects_replayed_owner_token(tmp_path):
 
     result = subprocess.run(
         [
-            str(ROOT / "scripts/run_release_compose.sh"),
+            str(harness_root / "scripts/run_release_compose.sh"),
             CANDIDATE_IMAGE_ID,
             "rollout-api",
         ],
-        cwd=ROOT,
+        cwd=harness_root,
         env={
             **os.environ,
             "PATH": f"{tmp_path}:{os.environ['PATH']}",
             "FAKE_DOCKER_CALLED": str(called),
-            "MEMLAYER_RELEASE_TEST_MODE": "1",
-            "MEMLAYER_RELEASE_LOCK_DIR": str(lock_dir),
             "MEMLAYER_RELEASE_LOCK_TOKEN": replayed_token,
             "MEMLAYER_RELEASE_SUPERVISOR_PID": "99999",
         },
@@ -443,6 +471,38 @@ def test_release_lock_rejects_insecure_runtime_directory_mode(tmp_path):
     assert not lock_dir.exists()
 
 
+def test_release_lock_rejects_symlink_runtime_directory(tmp_path):
+    real_runtime_dir = tmp_path / "real-release-runtime"
+    real_runtime_dir.mkdir(mode=0o700)
+    linked_runtime_dir = tmp_path / "linked-release-runtime"
+    linked_runtime_dir.symlink_to(real_runtime_dir, target_is_directory=True)
+    lock_dir = linked_runtime_dir / "compose.lock"
+    token = f"migrate:{os.getpid()}:{CANDIDATE_IMAGE_ID}"
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "source scripts/release_lock.sh; "
+                "memlayer_release_lock_acquire \"$LOCK_DIR\" \"$LOCK_TOKEN\""
+            ),
+        ],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "LOCK_DIR": str(lock_dir),
+            "LOCK_TOKEN": token,
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "must not be a symlink" in result.stderr
+    assert not (real_runtime_dir / "compose.lock").exists()
+
+
 def test_release_lock_rejects_runtime_directory_owned_by_other_uid(tmp_path):
     runtime_dir = tmp_path / "release-runtime"
     runtime_dir.mkdir(mode=0o700)
@@ -494,14 +554,22 @@ def test_production_release_lock_path_ignores_environment_override(tmp_path):
         env={
             **os.environ,
             "MEMLAYER_RELEASE_LOCK_DIR": str(custom_lock),
-            "MEMLAYER_RELEASE_TEST_MODE": "0",
+            "MEMLAYER_RELEASE_TEST_MODE": "1",
         },
         check=True,
         capture_output=True,
         text=True,
     )
 
-    assert result.stdout.strip() == "/run/memlayer-release/compose.lock"
+    assert result.stdout.strip() == CANONICAL_RELEASE_LOCK
+    for path in (
+        ROOT / "scripts/release_lock.sh",
+        ROOT / "scripts/run_release_compose.sh",
+        ROOT / "scripts/rollout_release_image.sh",
+    ):
+        content = path.read_text(encoding="utf-8")
+        assert "MEMLAYER_RELEASE_TEST_MODE" not in content
+        assert "MEMLAYER_RELEASE_LOCK_DIR" not in content
 
 
 def test_retired_msk_documents_do_not_contain_build_rollout_commands():
@@ -553,6 +621,7 @@ def test_release_rollout_pins_candidate_digest_and_reads_back_rollback():
 
 
 def _fake_release_runtime(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
+    harness_root, lock_dir = _release_test_harness(tmp_path)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     log_path = tmp_path / "docker.log"
@@ -567,7 +636,7 @@ def _fake_release_runtime(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
             set -eu
             printf '%s\\n' "$*" >>"${FAKE_DOCKER_LOG}"
             if [ "${REQUIRE_RELEASE_LOCK_FOR_DOCKER:-0}" = "1" ]; then
-              test -f "${MEMLAYER_RELEASE_LOCK_DIR}/owner"
+              test -f "${TEST_RELEASE_LOCK_DIR}/owner"
             fi
 
             if [ "$1" = "run" ]; then
@@ -704,8 +773,13 @@ def _fake_release_runtime(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
         "FAKE_CANDIDATE_ID": CANDIDATE_IMAGE_ID,
         "FAKE_ROLLBACK_ID": ROLLBACK_IMAGE_ID,
         "REQUIRE_RELEASE_LOCK_FOR_DOCKER": "1",
-        "MEMLAYER_RELEASE_TEST_MODE": "1",
-        "MEMLAYER_RELEASE_LOCK_DIR": str(tmp_path / "release.lock"),
+        "TEST_RELEASE_LOCK_DIR": str(lock_dir),
+        "TEST_RELEASE_ROLLOUT_SCRIPT": str(
+            harness_root / "scripts/rollout_release_image.sh"
+        ),
+        "RELEASE_COMPOSE_SCRIPT": str(
+            harness_root / "scripts/run_release_compose.sh"
+        ),
     }
     return env, log_path, state_path
 
@@ -715,7 +789,7 @@ def test_release_rollout_deploys_candidate_by_immutable_image_id(tmp_path):
 
     result = subprocess.run(
         [
-            str(ROOT / "scripts/rollout_release_image.sh"),
+            env["TEST_RELEASE_ROLLOUT_SCRIPT"],
             "msk-api",
             REVISION,
             CANDIDATE_IMAGE_ID,
@@ -757,7 +831,7 @@ def test_release_lock_handoff_cannot_be_interrupted_by_handled_signal(tmp_path):
 
     result = subprocess.run(
         [
-            str(ROOT / "scripts/rollout_release_image.sh"),
+            env["TEST_RELEASE_ROLLOUT_SCRIPT"],
             "msk-api",
             REVISION,
             CANDIDATE_IMAGE_ID,
@@ -770,7 +844,7 @@ def test_release_lock_handoff_cannot_be_interrupted_by_handled_signal(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert state_path.read_text(encoding="utf-8") == CANDIDATE_IMAGE_ID
-    assert not Path(env["MEMLAYER_RELEASE_LOCK_DIR"]).exists()
+    assert not Path(env["TEST_RELEASE_LOCK_DIR"]).exists()
 
 
 def test_release_mutation_state_handoff_cannot_be_interrupted(tmp_path):
@@ -798,7 +872,7 @@ def test_release_mutation_state_handoff_cannot_be_interrupted(tmp_path):
 
     result = subprocess.run(
         [
-            str(ROOT / "scripts/rollout_release_image.sh"),
+            env["TEST_RELEASE_ROLLOUT_SCRIPT"],
             "msk-api",
             REVISION,
             CANDIDATE_IMAGE_ID,
@@ -811,7 +885,7 @@ def test_release_mutation_state_handoff_cannot_be_interrupted(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert state_path.read_text(encoding="utf-8") == CANDIDATE_IMAGE_ID
-    assert not Path(env["MEMLAYER_RELEASE_LOCK_DIR"]).exists()
+    assert not Path(env["TEST_RELEASE_LOCK_DIR"]).exists()
 
 
 def test_release_rollout_restores_read_back_image_after_failed_health(tmp_path):
@@ -820,7 +894,7 @@ def test_release_rollout_restores_read_back_image_after_failed_health(tmp_path):
 
     result = subprocess.run(
         [
-            str(ROOT / "scripts/rollout_release_image.sh"),
+            env["TEST_RELEASE_ROLLOUT_SCRIPT"],
             "msk-api",
             REVISION,
             CANDIDATE_IMAGE_ID,
@@ -857,7 +931,7 @@ def test_release_rollout_does_not_rollback_before_mutation_marker(tmp_path):
 
     result = subprocess.run(
         [
-            str(ROOT / "scripts/rollout_release_image.sh"),
+            env["TEST_RELEASE_ROLLOUT_SCRIPT"],
             "msk-api",
             REVISION,
             CANDIDATE_IMAGE_ID,
@@ -873,7 +947,7 @@ def test_release_rollout_does_not_rollback_before_mutation_marker(tmp_path):
     assert "manual recovery is required" not in result.stderr
     assert state_path.read_text(encoding="utf-8") == ROLLBACK_IMAGE_ID
     assert "compose " not in log_path.read_text(encoding="utf-8")
-    assert not Path(env["MEMLAYER_RELEASE_LOCK_DIR"]).exists()
+    assert not Path(env["TEST_RELEASE_LOCK_DIR"]).exists()
 
 
 @pytest.mark.parametrize("signal_name", ["HUP", "INT", "TERM"])
@@ -887,7 +961,7 @@ def test_release_rollout_ignores_repeated_signal_during_rollback(
 
     result = subprocess.run(
         [
-            str(ROOT / "scripts/rollout_release_image.sh"),
+            env["TEST_RELEASE_ROLLOUT_SCRIPT"],
             "msk-api",
             REVISION,
             CANDIDATE_IMAGE_ID,
@@ -901,7 +975,7 @@ def test_release_rollout_ignores_repeated_signal_during_rollback(
     assert result.returncode == 1
     assert "rollback completed" in result.stderr
     assert state_path.read_text(encoding="utf-8") == ROLLBACK_IMAGE_ID
-    assert not Path(env["MEMLAYER_RELEASE_LOCK_DIR"]).exists()
+    assert not Path(env["TEST_RELEASE_LOCK_DIR"]).exists()
 
 
 def test_release_rollout_retains_lock_after_failed_rollback(tmp_path):
@@ -911,7 +985,7 @@ def test_release_rollout_retains_lock_after_failed_rollback(tmp_path):
 
     result = subprocess.run(
         [
-            str(ROOT / "scripts/rollout_release_image.sh"),
+            env["TEST_RELEASE_ROLLOUT_SCRIPT"],
             "msk-api",
             REVISION,
             CANDIDATE_IMAGE_ID,
@@ -926,7 +1000,7 @@ def test_release_rollout_retains_lock_after_failed_rollback(tmp_path):
     assert "rollback failed; manual recovery is required" in result.stderr
     assert "release lock retained after failed rollback" in result.stderr
     assert state_path.read_text(encoding="utf-8") == CANDIDATE_IMAGE_ID
-    assert Path(env["MEMLAYER_RELEASE_LOCK_DIR"]).exists()
+    assert Path(env["TEST_RELEASE_LOCK_DIR"]).exists()
 
 
 def test_release_rollout_blocks_migration_until_health_or_rollback_finishes(
@@ -939,15 +1013,13 @@ def test_release_rollout_blocks_migration_until_health_or_rollback_finishes(
             "FAIL_CANDIDATE_HEALTH": "1",
             "PROBE_MIGRATION_DURING_HEALTH": "1",
             "MIGRATION_PROBE_RESULT": str(migration_probe),
-            "RELEASE_COMPOSE_SCRIPT": str(
-                ROOT / "scripts/run_release_compose.sh"
-            ),
+            "RELEASE_COMPOSE_SCRIPT": env["RELEASE_COMPOSE_SCRIPT"],
         }
     )
 
     result = subprocess.run(
         [
-            str(ROOT / "scripts/rollout_release_image.sh"),
+            env["TEST_RELEASE_ROLLOUT_SCRIPT"],
             "msk-api",
             REVISION,
             CANDIDATE_IMAGE_ID,
@@ -972,7 +1044,7 @@ def test_release_rollout_rejects_candidate_tag_digest_mismatch(tmp_path):
 
     result = subprocess.run(
         [
-            str(ROOT / "scripts/rollout_release_image.sh"),
+            env["TEST_RELEASE_ROLLOUT_SCRIPT"],
             "msk-api",
             REVISION,
             OTHER_IMAGE_ID,
@@ -1003,7 +1075,7 @@ def test_release_rollout_restores_read_back_image_after_signal(
 
     result = subprocess.run(
         [
-            str(ROOT / "scripts/rollout_release_image.sh"),
+            env["TEST_RELEASE_ROLLOUT_SCRIPT"],
             "msk-api",
             REVISION,
             CANDIDATE_IMAGE_ID,

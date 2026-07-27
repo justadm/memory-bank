@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
 
 memlayer_release_lock_path() {
-  if [[ "${MEMLAYER_RELEASE_TEST_MODE:-0}" == "1" ]]; then
-    if [[ -z "${MEMLAYER_RELEASE_LOCK_DIR:-}" ]]; then
-      echo "test mode requires MEMLAYER_RELEASE_LOCK_DIR" >&2
-      return 2
-    fi
-    printf '%s\n' "${MEMLAYER_RELEASE_LOCK_DIR}"
-    return
-  fi
-
   printf '%s\n' "/run/memlayer-release/compose.lock"
 }
 

@@ -61,8 +61,10 @@ the rollback image, revision, and health have been read back and the lock can be
 released safely. A failed rollback retains the lock and requires the documented
 manual recovery procedure before any later release or migration.
 `migrate-head` uses the same lock, reads `memlayer-api`'s current container
-image ID, and rejects any mismatch before `exec`. A test-only lock path override
-is accepted only when `MEMLAYER_RELEASE_TEST_MODE=1`; production ignores it.
+image ID, and rejects any mismatch before `exec`. Production release scripts
+have no environment-controlled lock-path override. Tests that need an isolated
+lock use a copied test harness whose canonical path is rewritten outside the
+production invocation surface.
 The rollout helper additionally verifies that its immediate parent PID is the
 supervisor PID recorded in the lock owner token, so the on-disk token is not a
 replayable value for an unrelated process by accident. This is
