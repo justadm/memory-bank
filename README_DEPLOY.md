@@ -82,7 +82,7 @@ later release or migration.
 ### Stale release lock recovery
 
 `SIGKILL`, host loss, or a forced shell termination can leave
-`/tmp/memlayer-release-compose.lock`. Treat it as active until both conditions
+`/run/memlayer-release/compose.lock`. Treat it as active until both conditions
 are checked:
 
 1. no `rollout_release_image.sh`, `run_release_compose.sh`, or migration
@@ -92,6 +92,25 @@ are checked:
 Only after that read-only verification, and with explicit operational approval,
 remove the `owner` file and then the empty lock directory. Never remove an
 active lock to force a rollout.
+
+### Private release runtime directory
+
+The fixed lock parent must exist before rollout or migration, be owned by the
+deploy account, have mode `0700`, and not be a symlink. Provision it
+persistently with `systemd-tmpfiles`; do not fall back to a name in shared
+`/tmp`.
+
+As the deploy account, prepare the host-specific tmpfiles rule:
+
+```bash
+printf 'd /run/memlayer-release 0700 %s %s -\n' \
+  "$(id -un)" "$(id -gn)" |
+  sudo tee /etc/tmpfiles.d/memlayer-release.conf >/dev/null
+sudo systemd-tmpfiles --create /etc/tmpfiles.d/memlayer-release.conf
+```
+
+Before release approval, verify the resulting directory with `stat` and confirm
+that its numeric owner is the deploy account and its mode is exactly `0700`.
 
 ### Trust boundary
 

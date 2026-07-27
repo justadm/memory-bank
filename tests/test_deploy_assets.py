@@ -413,6 +413,72 @@ def test_release_lock_uses_private_permissions(tmp_path):
     lock_dir.rmdir()
 
 
+def test_release_lock_rejects_insecure_runtime_directory_mode(tmp_path):
+    runtime_dir = tmp_path / "release-runtime"
+    runtime_dir.mkdir(mode=0o755)
+    lock_dir = runtime_dir / "compose.lock"
+    token = f"migrate:{os.getpid()}:{CANDIDATE_IMAGE_ID}"
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "source scripts/release_lock.sh; "
+                "memlayer_release_lock_acquire \"$LOCK_DIR\" \"$LOCK_TOKEN\""
+            ),
+        ],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "LOCK_DIR": str(lock_dir),
+            "LOCK_TOKEN": token,
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "mode 0700" in result.stderr
+    assert not lock_dir.exists()
+
+
+def test_release_lock_rejects_runtime_directory_owned_by_other_uid(tmp_path):
+    runtime_dir = tmp_path / "release-runtime"
+    runtime_dir.mkdir(mode=0o700)
+    lock_dir = runtime_dir / "compose.lock"
+    token = f"migrate:{os.getpid()}:{CANDIDATE_IMAGE_ID}"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_id = fake_bin / "id"
+    fake_id.write_text("#!/bin/sh\nprintf '99999\\n'\n", encoding="utf-8")
+    fake_id.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            (
+                "source scripts/release_lock.sh; "
+                "memlayer_release_lock_acquire \"$LOCK_DIR\" \"$LOCK_TOKEN\""
+            ),
+        ],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "LOCK_DIR": str(lock_dir),
+            "LOCK_TOKEN": token,
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "owned by the deploy account" in result.stderr
+    assert not lock_dir.exists()
+
+
 def test_production_release_lock_path_ignores_environment_override(tmp_path):
     custom_lock = tmp_path / "bypass.lock"
     result = subprocess.run(
@@ -435,7 +501,7 @@ def test_production_release_lock_path_ignores_environment_override(tmp_path):
         text=True,
     )
 
-    assert result.stdout.strip() == "/tmp/memlayer-release-compose.lock"
+    assert result.stdout.strip() == "/run/memlayer-release/compose.lock"
 
 
 def test_retired_msk_documents_do_not_contain_build_rollout_commands():
@@ -448,6 +514,19 @@ def test_retired_msk_documents_do_not_contain_build_rollout_commands():
         content = path.read_text(encoding="utf-8")
         assert "up -d --build" not in content
         assert "scripts/rollout_release_image.sh" in content
+
+
+def test_release_docs_require_private_runtime_directory():
+    deploy_notes = (ROOT / "README_DEPLOY.md").read_text(encoding="utf-8")
+    operations = (ROOT / "docs/operations/clean-release-image.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "/run/memlayer-release/compose.lock" in deploy_notes
+    assert "systemd-tmpfiles" in deploy_notes
+    assert "mode `0700`" in deploy_notes
+    assert "/run/memlayer-release/compose.lock" in operations
+    assert "shared `/tmp`" in operations
 
 
 def test_release_rollout_pins_candidate_digest_and_reads_back_rollback():

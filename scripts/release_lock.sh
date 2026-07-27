@@ -10,13 +10,54 @@ memlayer_release_lock_path() {
     return
   fi
 
-  printf '%s\n' "/tmp/memlayer-release-compose.lock"
+  printf '%s\n' "/run/memlayer-release/compose.lock"
+}
+
+memlayer_release_lock_validate_parent() {
+  local lock_dir="$1"
+  local parent_dir="${lock_dir%/*}"
+  local metadata
+  local owner_uid
+  local mode
+  local current_uid
+
+  if [[ -z "${parent_dir}" || ! -d "${parent_dir}" || -L "${parent_dir}" ]]; then
+    echo "release runtime directory must exist and must not be a symlink" >&2
+    return 1
+  fi
+
+  case "$(uname -s)" in
+    Darwin)
+      metadata="$(stat -f '%u %Lp' "${parent_dir}")" || return 1
+      ;;
+    Linux)
+      metadata="$(stat -c '%u %a' "${parent_dir}")" || return 1
+      ;;
+    *)
+      echo "unsupported platform for release runtime validation" >&2
+      return 1
+      ;;
+  esac
+  read -r owner_uid mode <<<"${metadata}"
+  current_uid="$(id -u)" || return 1
+
+  if [[ "${owner_uid}" != "${current_uid}" ]]; then
+    echo "release runtime directory must be owned by the deploy account" >&2
+    return 1
+  fi
+  if [[ "${mode}" != "700" ]]; then
+    echo "release runtime directory must have mode 0700" >&2
+    return 1
+  fi
 }
 
 memlayer_release_lock_acquire() {
   local lock_dir="$1"
   local token="$2"
 
+  if ! memlayer_release_lock_validate_parent "${lock_dir}"; then
+    return 1
+  fi
   if ! mkdir -m 700 "${lock_dir}"; then
     return 1
   fi

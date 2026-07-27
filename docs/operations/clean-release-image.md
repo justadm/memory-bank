@@ -71,6 +71,11 @@ account: that account can create its own parent process or invoke Docker
 directly. Enforcing hostile same-user isolation requires an OS-level
 service/forced-command/privilege boundary. The lock directory and owner file
 use `0700`/`0600` permissions.
+The lock is rooted at `/run/memlayer-release/compose.lock`, not shared `/tmp`.
+Its parent must already exist, must not be a symlink, and must be owned by the
+current deploy account with mode `0700`; otherwise rollout and migration fail
+before Docker access. The host provisions that parent persistently through the
+`systemd-tmpfiles` procedure in `README_DEPLOY.md`.
 
 `SIGKILL` or host loss can leave a stale lock. Follow the read-only process/PID
 checks in `README_DEPLOY.md` before an explicitly approved removal; never delete
