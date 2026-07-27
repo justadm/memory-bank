@@ -9,6 +9,7 @@ REVISION = "a" * 40
 ROLLBACK_REVISION = "b" * 40
 CANDIDATE_IMAGE_ID = "sha256:" + ("c" * 64)
 ROLLBACK_IMAGE_ID = "sha256:" + ("d" * 64)
+OTHER_IMAGE_ID = "sha256:" + ("e" * 64)
 
 
 def test_basic_auth_deploy_assets_exist():
@@ -68,6 +69,7 @@ def test_release_builder_uses_exact_clean_git_archive():
     assert "--platform" in content
     assert "--no-cache" in content
     assert "scripts/verify_release_image.sh" in content
+    assert "APPROVED_IMAGE_ID" in content
     assert not (ROOT / "deploy/msk/Dockerfile.offline-rebase").exists()
 
 
@@ -98,10 +100,13 @@ def test_standard_msk_release_uses_archive_builder_and_digest_rollout():
     assert "up -d --build" not in deploy_notes
     assert "docker compose up --build" not in deploy_notes
     assert "scripts/build_release_image.sh msk-api" in deploy_notes
-    assert "scripts/rollout_release_image.sh msk-api" in deploy_notes
+    assert "scripts/rollout_release_image.sh" in deploy_notes
     assert 'export GIT_REVISION="$(git rev-parse HEAD)"' in helper
     assert "scripts/build_release_image.sh msk-api" in helper
-    assert 'scripts/rollout_release_image.sh msk-api "${GIT_REVISION}"' in helper
+    assert (
+        'scripts/rollout_release_image.sh msk-api "${GIT_REVISION}" '
+        '"${APPROVED_IMAGE_ID}"'
+    ) in helper
     assert "msk-api:latest" not in helper
 
 
@@ -109,6 +114,8 @@ def test_release_rollout_pins_candidate_digest_and_reads_back_rollback():
     content = (ROOT / "scripts/rollout_release_image.sh").read_text(encoding="utf-8")
 
     assert "scripts/verify_release_image.sh" in content
+    assert "APPROVED_IMAGE_ID" in content
+    assert "candidate tag does not match approved image digest" in content
     assert "CANDIDATE_IMAGE_ID" in content
     assert "ROLLBACK_IMAGE_ID" in content
     assert "ROLLBACK_TAG" in content
@@ -145,6 +152,10 @@ def _fake_release_runtime(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
             fi
             if [ "$1" = "compose" ]; then
               printf '%s' "${MEMLAYER_API_IMAGE}" >"${FAKE_STATE}"
+              if [ "${SIGNAL_ON_CANDIDATE:-0}" = "1" ] &&
+                 [ "${MEMLAYER_API_IMAGE}" = "${FAKE_CANDIDATE_ID}" ]; then
+                kill -TERM "${PPID}"
+              fi
               exit 0
             fi
             if [ "$1" = "inspect" ]; then
@@ -245,7 +256,12 @@ def test_release_rollout_deploys_candidate_by_immutable_image_id(tmp_path):
     env, log_path, state_path = _fake_release_runtime(tmp_path)
 
     result = subprocess.run(
-        [str(ROOT / "scripts/rollout_release_image.sh"), "msk-api", REVISION],
+        [
+            str(ROOT / "scripts/rollout_release_image.sh"),
+            "msk-api",
+            REVISION,
+            CANDIDATE_IMAGE_ID,
+        ],
         cwd=ROOT,
         env=env,
         capture_output=True,
@@ -269,7 +285,12 @@ def test_release_rollout_restores_read_back_image_after_failed_health(tmp_path):
     env["FAIL_CANDIDATE_HEALTH"] = "1"
 
     result = subprocess.run(
-        [str(ROOT / "scripts/rollout_release_image.sh"), "msk-api", REVISION],
+        [
+            str(ROOT / "scripts/rollout_release_image.sh"),
+            "msk-api",
+            REVISION,
+            CANDIDATE_IMAGE_ID,
+        ],
         cwd=ROOT,
         env=env,
         capture_output=True,
@@ -277,5 +298,49 @@ def test_release_rollout_restores_read_back_image_after_failed_health(tmp_path):
     )
 
     assert result.returncode == 1
+    assert "rollback completed" in result.stderr
+    assert state_path.read_text(encoding="utf-8") == ROLLBACK_IMAGE_ID
+
+
+def test_release_rollout_rejects_candidate_tag_digest_mismatch(tmp_path):
+    env, log_path, state_path = _fake_release_runtime(tmp_path)
+
+    result = subprocess.run(
+        [
+            str(ROOT / "scripts/rollout_release_image.sh"),
+            "msk-api",
+            REVISION,
+            OTHER_IMAGE_ID,
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "candidate tag does not match approved image digest" in result.stderr
+    assert state_path.read_text(encoding="utf-8") == ROLLBACK_IMAGE_ID
+    assert "|compose " not in log_path.read_text(encoding="utf-8")
+
+
+def test_release_rollout_restores_read_back_image_after_termination(tmp_path):
+    env, _, state_path = _fake_release_runtime(tmp_path)
+    env["SIGNAL_ON_CANDIDATE"] = "1"
+
+    result = subprocess.run(
+        [
+            str(ROOT / "scripts/rollout_release_image.sh"),
+            "msk-api",
+            REVISION,
+            CANDIDATE_IMAGE_ID,
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 143
     assert "rollback completed" in result.stderr
     assert state_path.read_text(encoding="utf-8") == ROLLBACK_IMAGE_ID

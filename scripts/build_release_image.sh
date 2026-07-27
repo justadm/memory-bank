@@ -36,3 +36,15 @@ docker build \
   "${BUILD_CONTEXT}"
 
 "${ROOT_DIR}/scripts/verify_release_image.sh" "${IMAGE}" "${REVISION}"
+
+APPROVED_IMAGE_ID="$(
+  docker image inspect --format '{{.Id}}' "${IMAGE}"
+)"
+if [[ ! "${APPROVED_IMAGE_ID}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  echo "verified image has no immutable sha256 identity" >&2
+  exit 1
+fi
+
+echo "revision=${REVISION}"
+echo "candidate=${IMAGE}"
+echo "approved_image_id=${APPROVED_IMAGE_ID}"

@@ -39,6 +39,9 @@ export GIT_REVISION="$(git rev-parse HEAD)"
 scripts/build_release_image.sh msk-api
 ```
 
+Record the builder's `approved_image_id=sha256:...` output in the release
+approval. Do not recompute or substitute that value during rollout.
+
 Do not invoke Compose with its `--build` flag for a release. That bypasses the
 clean Git archive boundary and does not provide an immutable image identity.
 
@@ -46,13 +49,18 @@ clean Git archive boundary and does not provide an immutable image identity.
 `sha256` image ID:
 
 ```bash
-scripts/rollout_release_image.sh msk-api "${GIT_REVISION}"
+export APPROVED_IMAGE_ID="sha256:<approved-image-id>"
+scripts/rollout_release_image.sh \
+  msk-api \
+  "${GIT_REVISION}" \
+  "${APPROVED_IMAGE_ID}"
 ```
 
-The rollout script creates and reads back a rollback tag for the currently
-running image, deploys by immutable image ID, reads the running image ID and OCI
-revision back from the container, checks health, and restores the verified
-rollback image if candidate verification fails.
+The rollout script first proves the candidate tag still resolves to the
+approval-bound image ID. It then creates and reads back a rollback tag for the
+currently running image, deploys by immutable image ID, reads the running image
+ID and OCI revision back from the container, checks health, and restores the
+verified rollback image on failures or termination signals.
 
 5. After separate migration approval, run migrations against the running image:
 

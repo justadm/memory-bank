@@ -24,9 +24,11 @@ Expected next steps on msk:
      cd ${TARGET_DIR}
      export GIT_REVISION="\$(git rev-parse HEAD)"
      scripts/build_release_image.sh msk-api
+     # Record approved_image_id from the verified builder output in the release approval.
 
   5. After release approval, deploy the verified immutable image:
-     scripts/rollout_release_image.sh msk-api "\${GIT_REVISION}"
+     export APPROVED_IMAGE_ID="sha256:<approved-image-id>"
+     scripts/rollout_release_image.sh msk-api "\${GIT_REVISION}" "\${APPROVED_IMAGE_ID}"
 
   6. Run migrations:
      MEMLAYER_API_IMAGE="\$(docker inspect --format '{{.Image}}' memlayer-api)" \\

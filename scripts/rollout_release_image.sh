@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
-  echo "Usage: $0 IMAGE_REPOSITORY GIT_REVISION" >&2
+if [[ $# -ne 3 ]]; then
+  echo "Usage: $0 IMAGE_REPOSITORY GIT_REVISION APPROVED_IMAGE_ID" >&2
   exit 2
 fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE_REPOSITORY="$1"
 REVISION="$2"
+APPROVED_IMAGE_ID="$3"
 CANDIDATE_IMAGE="${IMAGE_REPOSITORY}:${REVISION}-candidate"
 HEALTH_URL="${MEMLAYER_HEALTH_URL:-http://127.0.0.1:18120/health}"
 COMPOSE=(
@@ -19,6 +20,11 @@ COMPOSE=(
 
 if [[ ! "${REVISION}" =~ ^[0-9a-f]{40}$ ]]; then
   echo "revision must be a 40-character lowercase Git SHA" >&2
+  exit 2
+fi
+
+if [[ ! "${APPROVED_IMAGE_ID}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  echo "approved image ID must be an immutable sha256 digest" >&2
   exit 2
 fi
 
@@ -33,15 +39,23 @@ if [[ -n "$(git -C "${ROOT_DIR}" status --porcelain --untracked-files=all)" ]]; 
 fi
 
 cd "${ROOT_DIR}"
-"${ROOT_DIR}/scripts/verify_release_image.sh" "${CANDIDATE_IMAGE}" "${REVISION}"
 
-CANDIDATE_IMAGE_ID="$(
+CANDIDATE_TAG_IMAGE_ID="$(
   docker image inspect --format '{{.Id}}' "${CANDIDATE_IMAGE}"
 )"
-if [[ ! "${CANDIDATE_IMAGE_ID}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+if [[ ! "${CANDIDATE_TAG_IMAGE_ID}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
   echo "candidate image has no immutable sha256 identity" >&2
   exit 1
 fi
+if [[ "${CANDIDATE_TAG_IMAGE_ID}" != "${APPROVED_IMAGE_ID}" ]]; then
+  echo "candidate tag does not match approved image digest" >&2
+  exit 1
+fi
+
+CANDIDATE_IMAGE_ID="${APPROVED_IMAGE_ID}"
+"${ROOT_DIR}/scripts/verify_release_image.sh" \
+  "${CANDIDATE_IMAGE_ID}" \
+  "${REVISION}"
 
 ROLLBACK_IMAGE_ID="$(
   docker inspect --format '{{.Image}}' memlayer-api
@@ -126,10 +140,51 @@ rollback_release() {
   echo "rollback completed" >&2
 }
 
+ROLLBACK_TRAP_ARMED=0
+
+disarm_rollback_traps() {
+  ROLLBACK_TRAP_ARMED=0
+  trap - EXIT HUP INT TERM
+}
+
+rollback_after_exit() {
+  local exit_code="$1"
+
+  if [[ "${ROLLBACK_TRAP_ARMED}" -ne 1 ]]; then
+    exit "${exit_code}"
+  fi
+  disarm_rollback_traps
+  if ! rollback_release; then
+    exit 2
+  fi
+  exit "${exit_code}"
+}
+
+rollback_after_signal() {
+  local exit_code="$1"
+
+  disarm_rollback_traps
+  if ! rollback_release; then
+    exit 2
+  fi
+  exit "${exit_code}"
+}
+
+arm_rollback_traps() {
+  ROLLBACK_TRAP_ARMED=1
+  trap 'rollback_after_exit $?' EXIT
+  trap 'rollback_after_signal 129' HUP
+  trap 'rollback_after_signal 130' INT
+  trap 'rollback_after_signal 143' TERM
+}
+
+arm_rollback_traps
 if ! deploy_image "${CANDIDATE_IMAGE_ID}" "${REVISION}"; then
+  disarm_rollback_traps
   rollback_release || exit 2
   exit 1
 fi
+disarm_rollback_traps
 
 echo "release rollout passed"
 echo "revision=${REVISION}"
